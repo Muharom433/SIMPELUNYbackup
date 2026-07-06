@@ -1,13 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    Building, Search, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, GraduationCap, UserCheck, AlertTriangle, Filter, ChevronUp, FileText, Warehouse, Package, Layers, Tag, Box, ScanBarcode, Camera, Info, ExternalLink
+    Building, Search, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, GraduationCap, UserCheck, AlertTriangle, Filter, ChevronUp, FileText, Warehouse, Package, Layers, Tag, Box, ScanBarcode, Camera, Info, ExternalLink, Maximize2, Archive
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../lib/supabase';
 import { Room, Department, Equipment, StudyProgram } from '../types';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
-import { parseEquipmentSpec } from './ToolAdministration'; // Import our helper from ToolAdministration!
+
+export const parseEquipmentSpec = (spec: string | null) => {
+    if (!spec) return { purchaseYear: '', procurementType: '', specs: '' };
+    const pyMatch = spec.match(/\[Tahun Pembelian\]:\s*([^\n]*)/);
+    const ptMatch = spec.match(/\[Jenis Pengadaan\]:\s*([^\n]*)/);
+    const specMatch = spec.match(/\[Spesifikasi\]:\s*([\s\S]*)/);
+
+    const purchaseYear = pyMatch && pyMatch[1] ? pyMatch[1].trim() : '';
+    const procurementType = ptMatch && ptMatch[1] ? ptMatch[1].trim() : '';
+    
+    const specs = specMatch && specMatch[1] 
+        ? specMatch[1].trim() 
+        : (pyMatch || ptMatch ? '' : spec.trim());
+
+    return { purchaseYear, procurementType, specs };
+};
 
 interface EnhancedRoomStatus extends Room {
     department?: Department;
@@ -31,6 +46,58 @@ interface EnhancedRoomStatus extends Room {
     targetDateStatus?: 'Scheduled' | 'Available';
 }
 
+const PhotoPlaceholder = ({ title, subtitle }: { title?: string, subtitle?: string }) => (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-indigo-50 text-center p-4 z-10">
+        <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-3 animate-pulse">
+            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+        </div>
+        {title && <h3 className="font-bold text-lg text-gray-800 animate-pulse">{title}</h3>}
+        {subtitle && <p className="text-sm text-gray-500 mb-2 animate-pulse">{subtitle}</p>}
+        <p className="text-xs text-indigo-600 font-medium animate-pulse">Memuat foto...</p>
+    </div>
+);
+
+const ImageWithLoader = ({ src, alt, className, title, subtitle }: { src: string, alt: string, className?: string, title?: string, subtitle?: string }) => {
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+    const imgRef = useRef<HTMLImageElement>(null);
+
+    useEffect(() => {
+        setIsLoading(true);
+        setHasError(false);
+
+        if (imgRef.current && imgRef.current.complete) {
+            setIsLoading(false);
+        }
+    }, [src]);
+
+    if (hasError) {
+        return (
+            <div className={`w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-500 ${className}`}>
+                <AlertTriangle className="w-10 h-10 mb-2 opacity-50" />
+                <span className="text-sm font-medium">Gagal memuat</span>
+            </div>
+        );
+    }
+
+    return (
+        <>
+            {isLoading && <PhotoPlaceholder title={title} subtitle={subtitle} />}
+            <img
+                ref={imgRef}
+                src={src}
+                alt={alt}
+                className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+                onLoad={() => setIsLoading(false)}
+                onError={() => {
+                    setIsLoading(false);
+                    setHasError(true);
+                }}
+            />
+        </>
+    );
+}
+
 interface CombinedSchedule {
     id: string;
     type: 'lecture' | 'exam' | 'session' | 'booking';
@@ -52,9 +119,8 @@ const RoomInfo: React.FC = () => {
     const [studyPrograms, setStudyPrograms] = useState<StudyProgram[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [deptFilter, setDeptFilter] = useState('all');
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [spFilter, setSpFilter] = useState('all');
+    const [roomPageSize, setRoomPageSize] = useState(25);
+    const [roomCurrentPage, setRoomCurrentPage] = useState(0);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
     // Active Tab: 'rooms' or 'equipment'
@@ -64,14 +130,19 @@ const RoomInfo: React.FC = () => {
     const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
     const [loadingAllEquipment, setLoadingAllEquipment] = useState(false);
     const [equipmentSearchTerm, setEquipmentSearchTerm] = useState('');
-    const [equipmentNameFilter, setEquipmentNameFilter] = useState('all');
-    const [equipmentCategoryFilter, setEquipmentCategoryFilter] = useState('all');
-    const [equipmentConditionFilter, setEquipmentConditionFilter] = useState('all');
-    const [equipmentUsageFilter, setEquipmentUsageFilter] = useState('all'); // 'all' | 'available' | 'inuse'
+    // Room name filter (replaces old name filter)
+    const [equipmentRoomFilter, setEquipmentRoomFilter] = useState('all');
+    const [isRoomFilterDropdownOpen, setIsRoomFilterDropdownOpen] = useState(false);
+    const [roomFilterSearchTerm, setRoomFilterSearchTerm] = useState('');
+    // Pagination
+    const [equipmentPageSize, setEquipmentPageSize] = useState(25);
+    const [equipmentCurrentPage, setEquipmentCurrentPage] = useState(0);
+    // Scanner (DosenPresensi style - auto start)
     const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
-    const [scannerReady, setScannerReady] = useState(false);
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [scanProcessing, setScanProcessing] = useState(false);
+    const [scanRetry, setScanRetry] = useState(0);
+    const [scannerReady, setScannerReady] = useState(false);
     const [scanResult, setScanResult] = useState<{
         rawValue: string;
         equipment: Equipment | null;
@@ -79,12 +150,16 @@ const RoomInfo: React.FC = () => {
         department?: any;
     } | null>(null);
     const [showScanResult, setShowScanResult] = useState(false);
-    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-    const [cameras, setCameras] = useState<any[]>([]);
-    const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-    const [isEqNameDropdownOpen, setIsEqNameDropdownOpen] = useState(false);
-    const [eqDropdownSearchTerm, setEqDropdownSearchTerm] = useState('');
     const [isSpDropdownOpen, setIsSpDropdownOpen] = useState(false);
+    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+    const [showEquipmentImageFullscreen, setShowEquipmentImageFullscreen] = useState(false);
+
+    // Equipment Detail Modal States (for tab Keterangan Alat - view only)
+    const [selectedEquipmentDetail, setSelectedEquipmentDetail] = useState<any | null>(null);
+    const [showEquipmentDetail, setShowEquipmentDetail] = useState(false);
+    const [loadingEquipmentDetail, setLoadingEquipmentDetail] = useState(false);
+    const [equipmentDetailPhoto, setEquipmentDetailPhoto] = useState<string | null>(null);
+    const [equipmentDetailItems, setEquipmentDetailItems] = useState<any[]>([]);
 
     // Room Details Modal States
     const [showRoomDetail, setShowRoomDetail] = useState<EnhancedRoomStatus | null>(null);
@@ -142,155 +217,79 @@ const RoomInfo: React.FC = () => {
         }
     }, [activeTab]);
 
-    // html5-qrcode scanner effect
+    // QR Scanner Effect — DosenPresensi style (auto-start, no manual camera selection)
     useEffect(() => {
         if (!showBarcodeScanner) return;
-        let isMounted = true;
-        setScannerReady(false);
         setCameraError(null);
 
-        // Small delay to ensure DOM container is ready
-        const timeoutId = setTimeout(async () => {
+        const html5QrCode = new Html5Qrcode('roominfo-qr-reader');
+        html5QrCodeRef.current = html5QrCode;
+        let isMounted = true;
+
+        const startScanning = async () => {
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+            const onScanSuccess = (decodedText: string) => {
+                console.log('[QR RoomInfo] Scanned:', decodedText);
+                html5QrCode.stop().then(() => {
+                    if (isMounted) handleScanResult(decodedText);
+                }).catch((err: any) => {
+                    console.error('Failed to stop scanner:', err);
+                    if (isMounted) handleScanResult(decodedText);
+                });
+            };
+
+            const onScanError = (_err: any) => { /* ignore parse errors */ };
+
+            // Strategy 1: enumerate cameras → prefer back camera
             try {
-                const qrScannerId = 'roominfo-qr-reader';
-                const container = document.getElementById(qrScannerId);
-                if (!container || !isMounted) return;
-
-                const html5QrCode = new Html5Qrcode(qrScannerId);
-                html5QrCodeRef.current = html5QrCode;
-
-                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-                let hasScanned = false;
-                const onScanSuccess = (decodedText: string) => {
-                    if (hasScanned) return;
-                    hasScanned = true;
-                    console.log('[QR RoomInfo] Scanned:', decodedText);
-                    
-                    html5QrCode.stop().then(() => {
-                        if (isMounted) {
-                            handleScanResult(decodedText);
-                        }
-                    }).catch((err: any) => {
-                        console.error('Failed to stop scanner on success:', err);
-                        if (isMounted) {
-                            handleScanResult(decodedText);
-                        }
-                    });
-                };
-
-                const onScanError = (_errorMessage: any) => {
-                    // Ignore parse errors
-                };
-
-                // Get cameras
-                let devices: any[] = [];
-                try {
-                    devices = await Html5Qrcode.getCameras();
-                    if (!isMounted) return;
-                    setCameras(devices);
-                } catch (enumErr) {
-                    console.warn('[QR RoomInfo] Camera enumeration failed:', enumErr);
-                }
-
-                // Determine which camera to start with
-                let activeId = selectedCameraId;
-                if (!activeId && devices.length > 0) {
+                const devices = await Html5Qrcode.getCameras();
+                console.log('[QR RoomInfo] Cameras found:', devices.map(d => d.label));
+                if (devices && devices.length > 0) {
                     const backCamera = devices.find(d =>
                         d.label.toLowerCase().includes('back') ||
                         d.label.toLowerCase().includes('rear') ||
                         d.label.toLowerCase().includes('environment') ||
                         d.label.toLowerCase().includes('belakang')
                     );
-                    const initialCamera = backCamera || devices[0];
-                    activeId = initialCamera.id;
-                    setSelectedCameraId(activeId);
-                }
-
-                if (!isMounted) return;
-
-                if (activeId) {
-                    try {
-                        await html5QrCode.start(
-                            activeId,
-                            config,
-                            onScanSuccess,
-                            onScanError
-                        );
-                        if (isMounted) {
-                            setScannerReady(true);
-                            setCameraError(null);
-                        }
-                        return;
-                    } catch (err) {
-                        console.warn(`[QR RoomInfo] Failed to start with camera ID ${activeId}:`, err);
-                    }
-                }
-
-                if (!isMounted) return;
-
-                // Fallback to facingMode environment
-                try {
-                    console.log('[QR RoomInfo] Fallback: trying facingMode environment...');
-                    await html5QrCode.start(
-                        { facingMode: 'environment' },
-                        config,
-                        onScanSuccess,
-                        onScanError
-                    );
+                    const selected = backCamera || devices[0];
+                    await html5QrCode.start(selected.id, config, onScanSuccess, onScanError);
                     if (isMounted) {
-                        setScannerReady(true);
                         setCameraError(null);
+                        setScannerReady(true);
                     }
                     return;
-                } catch (envErr) {
-                    console.warn('[QR RoomInfo] Fallback environment failed:', envErr);
                 }
-
-                if (!isMounted) return;
-
-                // Fallback to facingMode user
-                try {
-                    console.log('[QR RoomInfo] Fallback: trying facingMode user...');
-                    await html5QrCode.start(
-                        { facingMode: 'user' },
-                        config,
-                        onScanSuccess,
-                        onScanError
-                    );
-                    if (isMounted) {
-                        setScannerReady(true);
-                        setCameraError(null);
-                    }
-                    return;
-                } catch (userErr) {
-                    console.warn('[QR RoomInfo] Fallback user failed:', userErr);
-                }
-
-                // All camera strategies failed
-                if (isMounted) {
-                    setCameraError('Gagal memulai kamera. Pastikan izin kamera diberikan.');
-                }
-
-            } catch (err) {
-                console.error('[QR RoomInfo] Scanner init error:', err);
-                if (isMounted) {
-                    setCameraError('Gagal menginisialisasi scanner. Coba refresh halaman.');
-                }
+            } catch (enumErr) {
+                console.warn('[QR RoomInfo] Enumerate/start failed:', enumErr);
             }
-        }, 450);
+
+            // Strategy 2: facingMode user (fallback)
+            try {
+                await html5QrCode.start({ facingMode: 'user' }, config, onScanSuccess, onScanError);
+                if (isMounted) {
+                    setCameraError(null);
+                    setScannerReady(true);
+                }
+                return;
+            } catch (fallbackErr) {
+                console.warn('[QR RoomInfo] facingMode user failed:', fallbackErr);
+            }
+
+            // All failed
+            if (isMounted) setCameraError('Gagal memulai kamera. Pastikan izin kamera diberikan dan tidak ada aplikasi lain yang menggunakan kamera.');
+        };
+
+        const timeoutId = setTimeout(() => { startScanning(); }, 500);
 
         return () => {
             isMounted = false;
             clearTimeout(timeoutId);
-            if (html5QrCodeRef.current) {
-                if (html5QrCodeRef.current.isScanning) {
-                    html5QrCodeRef.current.stop().catch(() => {});
-                }
-                html5QrCodeRef.current = null;
+            if (html5QrCode.isScanning) {
+                html5QrCode.stop().catch((err: any) => console.error('Failed to stop on cleanup', err));
             }
         };
-    }, [showBarcodeScanner, selectedCameraId]);
+    }, [showBarcodeScanner, scanRetry]);
 
     // Smart QR code parsing and equipment lookup
     const handleScanResult = async (rawValue: string) => {
@@ -334,7 +333,7 @@ const RoomInfo: React.FC = () => {
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             let foundEquipment: any = null;
 
-            const selectStr = 'id, name, code, category, condition, quantity, unit, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, floor, building:building_id(name, campus:campus_id(name))), departments(name)';
+            const selectStr = 'id, name, code, category, condition, quantity, unit, is_available, Spesification, attachments, table_id, rack_id, box_id, rooms_id, rooms:rooms_id(id, name, code, floor, building:building_id(name, campus:campus_id(name))), departments(name)';
 
             if (uuidRegex.test(searchValue)) {
                 const { data } = await supabase
@@ -373,6 +372,47 @@ const RoomInfo: React.FC = () => {
                     .ilike('name', `%${searchValue}%`)
                     .limit(1);
                 if (data && data.length > 0) foundEquipment = data[0];
+            }
+
+            if (foundEquipment) {
+                const extraLocations: any = {};
+                if (foundEquipment.table_id) {
+                    const { data: tableData } = await supabase.from('table').select('description').eq('id', foundEquipment.table_id).maybeSingle();
+                    if (tableData) extraLocations.tableName = tableData.description;
+                }
+                if (foundEquipment.rack_id) {
+                    const { data: rackData } = await supabase.from('rack').select('name').eq('id', foundEquipment.rack_id).maybeSingle();
+                    if (rackData) extraLocations.rackName = rackData.name;
+                }
+                if (foundEquipment.box_id) {
+                    const { data: boxData } = await supabase.from('box').select('name, description').eq('id', foundEquipment.box_id).maybeSingle();
+                    if (boxData) {
+                        extraLocations.boxName = boxData.name;
+                        extraLocations.boxDesc = boxData.description;
+                    }
+                }
+                foundEquipment = { ...foundEquipment, ...extraLocations };
+            }
+
+            // Parse photo
+            if (foundEquipment?.attachments) {
+                let att = foundEquipment.attachments as string;
+                if (Array.isArray(att)) {
+                    att = att[0] || '';
+                } else if (typeof att === 'string' && att.trim().startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(att);
+                        if (Array.isArray(parsed) && parsed.length > 0) att = parsed[0];
+                    } catch (e) {}
+                }
+                if (att) {
+                    if (att.startsWith('http://') || att.startsWith('https://') || att.startsWith('data:')) {
+                        foundEquipment.parsedPhoto = att;
+                    } else {
+                        const { data } = supabase.storage.from('equipment-attachments').getPublicUrl(att);
+                        foundEquipment.parsedPhoto = data.publicUrl;
+                    }
+                }
             }
 
             setScanResult({
@@ -482,6 +522,89 @@ const RoomInfo: React.FC = () => {
             setRooms(enhanced);
         } catch (err) {
             console.error('Error fetching rooms:', err);
+        }
+    };
+
+    // Fetch Equipment Detail for modal (view-only)
+    const openEquipmentDetail = async (eq: any) => {
+        setSelectedEquipmentDetail(eq);
+        setShowEquipmentDetail(true);
+        setEquipmentDetailPhoto(null);
+        setEquipmentDetailItems([]);
+        setLoadingEquipmentDetail(true);
+        try {
+            // Fetch full equipment data: rooms + building + campus + departments + table + rack + box
+            const { data: fullEq } = await supabase
+                .from('equipment')
+                .select(`
+                    id, name, code, category, quantity, unit, condition, is_available, is_mandatory,
+                    Spesification, attachments, created_at, table_id, rack_id, box_id,
+                    rooms:rooms_id(id, name, code, floor, building:building(name, campus:campus(name)), department:departments(name)),
+                    departments(name)
+                `)
+                .eq('id', eq.id)
+                .single();
+            if (fullEq) setSelectedEquipmentDetail(fullEq);
+
+            // Fetch photo — handle JSON string array, full URL, or Supabase storage path
+            if (fullEq?.attachments) {
+                let att = fullEq.attachments as string;
+                
+                // Pengecekan aman untuk JSON parsing dan Array (Sama seperti ToolAdministration)
+                if (Array.isArray(att)) {
+                    att = att[0] || '';
+                } else if (typeof att === 'string' && att.trim().startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(att);
+                        if (Array.isArray(parsed) && parsed.length > 0) att = parsed[0];
+                    } catch (e) {
+                        // ignore and use raw string
+                    }
+                }
+
+                if (!att) {
+                    setEquipmentDetailPhoto(null);
+                } else if (att.startsWith('http://') || att.startsWith('https://') || att.startsWith('data:')) {
+                    setEquipmentDetailPhoto(att);
+                } else {
+                    // Try as Supabase storage public URL
+                    const { data: urlData } = supabase.storage.from('equipment-photos').getPublicUrl(att);
+                    setEquipmentDetailPhoto(urlData?.publicUrl || att);
+                }
+            }
+
+            // Fetch cabinet/table, rack, box names if IDs present
+            const extraLocations: any = {};
+            if (fullEq?.table_id) {
+                const { data: tableData } = await supabase.from('table').select('description').eq('id', fullEq.table_id).maybeSingle();
+                if (tableData) extraLocations.tableName = tableData.description;
+            }
+            if (fullEq?.rack_id) {
+                const { data: rackData } = await supabase.from('rack').select('name').eq('id', fullEq.rack_id).maybeSingle();
+                if (rackData) extraLocations.rackName = rackData.name;
+            }
+            if (fullEq?.box_id) {
+                const { data: boxData } = await supabase.from('box').select('name, description').eq('id', fullEq.box_id).maybeSingle();
+                if (boxData) {
+                    extraLocations.boxName = boxData.name;
+                    extraLocations.boxDesc = boxData.description;
+                }
+            }
+            if (Object.keys(extraLocations).length > 0) {
+                setSelectedEquipmentDetail((prev: any) => prev ? { ...prev, ...extraLocations } : null);
+            }
+            
+            // Fetch detail_equipment sub-items
+            const { data: details } = await supabase
+                .from('detail_equipment')
+                .select('id, name, code, quantity, unit, condition, attachments, notes')
+                .eq('equipment_id', eq.id)
+                .order('created_at', { ascending: true });
+            setEquipmentDetailItems(details || []);
+        } catch (err) {
+            console.error('Error fetching equipment detail:', err);
+        } finally {
+            setLoadingEquipmentDetail(false);
         }
     };
 
@@ -731,36 +854,37 @@ const RoomInfo: React.FC = () => {
     const filteredRooms = rooms.filter(room => {
         const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             room.code.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesDept = deptFilter === 'all' || room.department?.id === deptFilter;
-        const matchesSp = spFilter === 'all' || (room.study_program_ids && room.study_program_ids.includes(spFilter));
-        
-        let matchesStatus = true;
-        if (statusFilter === 'available') {
-            matchesStatus = room.is_available;
-        } else if (statusFilter === 'unavailable') {
-            matchesStatus = !room.is_available;
-        }
-
-        return matchesSearch && matchesDept && matchesSp && matchesStatus;
+        return matchesSearch;
     });
 
+    const totalRoomPages = Math.max(1, Math.ceil(filteredRooms.length / roomPageSize));
+    const paginatedRooms = filteredRooms.slice(
+        roomCurrentPage * roomPageSize,
+        (roomCurrentPage + 1) * roomPageSize
+    );
+    const resetRoomPage = () => setRoomCurrentPage(0);
+
     // Filter logic for equipment
-    const equipmentCategories = [...new Set(allEquipment.map(eq => eq.category).filter(Boolean))];
-    const equipmentNames = [...new Set(allEquipment.map(eq => eq.name).filter(Boolean))].sort();
-    const filteredDropdownNames = equipmentNames.filter(name =>
-        name.toLowerCase().includes(eqDropdownSearchTerm.toLowerCase())
+    // Unique room names from loaded equipment for the room filter dropdown
+    const equipmentRoomNames = [...new Set(
+        allEquipment.map(eq => (eq as any).rooms?.name).filter(Boolean)
+    )].sort() as string[];
+    const filteredRoomDropdownNames = equipmentRoomNames.filter(name =>
+        name.toLowerCase().includes(roomFilterSearchTerm.toLowerCase())
     );
     const filteredEquipment = allEquipment.filter(eq => {
         const term = equipmentSearchTerm.toLowerCase();
         const matchesSearch = !term || eq.name.toLowerCase().includes(term) || eq.code.toLowerCase().includes(term);
-        const matchesName = equipmentNameFilter === 'all' || eq.name === equipmentNameFilter;
-        const matchesCategory = equipmentCategoryFilter === 'all' || eq.category === equipmentCategoryFilter;
-        const matchesCondition = equipmentConditionFilter === 'all' || eq.condition === equipmentConditionFilter;
-        const matchesUsage = equipmentUsageFilter === 'all' ||
-            (equipmentUsageFilter === 'available' && eq.is_available) ||
-            (equipmentUsageFilter === 'inuse' && !eq.is_available);
-        return matchesSearch && matchesName && matchesCategory && matchesCondition && matchesUsage;
+        const matchesRoom = equipmentRoomFilter === 'all' || (eq as any).rooms?.name === equipmentRoomFilter;
+        return matchesSearch && matchesRoom;
     });
+    // Pagination
+    const totalPages = Math.max(1, Math.ceil(filteredEquipment.length / equipmentPageSize));
+    const paginatedEquipment = filteredEquipment.slice(
+        equipmentCurrentPage * equipmentPageSize,
+        (equipmentCurrentPage + 1) * equipmentPageSize
+    );
+    const resetEquipmentPage = () => setEquipmentCurrentPage(0);
 
     const getEquipmentConditionChip = (condition: string | null) => {
         const text = condition || 'GOOD';
@@ -860,23 +984,37 @@ const RoomInfo: React.FC = () => {
     };
 
     return (
-        <div className="p-4 sm:p-6 max-w-[1600px] mx-auto space-y-6">
-            {/* Header section with abstract dynamic styling */}
-            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-white opacity-5 rounded-full -mr-16 -mt-16 pointer-events-none" />
-                <div className="space-y-2 relative z-10">
-                    <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">{getText('Facilities & Infrastructure Info', 'Informasi Sarana Prasarana')}</h2>
-                    <p className="text-blue-100 max-w-xl text-sm leading-relaxed">
-                        {getText('View room details, capacity, facilities, equipment inventory, and daily schedule info.', 'Lihat informasi ruangan, kapasitas, fasilitas, inventaris alat, serta jadwal penggunaan ruangan harian.')}
-                    </p>
-                </div>
-                <div className="flex items-center gap-3 relative z-10 flex-shrink-0">
-                    <div className="px-4 py-2 bg-white bg-opacity-25 backdrop-blur-md rounded-xl text-xs font-bold uppercase tracking-widest">{getText('Public Access', 'Akses Publik')}</div>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+            {/* Header */}
+            <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-30">
+                <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                            <div className="p-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-lg">
+                                <Info className="h-8 w-8 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                                    {getText('Facilities & Infrastructure Info', 'Informasi Sarana Prasarana')}
+                                </h1>
+                                <p className="text-gray-600 mt-1 text-sm max-w-2xl">
+                                    {getText('View room details, capacity, facilities, equipment inventory, and daily schedule info.', 'Lihat informasi ruangan, kapasitas, fasilitas, inventaris alat, serta jadwal penggunaan ruangan harian.')}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="hidden md:block">
+                            <div className="px-4 py-2 bg-blue-100 rounded-xl text-xs font-bold uppercase tracking-widest text-blue-700">
+                                {getText('Public Access', 'Akses Publik')}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
+            <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-8 space-y-6">
+
             {/* Tab Navigation */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-1.5 flex gap-2 max-w-md">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-1.5 flex gap-2 w-full">
                 <button
                     onClick={() => setActiveTab('rooms')}
                     className={`flex-1 flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-sm font-medium transition-all duration-300 ${
@@ -915,82 +1053,22 @@ const RoomInfo: React.FC = () => {
                                 type="text"
                                 placeholder={getText('Search rooms by name or code...', 'Cari ruangan berdasarkan nama atau kode...')}
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={(e) => { setSearchTerm(e.target.value); resetRoomPage(); }}
                                 className="w-full pl-11 pr-4 py-3 border-2 border-gray-100 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm"
                             />
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
-                            {/* Department filter */}
-                            <div className="flex items-center gap-2">
-                                <Filter className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                            {/* Per-page selector */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="text-xs text-gray-500 whitespace-nowrap">{getText('Show', 'Tampil')}</span>
                                 <select
-                                    value={deptFilter}
-                                    onChange={(e) => setDeptFilter(e.target.value)}
-                                    className="px-4 py-2.5 bg-gray-55 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-gray-700 font-medium"
+                                    value={roomPageSize}
+                                    onChange={(e) => { setRoomPageSize(Number(e.target.value)); resetRoomPage(); }}
+                                    className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-blue-500 bg-white"
                                 >
-                                    <option value="all">{getText('All Departments', 'Semua Departemen')}</option>
-                                    {departments.map(d => (
-                                        <option key={d.id} value={d.id}>{d.name}</option>
-                                    ))}
+                                    {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </div>
-
-                            {/* Study Program custom dropdown */}
-                            <div className="relative text-left" id="sp-dropdown-container">
-                                <button
-                                    onClick={() => setIsSpDropdownOpen(!isSpDropdownOpen)}
-                                    className="w-full sm:w-auto px-4 py-2.5 border border-gray-200 rounded-xl text-base focus:outline-none focus:border-blue-500 text-gray-700 bg-white min-w-[200px] flex items-center justify-between gap-2 cursor-pointer shadow-sm font-normal"
-                                >
-                                    <span className="truncate">
-                                        {spFilter === 'all' 
-                                            ? getText('All Study Programs', 'Semua Program Studi') 
-                                            : studyPrograms.find(sp => sp.id === spFilter)?.name || spFilter}
-                                    </span>
-                                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isSpDropdownOpen ? 'rotate-180' : ''}`} />
-                                </button>
-                                
-                                {isSpDropdownOpen && (
-                                    <div className="absolute bottom-full left-0 mb-1 w-full min-w-[280px] bg-white border border-gray-200 rounded-xl shadow-xl z-[100] max-h-[300px] overflow-y-auto py-1 animate-in fade-in slide-in-from-bottom-1 duration-100">
-                                        <button
-                                            onClick={() => {
-                                                setSpFilter('all');
-                                                setIsSpDropdownOpen(false);
-                                            }}
-                                            className={`w-full text-left px-4 py-2.5 text-base hover:bg-gray-100 hover:text-gray-900 transition-colors ${
-                                                spFilter === 'all' ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-800 font-normal'
-                                            }`}
-                                        >
-                                            {getText('All Study Programs', 'Semua Program Studi')}
-                                        </button>
-                                        {studyPrograms.map(sp => (
-                                            <button
-                                                key={sp.id}
-                                                onClick={() => {
-                                                    setSpFilter(sp.id);
-                                                    setIsSpDropdownOpen(false);
-                                                }}
-                                                className={`w-full text-left px-4 py-2.5 text-base hover:bg-gray-100 hover:text-gray-900 transition-colors truncate ${
-                                                    spFilter === sp.id ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-800 font-normal'
-                                                }`}
-                                                title={sp.name}
-                                            >
-                                                {sp.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Status filter */}
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                className="px-4 py-2.5 bg-gray-55 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-gray-700 font-medium"
-                            >
-                                <option value="all">{getText('All Status', 'Semua Status')}</option>
-                                <option value="available">{getText('Available', 'Tersedia')}</option>
-                                <option value="unavailable">{getText('Not Available', 'Tidak Tersedia')}</option>
-                            </select>
 
                             {/* Grid/List View Toggles */}
                             <div className="flex border border-gray-200 rounded-xl overflow-hidden p-0.5 bg-gray-55 flex-shrink-0">
@@ -1009,7 +1087,7 @@ const RoomInfo: React.FC = () => {
                     ) : filteredRooms.length > 0 ? (
                         viewMode === 'grid' ? (
                             <div className="grid grid-cols-1 gap-4">
-                                {filteredRooms.map(room => (
+                                {paginatedRooms.map(room => (
                                     <div key={room.id} className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:border-blue-100 transition-all duration-300 group flex flex-col gap-3">
                                         {/* Top Section: Info & Action Button */}
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -1065,7 +1143,7 @@ const RoomInfo: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredRooms.map(room => (
+                                        {paginatedRooms.map(room => (
                                             <tr key={room.id} className="border-b border-gray-100 hover:bg-gray-50 transition-all duration-200">
                                                 <td className="px-6 py-4 font-normal text-gray-700 text-sm whitespace-nowrap">{room.name}</td>
                                                 <td className="px-6 py-4 text-sm font-normal text-gray-500 whitespace-nowrap">{room.code}</td>
@@ -1090,6 +1168,57 @@ const RoomInfo: React.FC = () => {
                             <p className="text-gray-400 text-sm mt-1">{getText('Try adjusting your search or filter keywords.', 'Coba sesuaikan kata kunci pencarian atau filter Anda.')}</p>
                         </div>
                     )}
+
+                    {/* Room Pagination Controls */}
+                    {!loading && filteredRooms.length > 0 && (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+                            <div className="text-sm text-gray-500">
+                                {getText(
+                                    `Showing ${roomCurrentPage * roomPageSize + 1}-${Math.min((roomCurrentPage + 1) * roomPageSize, filteredRooms.length)} of ${filteredRooms.length} rooms`,
+                                    `Menampilkan ${roomCurrentPage * roomPageSize + 1}-${Math.min((roomCurrentPage + 1) * roomPageSize, filteredRooms.length)} dari ${filteredRooms.length} ruangan`
+                                )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setRoomCurrentPage(0)}
+                                    disabled={roomCurrentPage === 0}
+                                    className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                >{'<<'}</button>
+                                <button
+                                    onClick={() => setRoomCurrentPage(p => Math.max(0, p - 1))}
+                                    disabled={roomCurrentPage === 0}
+                                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                >{getText('Prev', 'Sebelum')}</button>
+                                {Array.from({ length: Math.min(5, totalRoomPages) }, (_, i) => {
+                                    const start = Math.max(0, Math.min(roomCurrentPage - 2, totalRoomPages - 5));
+                                    const page = start + i;
+                                    return (
+                                        <button
+                                            key={page}
+                                            onClick={() => setRoomCurrentPage(page)}
+                                            className={`px-3 py-1.5 text-xs border rounded-lg transition-colors ${
+                                                roomCurrentPage === page
+                                                    ? 'bg-blue-600 border-blue-600 text-white font-medium'
+                                                    : 'border-gray-200 hover:bg-gray-100 text-gray-700'
+                                            }`}
+                                        >
+                                            {page + 1}
+                                        </button>
+                                    );
+                                })}
+                                <button
+                                    onClick={() => setRoomCurrentPage(p => Math.min(totalRoomPages - 1, p + 1))}
+                                    disabled={roomCurrentPage >= totalRoomPages - 1}
+                                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                >{getText('Next', 'Berikut')}</button>
+                                <button
+                                    onClick={() => setRoomCurrentPage(totalRoomPages - 1)}
+                                    disabled={roomCurrentPage >= totalRoomPages - 1}
+                                    className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                >{'>>'}</button>
+                            </div>
+                        </div>
+                    )}
                 </>
             )}
 
@@ -1098,199 +1227,129 @@ const RoomInfo: React.FC = () => {
                 <>
                     {/* Equipment Filters */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex flex-col gap-3">
-                        {/* Row 1: Search text + Scan Barcode + Dropdown nama alat */}
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            {/* Text search + Scan button */}
-                            <div className="relative flex-1 flex gap-2">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        placeholder={getText('Search by name or code... e.g. HDMI, Projector', 'Ketik nama alat... cth: Kabel HDMI, Proyektor')}
-                                        value={equipmentSearchTerm}
-                                        onChange={(e) => { setEquipmentSearchTerm(e.target.value); setEquipmentNameFilter('all'); }}
-                                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors text-sm"
-                                    />
-                                </div>
-                                {/* Scan barcode button */}
-                                <button
-                                    onClick={() => setShowBarcodeScanner(true)}
-                                    className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-all flex-shrink-0"
-                                    title={getText('Scan Barcode', 'Scan Barcode')}
-                                >
-                                    <ScanBarcode className="h-5 w-5" />
-                                    <span className="hidden sm:inline">{getText('Scan', 'Scan')}</span>
-                                </button>
+                        {/* Row 1: Search text + Scan + Room Filter Dropdown + Per-page */}
+                        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                            {/* Text search */}
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder={getText('Search by name or code...', 'Ketik nama atau kode alat...')}
+                                    value={equipmentSearchTerm}
+                                    onChange={(e) => { setEquipmentSearchTerm(e.target.value); resetEquipmentPage(); }}
+                                    className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors text-sm"
+                                />
+                                {equipmentSearchTerm && (
+                                    <button onClick={() => { setEquipmentSearchTerm(''); resetEquipmentPage(); }} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded">
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                )}
                             </div>
-                            
-                            {/* Dropdown nama alat */}
-                            <div className="relative" id="eq-name-dropdown-container">
+
+                            {/* Scan barcode button */}
+                            <button
+                                onClick={() => setShowBarcodeScanner(true)}
+                                className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-all flex-shrink-0"
+                                title={getText('Scan Barcode / QR Code', 'Scan Barcode / QR Code')}
+                            >
+                                <ScanBarcode className="h-5 w-5" />
+                                <span className="hidden sm:inline">{getText('Scan', 'Scan')}</span>
+                            </button>
+
+                            {/* Room filter dropdown */}
+                            <div className="relative flex-shrink-0" id="room-filter-dropdown">
                                 <button
-                                    onClick={() => setIsEqNameDropdownOpen(!isEqNameDropdownOpen)}
-                                    className="w-full sm:w-auto px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500 text-gray-700 bg-white min-w-[240px] flex items-center justify-between gap-2 cursor-pointer shadow-sm"
+                                    onClick={() => setIsRoomFilterDropdownOpen(!isRoomFilterDropdownOpen)}
+                                    className="w-full sm:w-auto px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500 text-gray-700 bg-white min-w-[200px] flex items-center justify-between gap-2 cursor-pointer shadow-sm"
                                 >
-                                    <span className="truncate">
-                                        {equipmentNameFilter === 'all' 
-                                            ? getText('All Equipment Names', 'Semua Nama Alat') 
-                                            : equipmentNameFilter}
+                                    <span className="truncate flex items-center gap-1.5">
+                                        <MapPin className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                                        {equipmentRoomFilter === 'all' ? getText('All Rooms', 'Semua Ruangan') : equipmentRoomFilter}
                                     </span>
-                                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isEqNameDropdownOpen ? 'rotate-180' : ''}`} />
+                                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isRoomFilterDropdownOpen ? 'rotate-180' : ''}`} />
                                 </button>
-                                
-                                {isEqNameDropdownOpen && (
-                                    <div className="absolute top-full right-0 sm:left-0 mt-1 w-[280px] bg-white border border-gray-200 rounded-xl shadow-xl z-[100] max-h-[320px] flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-1 duration-100">
-                                        {/* Dropdown Search Input */}
+                                {isRoomFilterDropdownOpen && (
+                                    <div className="absolute top-full right-0 sm:left-0 mt-1 w-[260px] bg-white border border-gray-200 rounded-xl shadow-xl z-[100] max-h-[300px] flex flex-col overflow-hidden">
                                         <div className="p-2 border-b border-gray-100 flex items-center gap-1.5 bg-gray-50/50">
                                             <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
                                             <input
                                                 type="text"
-                                                placeholder={getText('Filter names...', 'Ketik nama alat...')}
-                                                value={eqDropdownSearchTerm}
-                                                onChange={(e) => setEqDropdownSearchTerm(e.target.value)}
+                                                placeholder={getText('Filter rooms...', 'Cari nama ruangan...')}
+                                                value={roomFilterSearchTerm}
+                                                onChange={(e) => setRoomFilterSearchTerm(e.target.value)}
                                                 className="w-full bg-transparent text-xs focus:outline-none text-gray-700 placeholder-gray-400 py-1"
                                                 autoFocus
                                             />
-                                            {eqDropdownSearchTerm && (
-                                                <button 
-                                                    onClick={() => setEqDropdownSearchTerm('')}
-                                                    className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded animate-in fade-in duration-100"
-                                                >
-                                                    <X className="h-3 w-3" />
-                                                </button>
+                                            {roomFilterSearchTerm && (
+                                                <button onClick={() => setRoomFilterSearchTerm('')} className="p-0.5 text-gray-400 hover:text-gray-600 rounded"><X className="h-3 w-3" /></button>
                                             )}
                                         </div>
-                                        {/* Dropdown Items */}
                                         <div className="overflow-y-auto flex-1 py-1">
                                             <button
-                                                onClick={() => {
-                                                    setEquipmentNameFilter('all');
-                                                    setIsEqNameDropdownOpen(false);
-                                                    setEqDropdownSearchTerm('');
-                                                }}
-                                                className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors ${
-                                                    equipmentNameFilter === 'all' ? 'text-emerald-600 font-medium bg-emerald-50/50' : 'text-gray-700'
-                                                }`}
+                                                onClick={() => { setEquipmentRoomFilter('all'); setIsRoomFilterDropdownOpen(false); setRoomFilterSearchTerm(''); resetEquipmentPage(); }}
+                                                className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors ${equipmentRoomFilter === 'all' ? 'text-emerald-600 font-medium bg-emerald-50/50' : 'text-gray-700'}`}
                                             >
-                                                {getText('All Equipment Names', 'Semua Nama Alat')}
+                                                {getText('All Rooms', 'Semua Ruangan')}
                                             </button>
-                                            {filteredDropdownNames.length > 0 ? (
-                                                filteredDropdownNames.map(name => (
-                                                    <button
-                                                        key={name}
-                                                        onClick={() => {
-                                                            setEquipmentNameFilter(name);
-                                                            setEquipmentSearchTerm('');
-                                                            setIsEqNameDropdownOpen(false);
-                                                            setEqDropdownSearchTerm('');
-                                                        }}
-                                                        className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors truncate ${
-                                                            equipmentNameFilter === name ? 'text-emerald-600 font-medium bg-emerald-50/50' : 'text-gray-700'
-                                                        }`}
-                                                    >
-                                                        {name}
-                                                    </button>
-                                                ))
-                                            ) : (
-                                                <div className="px-4 py-3 text-xs text-gray-400 italic text-center">
-                                                    {getText('No names match', 'Tidak ada nama cocok')}
-                                                </div>
+                                            {filteredRoomDropdownNames.length > 0 ? filteredRoomDropdownNames.map(name => (
+                                                <button
+                                                    key={name}
+                                                    onClick={() => { setEquipmentRoomFilter(name); setIsRoomFilterDropdownOpen(false); setRoomFilterSearchTerm(''); resetEquipmentPage(); }}
+                                                    className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors truncate ${equipmentRoomFilter === name ? 'text-emerald-600 font-medium bg-emerald-50/50' : 'text-gray-700'}`}
+                                                    title={name}
+                                                >
+                                                    {name}
+                                                </button>
+                                            )) : (
+                                                <div className="px-4 py-3 text-xs text-gray-400 italic text-center">{getText('No rooms match', 'Tidak ada ruangan cocok')}</div>
                                             )}
                                         </div>
                                     </div>
                                 )}
                             </div>
-                        </div>
-                        {/* Row 2: Category + Condition + Usage Status filters */}
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-gray-400 mr-1">{getText('Filter:', 'Filter:')}</span>
-                            {/* Category */}
-                            <div className="flex items-center gap-1.5">
-                                <Tag className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+
+                            {/* Per-page selector */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="text-xs text-gray-500 whitespace-nowrap">{getText('Show', 'Tampil')}</span>
                                 <select
-                                    value={equipmentCategoryFilter}
-                                    onChange={(e) => setEquipmentCategoryFilter(e.target.value)}
-                                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500 text-gray-600 bg-white"
+                                    value={equipmentPageSize}
+                                    onChange={(e) => { setEquipmentPageSize(Number(e.target.value)); resetEquipmentPage(); }}
+                                    className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-emerald-500 bg-white"
                                 >
-                                    <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
-                                    {equipmentCategories.map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
-                                    ))}
+                                    {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
                                 </select>
                             </div>
-                            {/* Condition */}
-                            <select
-                                value={equipmentConditionFilter}
-                                onChange={(e) => setEquipmentConditionFilter(e.target.value)}
-                                className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500 text-gray-600 bg-white"
-                            >
-                                <option value="all">{getText('All Conditions', 'Semua Kondisi')}</option>
-                                <option value="GOOD">{getText('Good', 'Baik')}</option>
-                                <option value="BROKEN">{getText('Broken', 'Rusak')}</option>
-                                <option value="MAINTENANCE">{getText('Maintenance', 'Perawatan')}</option>
-                            </select>
-                            {/* Usage Status */}
-                            <select
-                                value={equipmentUsageFilter}
-                                onChange={(e) => setEquipmentUsageFilter(e.target.value)}
-                                className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500 text-gray-600 bg-white"
-                            >
-                                <option value="all">{getText('All Status', 'Semua Status')}</option>
-                                <option value="available">{getText('Available', 'Tersedia')}</option>
-                                <option value="inuse">{getText('In Use', 'Sedang Dipakai')}</option>
-                            </select>
-                            {/* Reset filters */}
-                            {(equipmentSearchTerm || equipmentNameFilter !== 'all' || equipmentCategoryFilter !== 'all' || equipmentConditionFilter !== 'all' || equipmentUsageFilter !== 'all') && (
+                        </div>
+
+                        {/* Active filter chips */}
+                        {(equipmentSearchTerm || equipmentRoomFilter !== 'all') && (
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-xs text-gray-400">{getText('Active filters:', 'Filter aktif:')}</span>
+                                {equipmentSearchTerm && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium border border-emerald-200">
+                                        <Search className="h-3 w-3" />"{equipmentSearchTerm}"
+                                        <button onClick={() => { setEquipmentSearchTerm(''); resetEquipmentPage(); }} className="ml-1 hover:text-red-500"><X className="h-3 w-3" /></button>
+                                    </span>
+                                )}
+                                {equipmentRoomFilter !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-200">
+                                        <MapPin className="h-3 w-3" />{equipmentRoomFilter}
+                                        <button onClick={() => { setEquipmentRoomFilter('all'); resetEquipmentPage(); }} className="ml-1 hover:text-red-500"><X className="h-3 w-3" /></button>
+                                    </span>
+                                )}
                                 <button
-                                    onClick={() => { setEquipmentSearchTerm(''); setEquipmentNameFilter('all'); setEquipmentCategoryFilter('all'); setEquipmentConditionFilter('all'); setEquipmentUsageFilter('all'); }}
-                                    className="px-3 py-1.5 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                                    onClick={() => { setEquipmentSearchTerm(''); setEquipmentRoomFilter('all'); resetEquipmentPage(); }}
+                                    className="text-xs text-red-500 hover:text-red-700 underline"
                                 >
-                                    {getText('Reset', 'Reset Filter')}
+                                    {getText('Reset all', 'Reset semua')}
                                 </button>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Equipment Stats Summary */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3">
-                            <div className="p-2.5 bg-emerald-50 rounded-xl">
-                                <Package className="h-5 w-5 text-emerald-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-extrabold text-gray-900">{allEquipment.length}</p>
-                                <p className="text-xs text-gray-500 font-semibold">{getText('Total Equipment', 'Total Alat')}</p>
-                            </div>
-                        </div>
-                        <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3">
-                            <div className="p-2.5 bg-green-50 rounded-xl">
-                                <CheckCircle className="h-5 w-5 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-extrabold text-gray-900">{allEquipment.filter(eq => eq.condition === 'GOOD' || !eq.condition).length}</p>
-                                <p className="text-xs text-gray-500 font-semibold">{getText('Good Condition', 'Kondisi Baik')}</p>
-                            </div>
-                        </div>
-                        <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3">
-                            <div className="p-2.5 bg-red-50 rounded-xl">
-                                <AlertCircle className="h-5 w-5 text-red-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-extrabold text-gray-900">{allEquipment.filter(eq => eq.condition === 'BROKEN').length}</p>
-                                <p className="text-xs text-gray-500 font-semibold">{getText('Broken', 'Rusak')}</p>
-                            </div>
-                        </div>
-                        <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3">
-                            <div className="p-2.5 bg-amber-50 rounded-xl">
-                                <Wrench className="h-5 w-5 text-amber-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-extrabold text-gray-900">{allEquipment.filter(eq => eq.condition === 'MAINTENANCE').length}</p>
-                                <p className="text-xs text-gray-500 font-semibold">{getText('Maintenance', 'Perawatan')}</p>
-                            </div>
-                        </div>
-                    </div>
+                    {/* Equipment Stats Summary Removed */}
 
-                    {/* Equipment Table — horizontal, 1 row per item */}
+                    {/* Equipment Table */}
                     {loadingAllEquipment && allEquipment.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-20 gap-3">
                             <Loader2 className="h-10 w-10 text-emerald-600 animate-spin" />
@@ -1299,9 +1358,12 @@ const RoomInfo: React.FC = () => {
                     ) : filteredEquipment.length > 0 ? (
                         <div className="bg-white border border-gray-200 rounded-2xl overflow-x-auto shadow-sm">
                             {/* Info bar */}
-                            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+                            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between flex-wrap gap-2">
                                 <span className="text-xs text-gray-500">
-                                    {getText(`Showing ${filteredEquipment.length} of ${allEquipment.length} items`, `Menampilkan ${filteredEquipment.length} dari ${allEquipment.length} alat`)}
+                                    {getText(
+                                        `Showing ${equipmentCurrentPage * equipmentPageSize + 1}–${Math.min((equipmentCurrentPage + 1) * equipmentPageSize, filteredEquipment.length)} of ${filteredEquipment.length} items`,
+                                        `Menampilkan ${equipmentCurrentPage * equipmentPageSize + 1}–${Math.min((equipmentCurrentPage + 1) * equipmentPageSize, filteredEquipment.length)} dari ${filteredEquipment.length} alat`
+                                    )}
                                 </span>
                                 <span className="text-xs text-gray-400">
                                     {filteredEquipment.filter(e => !e.is_available).length} {getText('currently in use', 'sedang dipakai')}
@@ -1310,48 +1372,32 @@ const RoomInfo: React.FC = () => {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-200">
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">No</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Equipment Name', 'Nama Alat')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Code', 'Kode')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Category', 'Kategori')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Qty', 'Jumlah')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Condition', 'Kondisi')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Room Location', 'Lokasi Ruangan')}</th>
-                                        <th className="px-5 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Department', 'Departemen')}</th>
+                                        <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">No</th>
+                                        <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Equipment Name', 'Nama Alat')}</th>
+                                        <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Code', 'Kode')}</th>
+                                        <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Qty', 'Jumlah')}</th>
+                                        <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Room Location', 'Lokasi')}</th>
+                                        <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap text-right">{getText('Detail', 'Detail')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredEquipment.map((eq, idx) => {
+                                    {paginatedEquipment.map((eq, idx) => {
                                         const eqRoom = (eq as any).rooms;
-                                        const eqDept = (eq as any).departments;
                                         const isInUse = !eq.is_available;
+                                        const rowNum = equipmentCurrentPage * equipmentPageSize + idx + 1;
                                         return (
                                             <tr key={eq.id} className={`border-b border-gray-100 transition-all duration-150 ${ isInUse ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-emerald-50/20' }`}>
-                                                <td className="px-5 py-3.5 text-xs text-gray-400 whitespace-nowrap">{idx + 1}</td>
-                                                {/* Nama alat */}
-                                                <td className="px-5 py-3.5 whitespace-nowrap">
-                                                    <span className="text-sm text-gray-700">{eq.name}</span>
+                                                <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{rowNum}</td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className="text-sm font-medium text-gray-800">{eq.name}</span>
                                                 </td>
-                                                {/* Kode */}
-                                                <td className="px-5 py-3.5 whitespace-nowrap">
+                                                <td className="px-4 py-3 whitespace-nowrap">
                                                     <span className="text-xs text-gray-400 font-mono">{eq.code}</span>
                                                 </td>
-                                                {/* Kategori */}
-                                                <td className="px-5 py-3.5 whitespace-nowrap">
-                                                    {eq.category
-                                                        ? <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-xs">{eq.category}</span>
-                                                        : <span className="text-gray-300 text-xs">—</span>}
-                                                </td>
-                                                {/* Jumlah */}
-                                                <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">
+                                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                                                     {eq.quantity != null ? `${eq.quantity} ${eq.unit || ''}`.trim() : '—'}
                                                 </td>
-                                                {/* Kondisi */}
-                                                <td className="px-5 py-3.5 whitespace-nowrap">
-                                                    {getEquipmentConditionChip(eq.condition)}
-                                                </td>
-                                                {/* Lokasi Ruangan — detail */}
-                                                <td className="px-5 py-3.5 whitespace-nowrap">
+                                                <td className="px-4 py-3 whitespace-nowrap">
                                                     {eqRoom ? (
                                                         <div className="flex flex-col gap-0.5">
                                                             <div className="flex items-center gap-1.5">
@@ -1369,15 +1415,66 @@ const RoomInfo: React.FC = () => {
                                                         <span className="text-gray-300 italic text-xs">{getText('Not assigned', 'Belum ada ruangan')}</span>
                                                     )}
                                                 </td>
-                                                {/* Departemen */}
-                                                <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">
-                                                    {eqDept ? eqDept.name : <span className="text-gray-300 text-xs">—</span>}
+                                                <td className="px-4 py-3 whitespace-nowrap text-right">
+                                                    <button
+                                                        onClick={() => openEquipmentDetail(eq)}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-xs font-medium transition-all duration-200 border border-emerald-200 hover:border-emerald-600"
+                                                        title={getText('View Equipment Detail', 'Lihat Detail Alat')}
+                                                    >
+                                                        <Eye className="h-3.5 w-3.5" />
+                                                        {getText('Detail', 'Detail')}
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );
                                     })}
                                 </tbody>
                             </table>
+                            {/* Pagination controls */}
+                            {totalPages > 1 && (
+                                <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex items-center justify-between flex-wrap gap-2">
+                                    <span className="text-xs text-gray-500">
+                                        {getText(`Page ${equipmentCurrentPage + 1} of ${totalPages}`, `Halaman ${equipmentCurrentPage + 1} dari ${totalPages}`)}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => setEquipmentCurrentPage(0)}
+                                            disabled={equipmentCurrentPage === 0}
+                                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                        >«</button>
+                                        <button
+                                            onClick={() => setEquipmentCurrentPage(p => Math.max(0, p - 1))}
+                                            disabled={equipmentCurrentPage === 0}
+                                            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                        >{getText('Prev', 'Sebelum')}</button>
+                                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                            const start = Math.max(0, Math.min(equipmentCurrentPage - 2, totalPages - 5));
+                                            const page = start + i;
+                                            return (
+                                                <button
+                                                    key={page}
+                                                    onClick={() => setEquipmentCurrentPage(page)}
+                                                    className={`px-3 py-1.5 text-xs border rounded-lg transition-colors ${
+                                                        page === equipmentCurrentPage
+                                                            ? 'bg-emerald-600 text-white border-emerald-600'
+                                                            : 'border-gray-200 hover:bg-gray-100'
+                                                    }`}
+                                                >{page + 1}</button>
+                                            );
+                                        })}
+                                        <button
+                                            onClick={() => setEquipmentCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                                            disabled={equipmentCurrentPage >= totalPages - 1}
+                                            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                        >{getText('Next', 'Berikut')}</button>
+                                        <button
+                                            onClick={() => setEquipmentCurrentPage(totalPages - 1)}
+                                            disabled={equipmentCurrentPage >= totalPages - 1}
+                                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                        >»</button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="text-center py-20 bg-white border border-gray-200 rounded-2xl">
@@ -1386,14 +1483,342 @@ const RoomInfo: React.FC = () => {
                             <p className="text-gray-400 text-sm mt-1">{getText('Try adjusting your search or filter keywords.', 'Coba sesuaikan kata kunci pencarian atau filter Anda.')}</p>
                         </div>
                     )}
-                    {hasMoreEquipment && !loadingAllEquipment && (
-                        <div className="flex justify-center mt-4">
-                            <button onClick={() => fetchAllEquipment(equipmentPage + 1)} className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition text-sm">
-                                {getText('Load More', 'Muat Lebih')}
+                </>
+            )}
+
+            {/* ======================== Equipment Detail Modal (View-Only) ======================== */}
+            {showEquipmentDetail && selectedEquipmentDetail && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 p-6 text-white flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-xl font-bold">{selectedEquipmentDetail.name}</h3>
+                                    <p className="text-indigo-200 text-sm mt-0.5">{getText('Complete Equipment Information', 'Informasi Lengkap Peralatan')}</p>
+                                </div>
+                                <button
+                                    onClick={() => { setShowEquipmentDetail(false); setSelectedEquipmentDetail(null); }}
+                                    className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                            {loadingEquipmentDetail ? (
+                                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                                    <Loader2 className="h-10 w-10 text-indigo-500 animate-spin" />
+                                    <p className="text-gray-500 text-sm">{getText('Loading equipment details...', 'Memuat detail peralatan...')}</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Equipment Photo */}
+                                    {equipmentDetailPhoto ? (
+                                        <div className="relative rounded-xl overflow-hidden shadow-md h-56">
+                                            <ImageWithLoader
+                                                src={equipmentDetailPhoto}
+                                                alt={selectedEquipmentDetail.name}
+                                                className="w-full h-full object-cover"
+                                                title={selectedEquipmentDetail.name}
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                                            <div className="absolute bottom-0 left-0 right-0 p-6 flex items-end justify-between">
+                                                <div>
+                                                    <h4 className="text-white font-bold text-2xl drop-shadow-md">{selectedEquipmentDetail.name}</h4>
+                                                    <p className="text-white/80 text-sm font-mono mt-1">{selectedEquipmentDetail.code}</p>
+                                                </div>
+                                                <button onClick={() => setShowEquipmentImageFullscreen(true)} className="p-3 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-white transition-all shadow-lg border border-white/10" title="View Fullscreen">
+                                                    <Maximize2 className="h-5 w-5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-8 text-center border-2 border-dashed border-indigo-100">
+                                            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+                                                <Wrench className="h-10 w-10 text-indigo-400 opacity-60" />
+                                            </div>
+                                            <h4 className="font-bold text-xl text-gray-800">{selectedEquipmentDetail.name}</h4>
+                                            <p className="text-indigo-400 text-sm mt-1 italic">{getText('No photo available', 'Tidak ada foto')}</p>
+                                        </div>
+                                    )}
+
+                                    {/* Detail Equipment Sub-items */}
+                                    <div className="bg-gradient-to-r from-violet-50 to-purple-50 p-4 rounded-xl border border-violet-200">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <Package className="h-5 w-5 text-violet-600" />
+                                            <h4 className="font-bold text-violet-900">
+                                                {getText('Detail Equipment', 'Detail Peralatan')}
+                                            </h4>
+                                            <span className="text-xs bg-violet-200 text-violet-700 px-2 py-0.5 rounded-full">
+                                                {equipmentDetailItems.length} {getText('items', 'item')}
+                                            </span>
+                                        </div>
+                                        {equipmentDetailItems.length === 0 ? (
+                                            <div className="text-center py-6 bg-white rounded-xl border-2 border-dashed border-violet-200">
+                                                <div className="w-12 h-12 mx-auto bg-violet-100 rounded-full flex items-center justify-center mb-2">
+                                                    <Package className="h-6 w-6 text-violet-400" />
+                                                </div>
+                                                <p className="text-gray-400 text-sm">{getText('No detail items', 'Tidak ada detail item')}</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2 max-h-52 overflow-y-auto">
+                                                {equipmentDetailItems.map((detail, idx) => (
+                                                    <div key={detail.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-start gap-3">
+                                                        <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden border border-gray-200 bg-violet-50 flex items-center justify-center">
+                                                            {detail.attachments ? (
+                                                                <img src={detail.attachments} alt={detail.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <Package className="h-5 w-5 text-violet-400" />
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="font-bold text-gray-900 text-sm truncate">{detail.name}</span>
+                                                                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs font-mono rounded">{detail.code}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                                                                <span>{detail.quantity} {detail.unit}</span>
+                                                                {getEquipmentConditionChip(detail.condition)}
+                                                            </div>
+                                                            {detail.notes && <p className="text-xs text-gray-400 mt-1 line-clamp-1">{detail.notes}</p>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Info Grid */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                        {/* Left Column */}
+                                        <div className="space-y-4">
+                                            {/* Basic Info */}
+                                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                                                <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                                    <Package className="h-5 w-5" />
+                                                    {getText('Basic Information', 'Informasi Dasar')}
+                                                </h4>
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <p className="text-xs text-blue-700 mb-0.5">{getText('Equipment Name', 'Nama Peralatan')}</p>
+                                                        <p className="font-bold text-gray-900">{selectedEquipmentDetail.name}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-blue-700 mb-0.5">{getText('NUP / Code', 'NUP / Kode')}</p>
+                                                        <p className="font-mono font-bold text-gray-900">{selectedEquipmentDetail.code}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-blue-700 mb-0.5">{getText('Category', 'Kategori')}</p>
+                                                        <p className="font-bold text-gray-900">{selectedEquipmentDetail.category || '—'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Quantity */}
+                                            <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
+                                                <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2">
+                                                    <Hash className="h-5 w-5" />
+                                                    {getText('Quantity & Unit', 'Jumlah & Satuan')}
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    <div>
+                                                        <p className="text-xs text-purple-700 mb-0.5">{getText('Quantity', 'Jumlah')}</p>
+                                                        <p className="text-2xl font-bold text-purple-900">{selectedEquipmentDetail.quantity ?? '—'}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-purple-700 mb-0.5">{getText('Unit', 'Satuan')}</p>
+                                                        <p className="font-bold text-gray-900">{selectedEquipmentDetail.unit || '—'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Location */}
+                                            <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
+                                                <h4 className="font-bold text-green-900 mb-3 flex items-center gap-2">
+                                                    <MapPin className="h-5 w-5" />
+                                                    {getText('Location', 'Lokasi')}
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {selectedEquipmentDetail.rooms?.building?.campus?.name && (
+                                                        <div>
+                                                            <p className="text-xs text-green-700 mb-0.5">{getText('Campus', 'Kampus')}</p>
+                                                            <p className="font-bold text-gray-900">{selectedEquipmentDetail.rooms.building.campus.name}</p>
+                                                        </div>
+                                                    )}
+                                                    {selectedEquipmentDetail.rooms?.building?.name && (
+                                                        <div>
+                                                            <p className="text-xs text-green-700 mb-0.5">{getText('Building', 'Gedung')}</p>
+                                                            <p className="font-bold text-gray-900">{selectedEquipmentDetail.rooms.building.name}</p>
+                                                        </div>
+                                                    )}
+                                                    {selectedEquipmentDetail.rooms?.floor && (
+                                                        <div>
+                                                            <p className="text-xs text-green-700 mb-0.5">{getText('Floor', 'Lantai')}</p>
+                                                            <p className="font-bold text-gray-900">{getText('Floor', 'Lantai')} {selectedEquipmentDetail.rooms.floor}</p>
+                                                        </div>
+                                                    )}
+                                                    <div>
+                                                        <p className="text-xs text-green-700 mb-0.5">{getText('Room', 'Ruangan')}</p>
+                                                        <p className="font-bold text-gray-900">{selectedEquipmentDetail.rooms?.name || getText('Not assigned', 'Belum ada ruangan')}</p>
+                                                    </div>
+                                                    {selectedEquipmentDetail.rooms?.code && (
+                                                        <div>
+                                                            <p className="text-xs text-green-700 mb-0.5">{getText('Room Code', 'Kode Ruangan')}</p>
+                                                            <p className="font-mono font-bold text-gray-900">{selectedEquipmentDetail.rooms.code}</p>
+                                                        </div>
+                                                    )}
+                                                    {selectedEquipmentDetail.rooms?.department?.name && (
+                                                        <div>
+                                                            <p className="text-xs text-green-700 mb-0.5">{getText('Department', 'Departemen')}</p>
+                                                            <p className="font-bold text-blue-900">{selectedEquipmentDetail.rooms.department.name}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Sub-Location Details: Cabinet/Table, Rack, Box */}
+                                            {(selectedEquipmentDetail.table_id || selectedEquipmentDetail.rack_id || selectedEquipmentDetail.box_id) && (
+                                                <div className="mt-4 pt-3 border-t border-green-200">
+                                                    <h5 className="font-semibold text-green-800 mb-2 flex items-center gap-2 text-sm">
+                                                        <Layers className="h-4 w-4" />
+                                                        {getText('Storage Location', 'Lokasi Penyimpanan')}
+                                                    </h5>
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        {selectedEquipmentDetail.table_id && selectedEquipmentDetail.tableName && (
+                                                            <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-lg border border-indigo-100">
+                                                                <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
+                                                                    <Archive className="h-4 w-4 text-indigo-600" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-xs text-green-600">{getText('Cabinet/Table', 'Kabinet/Meja')}</p>
+                                                                    <p className="font-semibold text-gray-900 text-sm">{selectedEquipmentDetail.tableName}</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {selectedEquipmentDetail.rack_id && selectedEquipmentDetail.rackName && (
+                                                            <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-lg border border-teal-100">
+                                                                <div className="w-7 h-7 bg-teal-100 rounded-lg flex items-center justify-center">
+                                                                    <Layers className="h-4 w-4 text-teal-600" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-xs text-green-600">{getText('Rack', 'Rak')}</p>
+                                                                    <p className="font-semibold text-gray-900 text-sm">{selectedEquipmentDetail.rackName}</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {selectedEquipmentDetail.box_id && selectedEquipmentDetail.boxName && (
+                                                            <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-lg border border-amber-100">
+                                                                <div className="w-7 h-7 bg-amber-100 rounded-lg flex items-center justify-center">
+                                                                    <Box className="h-4 w-4 text-amber-600" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-xs text-green-600">{getText('Box', 'Kotak')}</p>
+                                                                    <p className="font-semibold text-gray-900 text-sm">{selectedEquipmentDetail.boxName}</p>
+                                                                    {selectedEquipmentDetail.boxDesc && <p className="text-xs text-gray-500">{selectedEquipmentDetail.boxDesc}</p>}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Right Column */}
+                                        <div className="space-y-4">
+                                            {/* Status & Condition */}
+                                            <div className="bg-gradient-to-r from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200">
+                                                <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                                                    <AlertCircle className="h-5 w-5" />
+                                                    {getText('Status & Condition', 'Status & Kondisi')}
+                                                </h4>
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <p className="text-xs text-amber-700 mb-1">{getText('Condition', 'Kondisi')}</p>
+                                                        {getEquipmentConditionChip(selectedEquipmentDetail.condition)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-amber-700 mb-0.5">{getText('Availability', 'Ketersediaan')}</p>
+                                                        <p className="font-bold text-gray-900 text-sm">
+                                                            {selectedEquipmentDetail.is_available
+                                                                ? getText('✅ Available for Lending', '✅ Tersedia untuk Dipinjam')
+                                                                : getText('❌ Not Available', '❌ Tidak Tersedia')}
+                                                        </p>
+                                                    </div>
+                                                    {selectedEquipmentDetail.is_mandatory !== undefined && (
+                                                        <div>
+                                                            <p className="text-xs text-amber-700 mb-0.5">{getText('Mandatory', 'Wajib')}</p>
+                                                            <p className="font-bold text-gray-900 text-sm">
+                                                                {selectedEquipmentDetail.is_mandatory
+                                                                    ? getText('⭐ Yes - Required Equipment', '⭐ Ya - Peralatan Wajib')
+                                                                    : getText('No - Optional', 'Tidak - Opsional')}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Specifications */}
+                                            {selectedEquipmentDetail.Spesification && (() => {
+                                                const { purchaseYear, procurementType, specs } = parseEquipmentSpec(selectedEquipmentDetail.Spesification);
+                                                if (!purchaseYear && !procurementType && !specs) return null;
+                                                return (
+                                                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
+                                                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                                            <FileText className="h-5 w-5" />
+                                                            {getText('Specifications & Details', 'Spesifikasi & Detail')}
+                                                        </h4>
+                                                        {(purchaseYear || procurementType) && (
+                                                            <div className="mb-3">
+                                                                <p className="text-xs text-gray-500 mb-1">{getText('Purchase Year & Procurement:', 'Tahun Pembelian & Pengadaan:')}</p>
+                                                                <div className="text-sm font-medium text-gray-800">
+                                                                    {purchaseYear && <div className="mb-1">{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
+                                                                    {procurementType && <div>{getText('Type:', 'Jenis:')} {procurementType}</div>}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {specs && (
+                                                            <div>
+                                                                <p className="text-xs text-gray-500 mb-1">{getText('Details:', 'Keterangan:')}</p>
+                                                                <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{specs}</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
+
+                                            {/* Timestamps */}
+                                            {selectedEquipmentDetail.created_at && (
+                                                <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200">
+                                                    <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
+                                                        <Clock className="h-5 w-5" />
+                                                        {getText('Timestamps', 'Stempel Waktu')}
+                                                    </h4>
+                                                    <div>
+                                                        <p className="text-xs text-slate-600 mb-0.5">{getText('Created At', 'Dibuat Pada')}</p>
+                                                        <p className="font-bold text-gray-900 text-sm">{format(new Date(selectedEquipmentDetail.created_at), 'dd MMM yyyy, HH:mm')}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end flex-shrink-0">
+                            <button
+                                onClick={() => { setShowEquipmentDetail(false); setSelectedEquipmentDetail(null); }}
+                                className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xl text-sm transition-all"
+                            >
+                                {getText('Close', 'Tutup')}
                             </button>
                         </div>
-                    )}
-                </>
+                    </div>
+                </div>
             )}
 
             {/* Room Details Modal */}
@@ -1415,59 +1840,106 @@ const RoomInfo: React.FC = () => {
                         </div>
 
                         {/* Modal Body */}
-                        <div className="p-6 overflow-y-auto flex-1 space-y-6">
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                {/* Left Columns - Info & Equipment */}
-                                <div className="lg:col-span-1 space-y-6">
-                                    {/* Room Photo Card */}
-                                    <div className="relative rounded-2xl overflow-hidden shadow-md h-52 bg-gradient-to-r from-blue-50 to-indigo-50 border border-gray-100">
-                                        {roomPhoto ? (
-                                            <img src={roomPhoto} alt={showRoomDetail.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-30">
-                                                <DoorClosed className="h-16 w-16 text-blue-600" />
-                                                <span className="text-xs font-extrabold font-mono tracking-widest">{showRoomDetail.code}</span>
+                        <div className="p-6 overflow-y-auto flex-1 bg-gray-50/30">
+                            <div className="flex flex-col gap-6">
+                                {/* Top Section: Info & Schedule (Prioritized) */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    {/* Left: Room Details & Image */}
+                                    <div className="space-y-6">
+                                        {/* Room Photo Card */}
+                                        <div className="relative rounded-2xl overflow-hidden shadow-md h-56 bg-gradient-to-r from-blue-50 to-indigo-50 border border-gray-100">
+                                            {roomPhoto ? (
+                                                <img src={roomPhoto} alt={showRoomDetail.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-30">
+                                                    <DoorClosed className="h-16 w-16 text-blue-600" />
+                                                    <span className="text-xs font-extrabold font-mono tracking-widest">{showRoomDetail.code}</span>
+                                                </div>
+                                            )}
+                                            <div className="absolute bottom-4 left-4 z-10 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-sm border border-white/50">
+                                                <span className="text-sm font-bold text-gray-800">{showRoomDetail.name}</span>
                                             </div>
-                                        )}
-                                        <div className="absolute bottom-4 left-4 z-10 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-xl shadow-sm">
-                                            <span className="text-xs font-bold text-gray-800">{showRoomDetail.name}</span>
+                                        </div>
+
+                                        {/* Room Metadata Card */}
+                                        <div className="bg-gradient-to-br from-blue-55 to-indigo-50/50 p-6 rounded-2xl border border-blue-100 shadow-sm space-y-4">
+                                            <h4 className="font-extrabold text-blue-900 flex items-center gap-2 text-base"><Building className="h-5 w-5 text-blue-600" />{getText('Room Information', 'Keterangan Ruangan')}</h4>
+                                            <div className="space-y-4 pt-1">
+                                                <div>
+                                                    <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider mb-1">{getText('Department', 'Departemen')}</p>
+                                                    <p className="font-bold text-gray-900 text-sm">{showRoomDetail.department?.name || getText('General', 'Umum')}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider mb-1">{getText('Campus Location', 'Lokasi Kampus')}</p>
+                                                    <p className="font-bold text-gray-900 text-sm">{showRoomDetail.building?.campus?.name || '-'} • Gedung {showRoomDetail.building?.name || '-'}</p>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider mb-1">{getText('Capacity', 'Kapasitas')}</p>
+                                                        <p className="font-bold text-gray-900 text-sm">{showRoomDetail.capacity} {getText('seats', 'kursi')}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider mb-1">{getText('Status', 'Status')}</p>
+                                                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase border mt-0.5 ${showRoomDetail.is_available ? 'bg-green-50 text-green-700 border-green-200 shadow-sm' : 'bg-red-50 text-red-700 border-red-200 shadow-sm'}`}>
+                                                            {showRoomDetail.is_available ? getText('Available', 'Tersedia') : getText('Not Available', 'Tidak Tersedia')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Room Metadata Card */}
-                                    <div className="bg-gradient-to-br from-blue-55 to-indigo-50/50 p-5 rounded-2xl border border-blue-100 space-y-4">
-                                        <h4 className="font-extrabold text-blue-900 flex items-center gap-2 text-base"><Building className="h-5 w-5 text-blue-600" />{getText('Room Information', 'Keterangan Ruangan')}</h4>
-                                        <div className="space-y-3 pt-1">
-                                            <div>
-                                                <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider">{getText('Department', 'Departemen')}</p>
-                                                <p className="font-bold text-gray-900 text-sm">{showRoomDetail.department?.name || getText('General', 'Umum')}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider">{getText('Campus Location', 'Lokasi Kampus')}</p>
-                                                <p className="font-bold text-gray-900 text-sm">{showRoomDetail.building?.campus?.name || '-'} • Gedung {showRoomDetail.building?.name || '-'}</p>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider">{getText('Capacity', 'Kapasitas')}</p>
-                                                    <p className="font-bold text-gray-900 text-sm">{showRoomDetail.capacity} {getText('seats', 'kursi')}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[10px] text-blue-600 uppercase font-bold tracking-wider">{getText('Status', 'Status')}</p>
-                                                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border mt-0.5 ${showRoomDetail.is_available ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                                        {showRoomDetail.is_available ? getText('Available', 'Tersedia') : getText('Not Available', 'Tidak Tersedia')}
-                                                    </span>
-                                                </div>
-                                            </div>
+                                    {/* Right: Room Schedule */}
+                                    <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm space-y-5 flex flex-col h-full">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><CalendarIcon className="h-5 w-5 text-gray-500" />{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
+                                            <input
+                                                type="date"
+                                                value={targetDate}
+                                                onChange={(e) => setTargetDate(e.target.value)}
+                                                className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-blue-500 text-gray-700 shadow-sm"
+                                            />
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto pr-2 min-h-[300px]">
+                                            <CombinedScheduleSection />
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Center Column - Equipment in Room */}
-                                <div className="lg:col-span-1 space-y-6">
-                                    <div className="bg-white border border-gray-200 p-5 rounded-2xl space-y-4">
+                                {/* Bottom Section: Users & Equipment (Secondary) */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+                                    {/* Left: Assigned Staff */}
+                                    <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm space-y-4">
+                                        <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><UserCheck className="h-5 w-5 text-gray-500" />{getText('Assigned Users', 'Pengguna yang Ditugaskan')}</h4>
+
+                                        <div className="space-y-3 max-h-[220px] overflow-y-auto pr-2">
+                                            {loadingRoomUsers ? (
+                                                <div className="flex justify-center py-10"><Loader2 className="animate-spin h-6 w-6 text-gray-500" /></div>
+                                            ) : roomUsers.length > 0 ? (
+                                                roomUsers.map(ru => (
+                                                    <div key={ru.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors">
+                                                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 font-extrabold flex items-center justify-center text-sm shadow-sm">
+                                                            {ru.user?.full_name?.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-bold text-gray-900 text-sm truncate">{ru.user?.full_name}</p>
+                                                            <p className="text-[11px] text-gray-500 truncate mt-0.5">{ru.user?.jabatan || ru.user?.role}</p>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="text-center py-8">
+                                                    <p className="text-sm text-gray-400 font-semibold">{getText('No users assigned.', 'Tidak ada pengguna yang ditugaskan.')}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right: Equipment in Room */}
+                                    <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm space-y-4">
                                         <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><Wrench className="h-5 w-5 text-gray-500" />{getText('Equipment in Room', 'Peralatan di Ruangan')}</h4>
                                         
-                                        <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                                        <div className="space-y-3 max-h-[220px] overflow-y-auto pr-2">
                                             {loadingEquipment ? (
                                                 <div className="flex justify-center py-10"><Loader2 className="animate-spin h-6 w-6 text-gray-500" /></div>
                                             ) : selectedRoomEquipment.length > 0 ? (
@@ -1475,17 +1947,18 @@ const RoomInfo: React.FC = () => {
                                                     const { purchaseYear, procurementType } = parseEquipmentSpec(eq.Spesification || '');
                                                     return (
                                                         <div key={eq.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col gap-2 hover:border-blue-200 transition-colors">
-                                                            <div className="flex items-start justify-between">
-                                                                <div>
-                                                                    <p className="font-bold text-gray-900 text-sm leading-snug">{eq.name}</p>
-                                                                    <p className="text-[10px] text-gray-400 font-mono tracking-wider mt-0.5 uppercase">{eq.code}</p>
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="font-bold text-gray-900 text-sm leading-snug truncate">{eq.name}</p>
+                                                                    <p className="text-[10px] text-gray-400 font-mono tracking-wider mt-0.5 uppercase truncate">{eq.code}</p>
                                                                 </div>
-                                                                {getEquipmentConditionChip(eq.condition)}
+                                                                <div className="flex-shrink-0">
+                                                                    {getEquipmentConditionChip(eq.condition)}
+                                                                </div>
                                                             </div>
-                                                            {/* Dropdown of Serial Numbers */}
                                                             {/* Details */}
                                                             {(purchaseYear || procurementType) && (
-                                                                <div className="mt-1 text-[11px]">
+                                                                <div className="mt-1 text-[11px] bg-white p-2 rounded-lg border border-gray-50">
                                                                     <p className="text-gray-500 font-semibold mb-1">{getText('Purchase Year & Procurement:', 'Tahun Pembelian & Pengadaan:')}</p>
                                                                     <div className="text-gray-800 font-medium">
                                                                         {purchaseYear && <div>{getText('Year:', 'Tahun:')} {purchaseYear}</div>}
@@ -1497,52 +1970,10 @@ const RoomInfo: React.FC = () => {
                                                     );
                                                 })
                                             ) : (
-                                                <p className="text-xs text-gray-400 text-center py-10 font-semibold">{getText('No equipment assigned to this room.', 'Tidak ada peralatan yang ditugaskan ke ruangan ini.')}</p>
+                                                <div className="text-center py-8">
+                                                    <p className="text-sm text-gray-400 font-semibold">{getText('No equipment assigned to this room.', 'Tidak ada peralatan yang ditugaskan ke ruangan ini.')}</p>
+                                                </div>
                                             )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Right Column - Assigned Staff & Schedules */}
-                                <div className="lg:col-span-1 space-y-6">
-                                    {/* Assigned Staff */}
-                                    <div className="bg-white border border-gray-200 p-5 rounded-2xl space-y-4">
-                                        <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><UserCheck className="h-5 w-5 text-gray-500" />{getText('Assigned Users', 'Pengguna yang Ditugaskan')}</h4>
-
-                                        <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
-                                            {loadingRoomUsers ? (
-                                                <div className="flex justify-center py-10"><Loader2 className="animate-spin h-6 w-6 text-gray-500" /></div>
-                                            ) : roomUsers.length > 0 ? (
-                                                roomUsers.map(ru => (
-                                                    <div key={ru.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl">
-                                                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-extrabold flex items-center justify-center text-xs">
-                                                            {ru.user?.full_name?.charAt(0).toUpperCase()}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="font-bold text-gray-900 text-xs truncate">{ru.user?.full_name}</p>
-                                                            <p className="text-[10px] text-gray-400 truncate">{ru.user?.jabatan || ru.user?.role}</p>
-                                                        </div>
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <p className="text-xs text-gray-400 text-center py-6 font-semibold">{getText('No users assigned.', 'Tidak ada pengguna yang ditugaskan.')}</p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Target Date Picker & Day Schedule view */}
-                                    <div className="bg-white border border-gray-200 p-5 rounded-2xl space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><CalendarIcon className="h-5 w-5 text-gray-500" />{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
-                                            <input
-                                                type="date"
-                                                value={targetDate}
-                                                onChange={(e) => setTargetDate(e.target.value)}
-                                                className="px-2.5 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-blue-500 text-gray-700"
-                                            />
-                                        </div>
-                                        <div className="max-h-[300px] overflow-y-auto pr-1">
-                                            <CombinedScheduleSection />
                                         </div>
                                     </div>
                                 </div>
@@ -1602,69 +2033,24 @@ const RoomInfo: React.FC = () => {
                                 {/* Scan overlay */}
                                 {scannerReady && !cameraError && (
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                                        <div className="w-56 h-32 border-2 border-emerald-400 rounded-xl relative">
-                                            <div className="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-emerald-400 rounded-tl-lg"></div>
-                                            <div className="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-emerald-400 rounded-tr-lg"></div>
-                                            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-emerald-400 rounded-bl-lg"></div>
-                                            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-emerald-400 rounded-br-lg"></div>
+                                        <div className="w-56 h-56 border-2 border-emerald-400 rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                                            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg"></div>
+                                            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg"></div>
+                                            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg"></div>
+                                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-emerald-400 rounded-br-lg"></div>
                                             {/* Scanning line animation */}
-                                            <div className="absolute left-2 right-2 h-0.5 bg-emerald-400 opacity-75 animate-pulse" style={{ top: '50%' }}></div>
+                                            <div className="absolute left-2 right-2 h-0.5 bg-emerald-400 opacity-75 animate-pulse shadow-[0_0_8px_2px_rgba(52,211,153,0.5)]" style={{ top: '50%' }}></div>
                                         </div>
                                     </div>
                                 )}
                             </div>
 
-                            {/* Camera selection dropdown if multiple cameras found */}
-                            {cameras.length > 1 && (
-                                <div className="space-y-1">
-                                    <label className="text-[10px] uppercase font-bold tracking-wider text-gray-500 block">
-                                        {getText('Select Camera', 'Pilih Kamera')}
-                                    </label>
-                                    <select
-                                        value={selectedCameraId}
-                                        onChange={(e) => setSelectedCameraId(e.target.value)}
-                                        className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs text-gray-700 focus:outline-none focus:border-emerald-500 shadow-sm cursor-pointer"
-                                    >
-                                        {cameras.map((camera, index) => (
-                                            <option key={camera.id} value={camera.id}>
-                                                {camera.label || `${getText('Camera', 'Kamera')} ${index + 1}`}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
 
                             <p className="text-xs text-gray-400 text-center">
                                 {getText('Point your camera at the equipment barcode/QR code', 'Arahkan kamera ke barcode/QR code alat')}
                             </p>
 
-                            {/* Manual input alternative */}
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    placeholder={getText('Or type barcode manually...', 'Atau ketik kode barcode...')}
-                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-emerald-500 focus:outline-none barcode-manual-input"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            const val = (e.target as HTMLInputElement).value.trim();
-                                            if (val) {
-                                                handleScanResult(val);
-                                            }
-                                        }
-                                    }}
-                                />
-                                <button
-                                    onClick={() => {
-                                        const input = document.querySelector('.barcode-manual-input') as HTMLInputElement;
-                                        if (input?.value.trim()) {
-                                            handleScanResult(input.value.trim());
-                                        }
-                                    }}
-                                    className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-sm hover:bg-emerald-600 transition-colors"
-                                >
-                                    {getText('Search', 'Cari')}
-                                </button>
-                            </div>
+
                         </div>
                     </div>
                 </div>
@@ -1723,6 +2109,26 @@ const RoomInfo: React.FC = () => {
                         <div className="p-6 space-y-5 overflow-y-auto flex-1">
                             {scanResult.equipment ? (
                                 <>
+                                    {/* Photo Viewer */}
+                                    {scanResult.equipment.parsedPhoto && (
+                                        <div className="relative rounded-xl overflow-hidden shadow-md h-56 group -mt-2">
+                                            <img
+                                                src={scanResult.equipment.parsedPhoto}
+                                                alt={scanResult.equipment.name}
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                                            <div className="absolute bottom-0 left-0 right-0 p-5 flex items-end justify-between">
+                                                <div className="min-w-0 pr-4">
+                                                    <h4 className="text-white font-bold text-xl drop-shadow-md truncate">{scanResult.equipment.name}</h4>
+                                                    <p className="text-white/80 text-xs font-mono mt-0.5 truncate">{scanResult.equipment.code}</p>
+                                                </div>
+                                                <button onClick={() => { setEquipmentDetailPhoto(scanResult.equipment.parsedPhoto); setShowEquipmentImageFullscreen(true); }} className="p-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-white transition-all shadow-lg border border-white/10 shrink-0" title="View Fullscreen">
+                                                    <Maximize2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                     {/* Grid: Category & Quantity */}
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="bg-blue-50 p-4 rounded-2xl">
@@ -1810,6 +2216,52 @@ const RoomInfo: React.FC = () => {
                                                 </p>
                                             </div>
                                         </div>
+
+                                        {/* Sub-Location Details: Cabinet/Table, Rack, Box */}
+                                        {(scanResult.equipment.table_id || scanResult.equipment.rack_id || scanResult.equipment.box_id) && (
+                                            <div className="mt-4 pt-4 border-t border-blue-100">
+                                                <h5 className="font-bold text-blue-900 mb-3 flex items-center gap-2 text-xs uppercase tracking-wider">
+                                                    <Layers className="h-4 w-4" />
+                                                    {getText('Storage Location', 'Lokasi Penyimpanan')}
+                                                </h5>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {scanResult.equipment.table_id && scanResult.equipment.tableName && (
+                                                        <div className="flex items-center gap-3 bg-indigo-50/50 px-4 py-3 rounded-xl border border-indigo-100">
+                                                            <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
+                                                                <Archive className="h-4 w-4 text-indigo-600" />
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-[10px] uppercase tracking-wider font-bold text-indigo-600">{getText('Cabinet/Table', 'Kabinet/Meja')}</p>
+                                                                <p className="font-bold text-gray-900 text-sm truncate">{scanResult.equipment.tableName}</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {scanResult.equipment.rack_id && scanResult.equipment.rackName && (
+                                                        <div className="flex items-center gap-3 bg-teal-50/50 px-4 py-3 rounded-xl border border-teal-100">
+                                                            <div className="w-8 h-8 bg-teal-100 rounded-xl flex items-center justify-center shrink-0">
+                                                                <Layers className="h-4 w-4 text-teal-600" />
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-[10px] uppercase tracking-wider font-bold text-teal-600">{getText('Rack', 'Rak')}</p>
+                                                                <p className="font-bold text-gray-900 text-sm truncate">{scanResult.equipment.rackName}</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {scanResult.equipment.box_id && scanResult.equipment.boxName && (
+                                                        <div className="flex items-center gap-3 bg-amber-50/50 px-4 py-3 rounded-xl border border-amber-100">
+                                                            <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                                                                <Box className="h-4 w-4 text-amber-600" />
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-[10px] uppercase tracking-wider font-bold text-amber-600">{getText('Box', 'Kotak')}</p>
+                                                                <p className="font-bold text-gray-900 text-sm truncate">{scanResult.equipment.boxName}</p>
+                                                                {scanResult.equipment.boxDesc && <p className="text-[11px] text-gray-500 truncate">{scanResult.equipment.boxDesc}</p>}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Specifications & Serials */}
@@ -1905,6 +2357,33 @@ const RoomInfo: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Fullscreen Image Preview Modal */}
+            {showEquipmentImageFullscreen && equipmentDetailPhoto && (
+                <div className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="absolute top-4 right-4 z-10 flex items-center gap-4">
+                        <button
+                            onClick={() => setShowEquipmentImageFullscreen(false)}
+                            className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-md transition-all shadow-lg border border-white/20 group"
+                        >
+                            <X className="h-6 w-6 group-hover:rotate-90 transition-transform duration-300" />
+                        </button>
+                    </div>
+                    
+                    <div className="relative max-w-7xl max-h-[90vh] w-full flex items-center justify-center animate-in zoom-in-95 duration-300">
+                        <img 
+                            src={equipmentDetailPhoto} 
+                            alt="Full Preview" 
+                            className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+                        />
+                        <div className="absolute bottom-6 left-6 bg-black/50 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10">
+                            <h4 className="text-white font-bold text-lg">{selectedEquipmentDetail?.name}</h4>
+                            <p className="text-white/70 font-mono text-sm">{selectedEquipmentDetail?.code}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+            </div>
         </div>
     );
 };
