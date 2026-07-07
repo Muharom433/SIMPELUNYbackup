@@ -150,16 +150,10 @@ const RoomInfo: React.FC = () => {
         department?: any;
     } | null>(null);
     const [showScanResult, setShowScanResult] = useState(false);
-<<<<<<< HEAD
     const [scanDetailEquipments, setScanDetailEquipments] = useState<any[]>([]);
     const [loadingScanDetails, setLoadingScanDetails] = useState(false);
-    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-    const [cameras, setCameras] = useState<any[]>([]);
-    const [selectedCameraId, setSelectedCameraId] = useState<string>('');
     const [isEqNameDropdownOpen, setIsEqNameDropdownOpen] = useState(false);
     const [eqDropdownSearchTerm, setEqDropdownSearchTerm] = useState('');
-=======
->>>>>>> bdead6de69b246eff796f40ec138b0545808154a
     const [isSpDropdownOpen, setIsSpDropdownOpen] = useState(false);
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
     const [showEquipmentImageFullscreen, setShowEquipmentImageFullscreen] = useState(false);
@@ -343,11 +337,7 @@ const RoomInfo: React.FC = () => {
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             let foundEquipment: any = null;
 
-<<<<<<< HEAD
-            const selectStr = 'id, name, code, category, condition, quantity, unit, is_available, is_mandatory, Spesification, attachments, created_at, rooms_id, rooms:rooms_id(id, name, code, floor, building:building_id(name, campus:campus_id(name))), departments(name)';
-=======
-            const selectStr = 'id, name, code, category, condition, quantity, unit, is_available, Spesification, attachments, table_id, rack_id, box_id, rooms_id, rooms:rooms_id(id, name, code, floor, building:building_id(name, campus:campus_id(name))), departments(name)';
->>>>>>> bdead6de69b246eff796f40ec138b0545808154a
+            const selectStr = 'id, name, code, category, condition, quantity, unit, is_available, is_mandatory, Spesification, attachments, created_at, table_id, rack_id, box_id, rooms_id, rooms:rooms_id(id, name, code, floor, building:building_id(name, campus:campus_id(name))), departments(name)';
 
             if (uuidRegex.test(searchValue)) {
                 const { data } = await supabase
@@ -2137,7 +2127,6 @@ const RoomInfo: React.FC = () => {
                         <div className="p-4 space-y-4 overflow-y-auto flex-1">
                             {scanResult.equipment ? (
                                 <>
-<<<<<<< HEAD
                                     {/* Equipment Photo / Icon */}
                                     {(() => {
                                         const raw = scanResult.equipment.attachments;
@@ -2245,47 +2234,6 @@ const RoomInfo: React.FC = () => {
                                             <div><p className="text-[10px] text-blue-700 mb-0.5">{getText('Equipment Name', 'Nama Peralatan')}</p><p className="font-bold text-gray-900 text-sm">{scanResult.equipment.name}</p></div>
                                             <div><p className="text-[10px] text-blue-700 mb-0.5">{getText('NUP / Code', 'NUP / Kode')}</p><p className="font-mono font-bold text-gray-900 text-sm">{scanResult.equipment.code}</p></div>
                                             <div><p className="text-[10px] text-blue-700 mb-0.5">{getText('Category', 'Kategori')}</p><p className="font-bold text-gray-900 text-sm">{scanResult.equipment.category || getText('General', 'Umum')}</p></div>
-=======
-                                    {/* Photo Viewer */}
-                                    {scanResult.equipment.parsedPhoto && (
-                                        <div className="relative rounded-xl overflow-hidden shadow-md h-56 group -mt-2">
-                                            <img
-                                                src={scanResult.equipment.parsedPhoto}
-                                                alt={scanResult.equipment.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                                            <div className="absolute bottom-0 left-0 right-0 p-5 flex items-end justify-between">
-                                                <div className="min-w-0 pr-4">
-                                                    <h4 className="text-white font-bold text-xl drop-shadow-md truncate">{scanResult.equipment.name}</h4>
-                                                    <p className="text-white/80 text-xs font-mono mt-0.5 truncate">{scanResult.equipment.code}</p>
-                                                </div>
-                                                <button onClick={() => { setEquipmentDetailPhoto(scanResult.equipment.parsedPhoto); setShowEquipmentImageFullscreen(true); }} className="p-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-white transition-all shadow-lg border border-white/10 shrink-0" title="View Fullscreen">
-                                                    <Maximize2 className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {/* Grid: Category & Quantity */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-blue-50 p-4 rounded-2xl">
-                                            <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wide mb-1">
-                                                {getText('Category', 'Kategori')}
-                                            </p>
-                                            <p className="font-bold text-blue-900 text-sm md:text-base truncate">
-                                                {scanResult.equipment.category || getText('General', 'Umum')}
-                                            </p>
-                                        </div>
-                                        <div className="bg-purple-50 p-4 rounded-2xl">
-                                            <p className="text-[11px] font-bold text-purple-600 uppercase tracking-wide mb-1">
-                                                {getText('Available Quantity', 'Jumlah Tersedia')}
-                                            </p>
-                                            <p className="font-bold text-purple-900 text-sm md:text-base truncate">
-                                                {scanResult.equipment.quantity != null 
-                                                    ? `${scanResult.equipment.quantity} ${scanResult.equipment.unit || 'buah'}` 
-                                                    : '—'}
-                                            </p>
->>>>>>> bdead6de69b246eff796f40ec138b0545808154a
                                         </div>
                                     </div>
 
