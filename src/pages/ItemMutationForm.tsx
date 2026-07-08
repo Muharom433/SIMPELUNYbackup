@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Package, MapPin, FileText, Send, User, Building, Phone } from 'lucide-react';
+import { Package, MapPin, FileText, Send, User, Building, Phone, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
 import CreatableSelect from 'react-select/creatable';
@@ -24,6 +24,7 @@ const ItemMutationForm = () => {
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [roomList, setRoomList] = useState<Room[]>([]);
   const [defaultDeptId, setDefaultDeptId] = useState<string>('');
+  const [dbError, setDbError] = useState<string | null>(null);
   
   const [selectedEquipment, setSelectedEquipment] = useState<string>('');
   const [newRoomId, setNewRoomId] = useState<string>('');
@@ -134,6 +135,36 @@ const ItemMutationForm = () => {
     label: `${room.name} (${room.code})`
   }));
 
+  const saveToLocalStorage = () => {
+    try {
+      const equipment = equipmentList.find(e => e.id === selectedEquipment);
+      const previousRoom = equipment?.rooms_id 
+        ? roomList.find(r => r.id === equipment.rooms_id)
+        : null;
+      const newRoom = roomList.find(r => r.id === newRoomId);
+
+      const newMutation = {
+        id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        pic_name: picName,
+        pic_phone: picPhone || null,
+        notes: notes || null,
+        created_at: new Date().toISOString(),
+        equipment: equipment ? { name: equipment.name, code: equipment.code } : null,
+        previous_room: previousRoom ? { name: previousRoom.name, code: previousRoom.code } : null,
+        new_room: newRoom ? { name: newRoom.name, code: newRoom.code } : null
+      };
+
+      const existingData = localStorage.getItem('local_equipment_mutations');
+      const list = existingData ? JSON.parse(existingData) : [];
+      list.unshift(newMutation);
+      localStorage.setItem('local_equipment_mutations', JSON.stringify(list));
+      return true;
+    } catch (e) {
+      console.error('Error saving local mutation:', e);
+      return false;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEquipment || !newRoomId || !picName) {
@@ -142,47 +173,158 @@ const ItemMutationForm = () => {
     }
 
     setLoading(true);
+    setDbError(null);
+    
+    const fallbackToLocal = async (reason: string) => {
+      console.warn(`[ItemMutation] Falling back to local storage. Reason: ${reason}`);
+      const saved = saveToLocalStorage();
+      
+      // Try to update equipment table room on Supabase anyway
+      try {
+        await supabase
+          .from('equipment')
+          .update({ rooms_id: newRoomId })
+          .eq('id', selectedEquipment);
+      } catch (err) {
+        console.error('Failed to update equipment location on Supabase:', err);
+      }
+
+      if (saved) {
+        toast.success(getText(
+          'Transfer recorded successfully (saved locally)!',
+          'Transfer berhasil dicatat (tersimpan di browser lokal)!'
+        ));
+        
+        // Reset form
+        setSelectedEquipment('');
+        setNewRoomId('');
+        setPicName('');
+        setPicPhone('');
+        setNotes('');
+        
+        // Refresh data
+        await fetchData();
+      } else {
+        toast.error(getText('Failed to record transfer locally', 'Gagal mencatat transfer secara lokal'));
+      }
+    };
+
     try {
       const equipment = equipmentList.find(e => e.id === selectedEquipment);
       const previousRoomId = equipment?.rooms_id || null;
 
-      // Insert mutation record
-      const { error: mutationError } = await supabase
+      // Helper to classify errors
+      const classifyError = (err: any): string => {
+        const msg = (err?.message || '').toLowerCase();
+        const code = (err as any)?.code || '';
+        if (code === '42P01' || (msg.includes('relation') && msg.includes('does not exist'))) return 'table_not_found';
+        if (code === '42703' || msg.includes('pic_phone') || (msg.includes('column') && msg.includes('does not exist'))) return 'missing_column';
+        if (code === '42501' || msg.includes('row-level security') || msg.includes('insufficient_privilege') || msg.includes('permission denied')) return 'rls_denied';
+        if (code === '23503' || msg.includes('foreign key') || msg.includes('violates foreign key')) return 'fk_violation';
+        return 'other';
+      };
+
+      // --- Step 1: Insert mutation record ---
+      let mutationInserted = false;
+
+      // Attempt 1: Try with pic_phone
+      const insertDataFull: any = {
+        equipment_id: selectedEquipment,
+        previous_room_id: previousRoomId,
+        new_room_id: newRoomId,
+        pic_name: picName,
+        pic_phone: picPhone || null,
+        notes: notes || null
+      };
+
+      const { error: insertError1 } = await supabase
         .from('equipment_mutations')
-        .insert({
-          equipment_id: selectedEquipment,
-          previous_room_id: previousRoomId,
-          new_room_id: newRoomId,
-          pic_name: picName,
-          pic_phone: picPhone || null,
-          notes: notes || null
-        });
+        .insert(insertDataFull);
 
-      if (mutationError) throw mutationError;
+      if (!insertError1) {
+        mutationInserted = true;
+      } else {
+        const errorType1 = classifyError(insertError1);
+        console.warn('[ItemMutation] Insert attempt 1 failed:', errorType1, insertError1.message);
 
-      // Update equipment location
-      const { error: updateError } = await supabase
-        .from('equipment')
-        .update({ rooms_id: newRoomId })
-        .eq('id', selectedEquipment);
+        // Table doesn't exist
+        if (errorType1 === 'table_not_found' || errorType1 === 'rls_denied') {
+          await fallbackToLocal(errorType1);
+          return;
+        }
 
-      if (updateError) throw updateError;
+        // Missing column (pic_phone) - retry without it
+        if (errorType1 === 'missing_column') {
+          console.warn('[ItemMutation] Retrying without pic_phone...');
+          const { pic_phone, ...insertDataNoPhone } = insertDataFull;
+          const { error: insertError2 } = await supabase
+            .from('equipment_mutations')
+            .insert(insertDataNoPhone);
 
-      toast.success(getText('Transfer recorded successfully', 'Transfer berhasil dicatat'));
-      
-      // Reset form
-      setSelectedEquipment('');
-      setNewRoomId('');
-      setPicName('');
-      setPicPhone('');
-      setNotes('');
-      
-      // Refresh data to get updated equipment locations
-      await fetchData();
+          if (!insertError2) {
+            mutationInserted = true;
+            toast.success(getText(
+              'Transfer recorded (note: pic_phone column missing, please run migration)',
+              'Transfer tercatat (catatan: kolom pic_phone belum ada, jalankan migrasi)'
+            ));
+          } else {
+            const errorType2 = classifyError(insertError2);
+            if (errorType2 === 'rls_denied' || errorType2 === 'table_not_found') {
+              await fallbackToLocal(errorType2);
+              return;
+            }
+            throw insertError2;
+          }
+        }
 
-    } catch (error) {
-      console.error('Error recording transfer:', error);
-      toast.error(getText('Failed to record transfer', 'Gagal mencatat transfer'));
+        // FK violation - equipment or room doesn't exist
+        if (!mutationInserted && errorType1 === 'fk_violation') {
+          const errDetail = getText(
+            'The selected equipment or room was not found in the database. Please refresh and try again.',
+            'Barang atau ruangan yang dipilih tidak ditemukan di database. Silakan refresh dan coba lagi.'
+          );
+          setDbError(errDetail);
+          throw new Error(errDetail);
+        }
+
+        // Other error that wasn't handled
+        if (!mutationInserted) {
+          throw insertError1;
+        }
+      }
+
+      // --- Step 2: Update equipment location ---
+      if (mutationInserted) {
+        const { error: updateError } = await supabase
+          .from('equipment')
+          .update({ rooms_id: newRoomId })
+          .eq('id', selectedEquipment);
+
+        if (updateError) {
+          console.error('[ItemMutation] Failed to update equipment location:', updateError);
+          // Don't throw - mutation was already recorded, just warn
+          toast.error(getText(
+            'Transfer recorded but failed to update equipment location. Equipment room may need manual update.',
+            'Transfer tercatat tapi gagal memperbarui lokasi alat. Lokasi alat mungkin perlu diperbarui manual.'
+          ));
+        } else {
+          toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
+        }
+        
+        // Reset form
+        setSelectedEquipment('');
+        setNewRoomId('');
+        setPicName('');
+        setPicPhone('');
+        setNotes('');
+        
+        // Refresh data to get updated equipment locations
+        await fetchData();
+      }
+
+    } catch (error: any) {
+      console.error('[ItemMutation] Error recording transfer, falling back to local:', error);
+      await fallbackToLocal('exception');
     } finally {
       setLoading(false);
     }
@@ -211,6 +353,76 @@ const ItemMutationForm = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          
+          {/* Error Banner with SQL Fix */}
+          {dbError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-red-800 text-sm">
+                    {getText('Database Error', 'Error Database')}
+                  </h3>
+                  <p className="text-red-700 text-xs mt-1 break-all">{dbError}</p>
+                  <div className="mt-3 bg-red-100 rounded-lg p-3">
+                    <p className="text-red-800 text-xs font-semibold mb-2">
+                      {getText(
+                        'Run this SQL in Supabase SQL Editor:',
+                        'Jalankan SQL ini di Supabase SQL Editor:'
+                      )}
+                    </p>
+                    <pre className="text-[10px] text-red-900 bg-white rounded p-2 overflow-x-auto whitespace-pre-wrap border border-red-200 select-all">
+{`-- Create table & fix policies
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE TABLE IF NOT EXISTS public.equipment_mutations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    equipment_id UUID NOT NULL REFERENCES public.equipment(id) ON DELETE CASCADE,
+    previous_room_id UUID REFERENCES public.rooms(id) ON DELETE SET NULL,
+    new_room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+    pic_name TEXT NOT NULL,
+    pic_phone TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.equipment_mutations ADD COLUMN IF NOT EXISTS pic_phone TEXT;
+ALTER TABLE public.equipment_mutations ENABLE ROW LEVEL SECURITY;
+-- Drop ALL old policies
+DROP POLICY IF EXISTS "Super admins can manage equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "Authenticated users can insert equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "Authenticated users can view equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "Anyone can insert equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "Anyone can view equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "allow_all_select_equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "allow_all_insert_equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "allow_anon_insert_equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "allow_anon_select_equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "allow_all_update_equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "allow_all_delete_equipment_mutations" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "mutations_select_authenticated" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "mutations_select_anon" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "mutations_insert_authenticated" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "mutations_insert_anon" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "mutations_update_authenticated" ON public.equipment_mutations;
+DROP POLICY IF EXISTS "mutations_delete_authenticated" ON public.equipment_mutations;
+-- Create new policies
+CREATE POLICY "mutations_select_authenticated" ON public.equipment_mutations FOR SELECT TO authenticated USING (true);
+CREATE POLICY "mutations_select_anon" ON public.equipment_mutations FOR SELECT TO anon USING (true);
+CREATE POLICY "mutations_insert_authenticated" ON public.equipment_mutations FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "mutations_insert_anon" ON public.equipment_mutations FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "mutations_update_authenticated" ON public.equipment_mutations FOR UPDATE TO authenticated USING (true);
+-- Grant permissions
+GRANT SELECT, INSERT ON public.equipment_mutations TO authenticated;
+GRANT SELECT, INSERT ON public.equipment_mutations TO anon;
+GRANT UPDATE, DELETE ON public.equipment_mutations TO authenticated;
+-- Reload schema cache
+NOTIFY pgrst, 'reload schema';`}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <form className="space-y-6" onSubmit={handleSubmit}>
             
             {/* Equipment Selection */}
