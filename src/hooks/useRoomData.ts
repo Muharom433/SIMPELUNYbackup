@@ -322,6 +322,7 @@ export const useRoomData = (targetDate: string) => {
           is_available: room.is_available,
           study_program_ids: room.study_program_ids,
           building: Array.isArray(room.building) ? (room.building[0] ? {
+            id: room.building[0].id,
             name: room.building[0].name,
             campus: Array.isArray(room.building[0].campus) ? room.building[0].campus[0] : room.building[0].campus
           } : undefined) : room.building,

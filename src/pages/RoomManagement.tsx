@@ -128,6 +128,8 @@ const RoomManagement: React.FC = () => {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
+    const [selectedCampus, setSelectedCampus] = useState('all');
+    const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
     const [showInUse, setShowInUse] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showAvailabilitySearch, setShowAvailabilitySearch] = useState(false);
@@ -329,6 +331,7 @@ const RoomManagement: React.FC = () => {
             fetchRoomData(targetDate, true);
             fetchDepartments();
             fetchStudyPrograms();
+            fetchCampuses();
             fetchRoomSuggestions();
             fetchAllUsers();
         }
@@ -338,14 +341,48 @@ const RoomManagement: React.FC = () => {
         if (!Array.isArray(displayedRooms)) return [];
 
         return displayedRooms.filter(room => {
+            const campusName = room.building?.campus?.name || '';
+            const buildingName = room.building?.name || '';
+
             const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                room.code.toLowerCase().includes(searchTerm.toLowerCase());
+                room.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                buildingName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                campusName.toLowerCase().includes(searchTerm.toLowerCase());
 
             const roomStatus = getOptimizedRoomStatus(room);
             const matchesStatus = filterStatus === 'all' || roomStatus.status === filterStatus;
             const matchesVisibility = roomStatus.status !== 'In Use' || showInUse;
 
-            return matchesSearch && matchesStatus && matchesVisibility;
+            let matchesCampus = true;
+            if (selectedCampus !== 'all') {
+                const roomCampusId = room.building?.campus?.id;
+                const roomCampusName = (room.building?.campus?.name || '').toLowerCase();
+                const roomBuildingName = (room.building?.name || '').toLowerCase();
+
+                if (selectedCampus === 'gunungkidul' || selectedCampus === 'gunung_kidul') {
+                    if (roomCampusName) {
+                        matchesCampus = roomCampusName.includes('gunung') || roomCampusId === selectedCampus;
+                    } else if (roomBuildingName) {
+                        matchesCampus = roomBuildingName.includes('gunung') || roomBuildingName.includes('gk_');
+                    } else {
+                        matchesCampus = room.code.toLowerCase().includes('gk_') || room.name.toLowerCase().includes('gunung');
+                    }
+                } else if (selectedCampus === 'kulonprogo' || selectedCampus === 'kulon_progo') {
+                    if (roomCampusName) {
+                        matchesCampus = roomCampusName.includes('kulon') || roomCampusName.includes('wates') || roomCampusId === selectedCampus;
+                    } else if (roomBuildingName) {
+                        matchesCampus = roomBuildingName.includes('kulon') || roomBuildingName.includes('wates') || roomBuildingName.includes('kp');
+                    } else {
+                        matchesCampus = room.code.toLowerCase().includes('kp') || room.name.toLowerCase().includes('kulon') || room.name.toLowerCase().includes('wates');
+                    }
+                } else {
+                    matchesCampus = roomCampusId === selectedCampus ||
+                        roomCampusName === selectedCampus.toLowerCase() ||
+                        roomCampusName.includes(selectedCampus.toLowerCase());
+                }
+            }
+
+            return matchesSearch && matchesStatus && matchesVisibility && matchesCampus;
         }).sort((a, b) => {
             // Priority sorting: Available > Scheduled > In Use > Unavailable
             const statusOrder = { 'Available': 0, 'Scheduled': 1, 'In Use': 2, 'Conflict': 3, 'Unavailable': 4 };
@@ -358,7 +395,7 @@ const RoomManagement: React.FC = () => {
             // Secondary sort by name
             return a.name.localeCompare(b.name);
         });
-    }, [displayedRooms, searchTerm, filterStatus, showInUse, getOptimizedRoomStatus]);
+    }, [displayedRooms, searchTerm, filterStatus, selectedCampus, showInUse, getOptimizedRoomStatus]);
 
     const fetchSchedulesForRoom = async (roomName: string, roomId: string) => {
         setLoadingSchedules(true);
@@ -585,6 +622,16 @@ const RoomManagement: React.FC = () => {
             case 'GOOD':
             default:
                 return <span className="text-xs font-medium text-green-800 bg-green-100 px-2 py-0.5 rounded-full">{getText('GOOD', 'BAIK')}</span>;
+        }
+    };
+
+    const fetchCampuses = async () => {
+        try {
+            const { data, error } = await supabase.from('campus').select('id, name').order('name');
+            if (error) throw error;
+            setCampuses(data || []);
+        } catch (error: any) {
+            console.error('Error fetching campuses:', error);
         }
     };
 
@@ -1745,6 +1792,25 @@ const RoomManagement: React.FC = () => {
                                 />
                             </div>
                             <select
+                                value={selectedCampus}
+                                onChange={(e) => setSelectedCampus(e.target.value)}
+                                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium text-sm"
+                            >
+                                <option value="all">{getText('All Campuses', 'Semua Kampus')}</option>
+                                <option value="gunungkidul">📍 Kampus Gunungkidul</option>
+                                <option value="kulonprogo">📍 Kampus Kulon Progo</option>
+                                {campuses.map(c => {
+                                    const isGk = c.name.toLowerCase().includes('gunung');
+                                    const isKp = c.name.toLowerCase().includes('kulon') || c.name.toLowerCase().includes('wates');
+                                    if (isGk || isKp) return null;
+                                    return (
+                                        <option key={c.id} value={c.id}>
+                                            📍 {c.name}
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                            <select
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value)}
                                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1803,8 +1869,12 @@ const RoomManagement: React.FC = () => {
                                                 <span>{room.capacity} {getText('seats', 'kursi')}</span>
                                             </div>
                                             <div className="flex items-center text-sm text-gray-600">
-                                                <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
-                                                <span className="truncate">{room.department?.name || getText('General', 'Umum')}</span>
+                                                <MapPin className="h-4 w-4 mr-1 flex-shrink-0 text-blue-600" />
+                                                <span className="truncate">
+                                                    {room.building?.campus?.name ? `${room.building.campus.name} • ` : ''}
+                                                    {room.building?.name ? `${room.building.name} • ` : ''}
+                                                    {room.department?.name || getText('General', 'Umum')}
+                                                </span>
                                             </div>
                                             {room.study_program_ids && room.study_program_ids.length > 0 && (
                                                 <div className="flex items-start text-xs text-gray-500 mt-1">
@@ -1882,7 +1952,7 @@ const RoomManagement: React.FC = () => {
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{room.name}</h3>
                                             <p className="text-sm text-gray-600">
-                                                {room.code} • {room.department?.name || getText('General', 'Umum')}
+                                                {room.code} • {room.building?.campus?.name ? `${room.building.campus.name} • ` : ''}{room.building?.name ? `${room.building.name} • ` : ''}{room.department?.name || getText('General', 'Umum')}
                                                 {room.study_program_ids && room.study_program_ids.length > 0 && (
                                                     <>
                                                         <span className="mx-1">•</span>
