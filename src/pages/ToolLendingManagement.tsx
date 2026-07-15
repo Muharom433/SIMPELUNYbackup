@@ -798,7 +798,7 @@ const ToolLendingManagement: React.FC = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
                     <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                        <div className="relative flex-1 max-w-md">
+                        <div className="relative w-full sm:w-80 lg:w-[350px] shrink-0">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                             <input
                                 type="text"
