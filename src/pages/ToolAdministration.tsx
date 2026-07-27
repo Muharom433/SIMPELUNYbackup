@@ -53,6 +53,152 @@ export const parseEquipmentSpec = (spec: string | null) => {
     return { purchaseYear, procurementType, specs };
 };
 
+export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> => {
+    const mutationMap: Record<string, any> = {};
+
+    try {
+        // 1. Fetch latest mutations from Supabase equipment_mutations
+        const { data: dbMutations } = await supabase
+            .from('equipment_mutations')
+            .select(`
+                equipment_id,
+                new_room_id,
+                created_at,
+                equipment:equipment_id(id, name, code),
+                new_room:new_room_id(id, name, code, floor, department:departments(id, name, code), building:building_id(name, campus:campus_id(name)))
+            `)
+            .order('created_at', { ascending: false });
+
+        if (dbMutations) {
+            dbMutations.forEach((m: any) => {
+                const roomObj = m.new_room ? {
+                    id: m.new_room.id,
+                    name: m.new_room.name,
+                    code: m.new_room.code || '',
+                    floor: m.new_room.floor || null,
+                    building: m.new_room.building || null,
+                    department: m.new_room.department || null
+                } : null;
+
+                if (roomObj) {
+                    const override = { rooms_id: m.new_room_id, rooms: roomObj, created_at: m.created_at };
+                    if (m.equipment_id && !mutationMap[m.equipment_id]) mutationMap[m.equipment_id] = override;
+                    if (m.equipment?.code && !mutationMap[m.equipment.code]) mutationMap[m.equipment.code] = override;
+                    if (m.equipment?.name && !mutationMap[m.equipment.name]) mutationMap[m.equipment.name] = override;
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('[MutationMap] Error fetching DB mutations:', e);
+    }
+
+    // 2. Merge local_equipment_mutations
+    try {
+        const localMutationsStr = localStorage.getItem('local_equipment_mutations');
+        if (localMutationsStr) {
+            const localMutations = JSON.parse(localMutationsStr);
+            localMutations.forEach((m: any) => {
+                const eqId = m.equipment_id || m.equipment?.id;
+                const eqCode = m.equipment?.code;
+                const eqName = m.equipment?.name;
+                const roomObj = m.new_room ? {
+                    id: m.new_room_id || m.new_room.id,
+                    name: m.new_room.name,
+                    code: m.new_room.code || '',
+                    building: m.new_room.building || null,
+                    floor: m.new_room.floor || null,
+                    department: m.new_room.department || null
+                } : null;
+
+                if (roomObj) {
+                    const override = { rooms_id: roomObj.id, rooms: roomObj, created_at: m.created_at };
+                    const keys = [eqId, eqCode, eqName].filter(Boolean);
+                    keys.forEach(k => {
+                        const existing = mutationMap[k];
+                        const localTime = new Date(m.created_at || 0).getTime();
+                        const existingTime = existing ? new Date(existing.created_at || 0).getTime() : 0;
+                        if (!existing || localTime >= existingTime) {
+                            mutationMap[k] = override;
+                        }
+                    });
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('[MutationMap] Error parsing local mutations:', e);
+    }
+
+    // 3. Merge local_equipment_room_overrides
+    try {
+        const localOverridesStr = localStorage.getItem('local_equipment_room_overrides');
+        if (localOverridesStr) {
+            const overrides = JSON.parse(localOverridesStr);
+            Object.keys(overrides).forEach(key => {
+                if (overrides[key]) {
+                    mutationMap[key] = overrides[key];
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('[MutationMap] Error parsing room overrides:', e);
+    }
+
+    return mutationMap;
+};
+
+export const getLatestEquipmentRoomOverride = (
+    eqId?: string | null,
+    eqCode?: string | null,
+    eqName?: string | null
+) => {
+    try {
+        // 1. Check explicit local_equipment_room_overrides
+        const localOverridesStr = localStorage.getItem('local_equipment_room_overrides');
+        if (localOverridesStr) {
+            const overrides = JSON.parse(localOverridesStr);
+            const ov = (eqId && overrides[eqId]) || (eqCode && overrides[eqCode]) || (eqName && overrides[eqName]);
+            if (ov) return ov;
+        }
+
+        // 2. Fallback: Check local_equipment_mutations for the newest mutation matching id/code/name
+        const localMutationsStr = localStorage.getItem('local_equipment_mutations');
+        if (localMutationsStr) {
+            const mutations = JSON.parse(localMutationsStr);
+            const sorted = [...mutations].sort(
+                (a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+            );
+
+            const match = sorted.find((m: any) => {
+                const mEqId = m.equipment_id || m.equipment?.id;
+                const mEqCode = m.equipment?.code;
+                const mEqName = m.equipment?.name;
+
+                if (eqId && mEqId && String(mEqId) === String(eqId)) return true;
+                if (eqCode && mEqCode && String(mEqCode).toLowerCase() === String(eqCode).toLowerCase()) return true;
+                if (eqName && mEqName && String(mEqName).toLowerCase() === String(eqName).toLowerCase()) return true;
+                return false;
+            });
+
+            if (match && match.new_room) {
+                return {
+                    rooms_id: match.new_room_id || match.new_room.id,
+                    rooms: {
+                        id: match.new_room_id || match.new_room.id,
+                        name: match.new_room.name,
+                        code: match.new_room.code || '',
+                        building: match.new_room.building || null,
+                        floor: match.new_room.floor || null,
+                        department: match.new_room.department || null
+                    }
+                };
+            }
+        }
+    } catch (e) {
+        console.warn('Error computing equipment room override:', e);
+    }
+    return null;
+};
+
 export const formatEquipmentSpec = (purchaseYear: string, procurementType: string, specs: string) => {
     if (!purchaseYear && !procurementType && !specs) return '';
     
@@ -814,12 +960,28 @@ const ToolAdministration: React.FC = () => {
 
             const { data, count, error } = await query;
 
-            console.log('========== QUERY RESULT ==========');
+console.log('========== QUERY RESULT ==========');
             console.log('Count (from DB):', count);
 
             if (error) throw error;
 
-            let finalData = data || [];
+            let finalData = data || [];            // Apply room overrides from DB mutations + local mutations + local overrides
+            try {
+                const mutationMap = await fetchLatestMutationsMap();
+                finalData = finalData.map((item: any) => {
+                    const ov = mutationMap[item.id] || (item.code ? mutationMap[item.code] : null) || (item.name ? mutationMap[item.name] : null);
+                    if (ov) {
+                        return {
+                            ...item,
+                            rooms_id: ov.rooms_id || item.rooms_id,
+                            rooms: ov.rooms || (ov.room_name ? { id: ov.rooms_id, name: ov.room_name, code: ov.room_code } : item.rooms)
+                        };
+                    }
+                    return item;
+                });
+            } catch (err) {
+                console.warn('Error applying room overrides to equipment in ToolAdministration:', err);
+            }
 
             // IN-MEMORY FILTER & PAGINATION FOR LABORAN
             if (isLaboratory && profile?.study_program_id) {
@@ -857,12 +1019,28 @@ const ToolAdministration: React.FC = () => {
         }
     }, [debouncedEquipmentSearch, equipmentCategoryFilter, roomFilter, equipmentPage, hasAccess, itemsPerPage, isLaboratory, isDepartmentAdmin, profile?.department_id, profile?.study_program_id]);
 
+    // Re-fetch equipment location when a mutation occurs or window comes into focus
+    useEffect(() => {
+        const handleUpdate = () => {
+            fetchEquipment();
+        };
+        window.addEventListener('equipment-location-updated', handleUpdate);
+        window.addEventListener('storage', handleUpdate);
+        return () => {
+            window.removeEventListener('equipment-location-updated', handleUpdate);
+            window.removeEventListener('storage', handleUpdate);
+        };
+    }, [fetchEquipment]);
+
     // Force sync activeTab for Laboran to ensure they land on Equipment tab
     useEffect(() => {
         if (profile?.role === 'laboratory' && activeTab === 'stock') {
             setActiveTab('equipment');
         }
     }, [profile, activeTab]);
+
+
+
 
     useEffect(() => {
         if (activeTab === 'stock') {
@@ -875,6 +1053,7 @@ const ToolAdministration: React.FC = () => {
             fetchEquipment();
         }
     }, [fetchEquipment, activeTab]);
+
 
     // ==================== DETAIL EQUIPMENT CRUD ====================
     // Fetch detail equipment items for a specific equipment
@@ -1307,13 +1486,31 @@ const ToolAdministration: React.FC = () => {
     };
 
     const handleOpenDetailModal = async (eq: EquipmentWithDetails) => {
+        // Apply override if present
+        const initialOv = getLatestEquipmentRoomOverride(eq.id, eq.code, eq.name);
+        if (initialOv) {
+            eq = {
+                ...eq,
+                rooms_id: initialOv.rooms_id || eq.rooms_id,
+                rooms: initialOv.rooms || eq.rooms
+            };
+        }
+
         setSelectedEquipment(eq);
         setShowDetailModal(true);
         setLoadingDetailModal(true);
         setDetailEquipments([]); // Reset detail equipments
         try {
             const { data } = await supabase.from('equipment').select(`attachments, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, rooms:rooms_id(id, name, code, department_id, study_program_ids, floor, department:departments(id, name, code), building:building_id(name, campus:campus_id(name)))`).eq('id', eq.id).single();
-            if (data) setSelectedEquipment(prev => (prev?.id === eq.id ? { ...prev, ...data } : prev));
+            if (data) {
+                let mergedData: any = { ...data };
+                const ov = getLatestEquipmentRoomOverride(eq.id, eq.code, eq.name);
+                if (ov) {
+                    mergedData.rooms_id = ov.rooms_id || mergedData.rooms_id;
+                    mergedData.rooms = ov.rooms || mergedData.rooms;
+                }
+                setSelectedEquipment(prev => (prev?.id === eq.id ? { ...prev, ...mergedData } : prev));
+            }
             // Fetch detail equipment items
             await fetchDetailEquipments(eq.id);
         } catch (e) { console.error('Error loading details:', e); }

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useNavigate } from 'react-router-dom';
-import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2 } from 'lucide-react';
+import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import ItemMutationForm from './ItemMutationForm';
+
 
 interface MutationHistory {
   id: string;
@@ -23,13 +24,13 @@ const ItemHistory = () => {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLocalMode, setIsLocalMode] = useState(false);
-  const navigate = useNavigate();
 
   const [editingItem, setEditingItem] = useState<MutationHistory | null>(null);
   const [editPicName, setEditPicName] = useState('');
   const [editPicPhone, setEditPicPhone] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     fetchHistory();
@@ -355,7 +356,7 @@ const ItemHistory = () => {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => navigate('/item-mutation')}
+            onClick={() => setShowAddModal(true)}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -629,7 +630,7 @@ NOTIFY pgrst, 'reload schema';`}
                 onClick={() => setEditingItem(null)} 
                 className="text-white hover:text-blue-200 transition-colors focus:outline-none"
               >
-                ✕
+                <X className="h-5 w-5" />
               </button>
             </div>
             <form onSubmit={handleUpdate} className="p-6 space-y-4">
@@ -701,6 +702,51 @@ NOTIFY pgrst, 'reload schema';`}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Mutation Modal */}
+      {showAddModal && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddModal(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 rounded-lg p-1.5">
+                  <Package className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold leading-tight">
+                    {getText('Item Transfer Form', 'Formulir Pemindahan Barang')}
+                  </h2>
+                  <p className="text-blue-100 text-xs mt-0.5">
+                    {getText('Record equipment movement between rooms', 'Catat perpindahan barang antar ruangan')}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors focus:outline-none"
+                title={getText('Close', 'Tutup')}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal body — embedded form */}
+            <div className="p-6 max-h-[80vh] overflow-y-auto">
+              <ItemMutationForm
+                onSuccess={() => {
+                  setShowAddModal(false);
+                  fetchHistory();
+                }}
+                onCancel={() => setShowAddModal(false)}
+              />
+            </div>
           </div>
         </div>
       )}
