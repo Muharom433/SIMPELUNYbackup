@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { chunkedFetch } from '../lib/queryUtils';
 import { Package, MapPin, FileText, Send, User, Building, Phone, AlertTriangle, ChevronLeft } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
@@ -119,25 +120,51 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
 
   useEffect(() => {
     fetchData();
+
+    // Re-fetch data when user navigates back to this tab/page
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData();
+      }
+    };
+    const handleFocus = () => fetchData();
+    // Listen for equipment changes dispatched by ToolAdministration
+    const handleEquipmentUpdated = () => fetchData();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('equipment-location-updated', handleEquipmentUpdated);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('equipment-location-updated', handleEquipmentUpdated);
+    };
   }, []);
 
   const fetchData = async () => {
     try {
-      // Fetch equipment, rooms, dept in parallel
-      const [equipmentRes, roomsRes, deptRes] = await Promise.all([
-        supabase.from('equipment').select('id, name, code, rooms_id').order('name'),
+      // Fetch ALL equipment using chunkedFetch to bypass Supabase's default 1000-row limit.
+      // Without this, newly added items may not appear if total rows exceed 1000.
+      const [allEquipment, roomsRes, deptRes] = await Promise.all([
+        chunkedFetch<Equipment>(
+          (from, to) => supabase
+            .from('equipment')
+            .select('id, name, code, rooms_id')
+            .order('name')
+            .range(from, to),
+          { chunkSize: 1000, maxChunks: 50 }
+        ),
         supabase.from('rooms').select('id, name, code').order('name'),
         supabase.from('departments').select('id').limit(1),
       ]);
 
-      if (equipmentRes.error) {
-        console.error('[ItemMutation] Equipment fetch error:', equipmentRes.error);
-      }
       if (roomsRes.error) {
         console.error('[ItemMutation] Rooms fetch error:', roomsRes.error);
       }
 
-      setEquipmentList(equipmentRes.data || []);
+      console.log(`[ItemMutation] Fetched ${allEquipment.length} equipment items (chunked).`);
+      setEquipmentList(allEquipment);
       setRoomList(roomsRes.data || []);
       if (deptRes.data && deptRes.data.length > 0) {
         setDefaultDeptId(deptRes.data[0].id);
@@ -476,8 +503,8 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
             const debugMsg = isTableMissing
               ? `Tabel equipment_mutations belum dibuat di database. Kode error: ${errCode}`
               : isFKViolation
-                ? `Penambahan ke database dibatasi oleh Foreign Key (menggunakan item/ruangan baru). Kode error: ${errCode}`
-                : `RLS (Row Level Security) memblokir operasi insert. Kode error: ${errCode}. Pesan: ${insertError?.message}`;
+              ? `Penambahan ke database dibatasi oleh Foreign Key (menggunakan item/ruangan baru). Kode error: ${errCode}`
+              : `RLS (Row Level Security) memblokir operasi insert. Kode error: ${errCode}. Pesan: ${insertError?.message}`;
             setDbError(debugMsg);
             setDebugInfo(JSON.stringify({ code: errCode, message: insertError?.message, hint: insertError?.hint }, null, 2));
 
@@ -488,7 +515,7 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
                 .from('equipment')
                 .update({ rooms_id: newRoomId })
                 .eq('id', selectedEquipment);
-            } catch (_) { }
+            } catch (_) {}
 
             if (saved) {
               toast.success(getText(
@@ -654,285 +681,285 @@ NOTIFY pgrst, 'reload schema';`;
         </button>
       )}
 
-      {/* Error Banner with SQL Fix */}
-      {dbError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-red-800 text-sm">
-                {getText('Database Permission Error', 'Error Izin Database')}
-              </h3>
-              <p className="text-red-700 text-xs mt-1 break-all">{dbError}</p>
-              {debugInfo && (
-                <pre className="text-[10px] text-red-800 bg-red-100 rounded p-2 mt-2 overflow-x-auto">
-                  {debugInfo}
-                </pre>
-              )}
-              <div className="mt-3 bg-red-100 rounded-lg p-3">
-                <p className="text-red-800 text-xs font-semibold mb-2">
-                  {getText(
-                    '⚡ Run this SQL in Supabase SQL Editor to fix the issue:',
-                    '⚡ Jalankan SQL ini di Supabase SQL Editor untuk memperbaiki masalah:'
+          {/* Error Banner with SQL Fix */}
+          {dbError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-red-800 text-sm">
+                    {getText('Database Permission Error', 'Error Izin Database')}
+                  </h3>
+                  <p className="text-red-700 text-xs mt-1 break-all">{dbError}</p>
+                  {debugInfo && (
+                    <pre className="text-[10px] text-red-800 bg-red-100 rounded p-2 mt-2 overflow-x-auto">
+                      {debugInfo}
+                    </pre>
                   )}
-                </p>
-                <pre className="text-[10px] text-red-900 bg-white rounded p-2 overflow-x-auto whitespace-pre-wrap border border-red-200 select-all cursor-text">
-                  {SQL_FIX}
-                </pre>
-                <p className="text-red-700 text-xs mt-2 font-medium">
-                  💡 {getText(
-                    'Data was saved locally in this browser. After running the SQL, the next transfer will sync to database.',
-                    'Data tersimpan di browser ini. Setelah SQL dijalankan, transfer berikutnya akan tersimpan ke database.'
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <form className="space-y-6" onSubmit={handleSubmit}>
-
-        {/* Equipment Selection */}
-        <div>
-          <label htmlFor="equipment" className="block text-sm font-medium text-gray-700">
-            {getText('Equipment', 'Barang')} <span className="text-red-500">*</span>
-          </label>
-          <div className="mt-1 relative rounded-md shadow-sm z-50">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-              <Package className="h-5 w-5 text-gray-400" />
-            </div>
-            <CreatableSelect
-              id="equipment"
-              isDisabled={loading}
-              isLoading={loading}
-              onChange={(newValue: any) => setSelectedEquipment(newValue ? newValue.value : '')}
-              onCreateOption={handleCreateEquipment}
-              options={equipmentOptions}
-              value={equipmentOptions.find(option => option.value === selectedEquipment) || null}
-              placeholder={getText('Search or type new item...', 'Cari atau ketik barang baru...')}
-              formatCreateLabel={(inputValue) => `${getText('Add new item', 'Tambah barang baru')}: "${inputValue}"`}
-              className="react-select-container"
-              classNamePrefix="react-select"
-              styles={{
-                control: (base) => ({
-                  ...base,
-                  paddingLeft: '2rem',
-                  borderColor: '#D1D5DB',
-                  boxShadow: 'none',
-                  '&:hover': {
-                    borderColor: '#9CA3AF'
-                  }
-                }),
-                valueContainer: (base) => ({
-                  ...base,
-                  paddingLeft: '0.5rem'
-                })
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Current Location (Read-only) */}
-        {selectedEquipment && (
-          <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-              {getText('Current Location', 'Lokasi Saat Ini')}
-            </label>
-            <div className="flex items-center text-sm text-gray-900 font-medium">
-              <MapPin className="h-4 w-4 text-gray-400 mr-2" />
-              {currentRoomData
-                ? `${currentRoomData.name} (${currentRoomData.code})`
-                : getText('No specific location', 'Tidak ada lokasi spesifik')}
-            </div>
-          </div>
-        )}
-
-        {/* Destination Room */}
-        <div>
-          <label htmlFor="new_room" className="block text-sm font-medium text-gray-700">
-            {getText('Destination Room', 'Ruangan Tujuan')} <span className="text-red-500">*</span>
-          </label>
-          <div className="mt-1 relative rounded-md shadow-sm z-40">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-              <Building className="h-5 w-5 text-gray-400" />
-            </div>
-            <CreatableSelect
-              id="new_room"
-              isDisabled={loading}
-              isLoading={loading}
-              onChange={(newValue: any) => setNewRoomId(newValue ? newValue.value : '')}
-              onCreateOption={handleCreateRoom}
-              options={roomOptions}
-              value={roomOptions.find(option => option.value === newRoomId) || null}
-              placeholder={getText('Search or type new room...', 'Cari atau ketik ruangan baru...')}
-              formatCreateLabel={(inputValue) => `${getText('Add new room', 'Tambah ruangan baru')}: "${inputValue}"`}
-              className="react-select-container"
-              classNamePrefix="react-select"
-              styles={{
-                control: (base) => ({
-                  ...base,
-                  paddingLeft: '2rem',
-                  borderColor: '#D1D5DB',
-                  boxShadow: 'none',
-                  '&:hover': {
-                    borderColor: '#9CA3AF'
-                  }
-                }),
-                valueContainer: (base) => ({
-                  ...base,
-                  paddingLeft: '0.5rem'
-                })
-              }}
-            />
-          </div>
-        </div>
-
-        {/* PIC Name — searchable dropdown from users table */}
-        <div>
-          <label htmlFor="pic_name" className="block text-sm font-medium text-gray-700">
-            {getText('PIC Name', 'Nama Penanggung Jawab')} <span className="text-red-500">*</span>
-          </label>
-          <div className="mt-1 relative rounded-md shadow-sm z-30">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-              <User className="h-5 w-5 text-gray-400" />
-            </div>
-            <Select
-              inputId="pic_name"
-              isDisabled={loading}
-              isLoading={usersLoading}
-              options={userOptions}
-              value={selectedPicUser}
-              onChange={(opt: any) => {
-                setSelectedPicUser(opt);
-                setPicName(opt ? opt.fullName : '');
-              }}
-              onInputChange={handleUserInputChange}
-              placeholder={getText('Search user by name...', 'Cari nama pengguna...')}
-              noOptionsMessage={() => getText('No user found', 'Pengguna tidak ditemukan')}
-              isClearable
-              className="react-select-container"
-              classNamePrefix="react-select"
-              formatOptionLabel={(opt: any) => (
-                <div className="flex flex-col py-0.5">
-                  <span className="text-sm font-medium text-gray-800">{opt.fullName}</span>
-                  {(opt.identityNumber || opt.username) && (
-                    <span className="text-xs text-gray-400 mt-0.5">
-                      {opt.identityNumber ? opt.identityNumber : opt.username}
-                    </span>
-                  )}
+                  <div className="mt-3 bg-red-100 rounded-lg p-3">
+                    <p className="text-red-800 text-xs font-semibold mb-2">
+                      {getText(
+                        '⚡ Run this SQL in Supabase SQL Editor to fix the issue:',
+                        '⚡ Jalankan SQL ini di Supabase SQL Editor untuk memperbaiki masalah:'
+                      )}
+                    </p>
+                    <pre className="text-[10px] text-red-900 bg-white rounded p-2 overflow-x-auto whitespace-pre-wrap border border-red-200 select-all cursor-text">
+                      {SQL_FIX}
+                    </pre>
+                    <p className="text-red-700 text-xs mt-2 font-medium">
+                      💡 {getText(
+                        'Data was saved locally in this browser. After running the SQL, the next transfer will sync to database.',
+                        'Data tersimpan di browser ini. Setelah SQL dijalankan, transfer berikutnya akan tersimpan ke database.'
+                      )}
+                    </p>
+                  </div>
                 </div>
-              )}
-              filterOption={(option: any, inputValue: string) => {
-                if (!inputValue) return true;
-                const q = inputValue.toLowerCase().trim();
-                const d = option.data || {};
-                return (
-                  (d.fullName || '').toLowerCase().includes(q) ||
-                  (d.username || '').toLowerCase().includes(q) ||
-                  (d.identityNumber || '').toLowerCase().includes(q) ||
-                  (option.label || '').toLowerCase().includes(q)
-                );
-              }}
-              styles={{
-                control: (base) => ({
-                  ...base,
-                  paddingLeft: '2rem',
-                  borderColor: '#D1D5DB',
-                  boxShadow: 'none',
-                  '&:hover': { borderColor: '#9CA3AF' }
-                }),
-                valueContainer: (base) => ({
-                  ...base,
-                  paddingLeft: '0.5rem',
-                  flexWrap: 'nowrap',
-                }),
-                singleValue: (base) => ({
-                  ...base,
-                  overflow: 'visible',
-                  textOverflow: 'unset',
-                  whiteSpace: 'normal',
-                  maxWidth: '100%',
-                }),
-              }}
-            />
-          </div>
-        </div>
-
-        {/* PIC Phone */}
-        <div>
-          <label htmlFor="pic_phone" className="block text-sm font-medium text-gray-700">
-            {getText('PIC Phone Number', 'Nomor HP Penanggung Jawab')} <span className="text-red-500">*</span>
-          </label>
-          <div className="mt-1 relative rounded-md shadow-sm">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Phone className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              type="tel"
-              name="pic_phone"
-              id="pic_phone"
-              required
-              value={picPhone}
-              onChange={(e) => setPicPhone(e.target.value)}
-              className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
-              placeholder={getText('E.g. 081234567890', 'Contoh: 081234567890')}
-            />
-          </div>
-        </div>
-
-        {/* Notes */}
-        <div>
-          <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
-            {getText('Notes (Optional)', 'Catatan (Opsional)')}
-          </label>
-          <div className="mt-1 relative rounded-md shadow-sm">
-            <div className="absolute top-3 left-3 pointer-events-none">
-              <FileText className="h-5 w-5 text-gray-400" />
-            </div>
-            <textarea
-              id="notes"
-              name="notes"
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
-              placeholder={getText('Reason for transfer or condition notes', 'Alasan perpindahan atau catatan kondisi')}
-            />
-          </div>
-        </div>
-
-        <div className={isModal ? 'flex justify-end gap-3 pt-2' : ''}>
-          {/* Cancel button — only shown in modal mode */}
-          {isModal && (
-            <button
-              type="button"
-              onClick={() => onCancel && onCancel()}
-              disabled={loading}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
-            >
-              {getText('Cancel', 'Batal')}
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            className={`${isModal ? 'px-4 py-2' : 'w-full py-2.5'} flex justify-center items-center px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            {loading ? (
-              <div className="flex items-center">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                {getText('Submitting...', 'Mengirim...')}
               </div>
-            ) : (
-              <div className="flex items-center">
-                <Send className="h-4 w-4 mr-2" />
-                {getText('Submit Transfer', 'Simpan Perpindahan')}
+            </div>
+          )}
+
+          <form className="space-y-6" onSubmit={handleSubmit}>
+
+            {/* Equipment Selection */}
+            <div>
+              <label htmlFor="equipment" className="block text-sm font-medium text-gray-700">
+                {getText('Equipment', 'Barang')} <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm z-50">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                  <Package className="h-5 w-5 text-gray-400" />
+                </div>
+                <CreatableSelect
+                  id="equipment"
+                  isDisabled={loading}
+                  isLoading={loading}
+                  onChange={(newValue: any) => setSelectedEquipment(newValue ? newValue.value : '')}
+                  onCreateOption={handleCreateEquipment}
+                  options={equipmentOptions}
+                  value={equipmentOptions.find(option => option.value === selectedEquipment) || null}
+                  placeholder={getText('Search or type new item...', 'Cari atau ketik barang baru...')}
+                  formatCreateLabel={(inputValue) => `${getText('Add new item', 'Tambah barang baru')}: "${inputValue}"`}
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      paddingLeft: '2rem',
+                      borderColor: '#D1D5DB',
+                      boxShadow: 'none',
+                      '&:hover': {
+                        borderColor: '#9CA3AF'
+                      }
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      paddingLeft: '0.5rem'
+                    })
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Current Location (Read-only) */}
+            {selectedEquipment && (
+              <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                  {getText('Current Location', 'Lokasi Saat Ini')}
+                </label>
+                <div className="flex items-center text-sm text-gray-900 font-medium">
+                  <MapPin className="h-4 w-4 text-gray-400 mr-2" />
+                  {currentRoomData
+                    ? `${currentRoomData.name} (${currentRoomData.code})`
+                    : getText('No specific location', 'Tidak ada lokasi spesifik')}
+                </div>
               </div>
             )}
-          </button>
-        </div>
-      </form>
+
+            {/* Destination Room */}
+            <div>
+              <label htmlFor="new_room" className="block text-sm font-medium text-gray-700">
+                {getText('Destination Room', 'Ruangan Tujuan')} <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm z-40">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                  <Building className="h-5 w-5 text-gray-400" />
+                </div>
+                <CreatableSelect
+                  id="new_room"
+                  isDisabled={loading}
+                  isLoading={loading}
+                  onChange={(newValue: any) => setNewRoomId(newValue ? newValue.value : '')}
+                  onCreateOption={handleCreateRoom}
+                  options={roomOptions}
+                  value={roomOptions.find(option => option.value === newRoomId) || null}
+                  placeholder={getText('Search or type new room...', 'Cari atau ketik ruangan baru...')}
+                  formatCreateLabel={(inputValue) => `${getText('Add new room', 'Tambah ruangan baru')}: "${inputValue}"`}
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      paddingLeft: '2rem',
+                      borderColor: '#D1D5DB',
+                      boxShadow: 'none',
+                      '&:hover': {
+                        borderColor: '#9CA3AF'
+                      }
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      paddingLeft: '0.5rem'
+                    })
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* PIC Name — searchable dropdown from users table */}
+            <div>
+              <label htmlFor="pic_name" className="block text-sm font-medium text-gray-700">
+                {getText('PIC Name', 'Nama Penanggung Jawab')} <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm z-30">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                  <User className="h-5 w-5 text-gray-400" />
+                </div>
+                <Select
+                  inputId="pic_name"
+                  isDisabled={loading}
+                  isLoading={usersLoading}
+                  options={userOptions}
+                  value={selectedPicUser}
+                  onChange={(opt: any) => {
+                    setSelectedPicUser(opt);
+                    setPicName(opt ? opt.fullName : '');
+                  }}
+                  onInputChange={handleUserInputChange}
+                  placeholder={getText('Search user by name...', 'Cari nama pengguna...')}
+                  noOptionsMessage={() => getText('No user found', 'Pengguna tidak ditemukan')}
+                  isClearable
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  formatOptionLabel={(opt: any) => (
+                    <div className="flex flex-col py-0.5">
+                      <span className="text-sm font-medium text-gray-800">{opt.fullName}</span>
+                      {(opt.identityNumber || opt.username) && (
+                        <span className="text-xs text-gray-400 mt-0.5">
+                          {opt.identityNumber ? opt.identityNumber : opt.username}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  filterOption={(option: any, inputValue: string) => {
+                    if (!inputValue) return true;
+                    const q = inputValue.toLowerCase().trim();
+                    const d = option.data || {};
+                    return (
+                      (d.fullName || '').toLowerCase().includes(q) ||
+                      (d.username || '').toLowerCase().includes(q) ||
+                      (d.identityNumber || '').toLowerCase().includes(q) ||
+                      (option.label || '').toLowerCase().includes(q)
+                    );
+                  }}
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      paddingLeft: '2rem',
+                      borderColor: '#D1D5DB',
+                      boxShadow: 'none',
+                      '&:hover': { borderColor: '#9CA3AF' }
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      paddingLeft: '0.5rem',
+                      flexWrap: 'nowrap',
+                    }),
+                    singleValue: (base) => ({
+                      ...base,
+                      overflow: 'visible',
+                      textOverflow: 'unset',
+                      whiteSpace: 'normal',
+                      maxWidth: '100%',
+                    }),
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* PIC Phone */}
+            <div>
+              <label htmlFor="pic_phone" className="block text-sm font-medium text-gray-700">
+                {getText('PIC Phone Number', 'Nomor HP Penanggung Jawab')} <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Phone className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="tel"
+                  name="pic_phone"
+                  id="pic_phone"
+                  required
+                  value={picPhone}
+                  onChange={(e) => setPicPhone(e.target.value)}
+                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
+                  placeholder={getText('E.g. 081234567890', 'Contoh: 081234567890')}
+                />
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
+                {getText('Notes (Optional)', 'Catatan (Opsional)')}
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute top-3 left-3 pointer-events-none">
+                  <FileText className="h-5 w-5 text-gray-400" />
+                </div>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
+                  placeholder={getText('Reason for transfer or condition notes', 'Alasan perpindahan atau catatan kondisi')}
+                />
+              </div>
+            </div>
+
+            <div className={isModal ? 'flex justify-end gap-3 pt-2' : ''}>
+              {/* Cancel button — only shown in modal mode */}
+              {isModal && (
+                <button
+                  type="button"
+                  onClick={() => onCancel && onCancel()}
+                  disabled={loading}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={loading}
+                className={`${isModal ? 'px-4 py-2' : 'w-full py-2.5'} flex justify-center items-center px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {loading ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                    {getText('Submitting...', 'Mengirim...')}
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    <Send className="h-4 w-4 mr-2" />
+                    {getText('Submit Transfer', 'Simpan Perpindahan')}
+                  </div>
+                )}
+              </button>
+            </div>
+          </form>
     </div>
   );
 
