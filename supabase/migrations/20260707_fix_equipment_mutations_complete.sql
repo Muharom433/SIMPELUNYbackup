@@ -7,7 +7,7 @@
 -- 1. Create the equipment_mutations table if it doesn't exist
 CREATE TABLE IF NOT EXISTS public.equipment_mutations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    equipment_id UUID NOT NULL REFERENCES public.equipment(id) ON DELETE CASCADE,
+    equipment_id UUID REFERENCES public.equipment(id) ON DELETE CASCADE,
     previous_room_id UUID REFERENCES public.rooms(id) ON DELETE SET NULL,
     new_room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
     pic_name TEXT NOT NULL,

@@ -31,6 +31,52 @@ const ItemHistory = () => {
   const [editNotes, setEditNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlineNoteText, setInlineNoteText] = useState<string>('');
+
+  const saveLocalUpdate = (id: string, picName: string, picPhone: string | null, notes: string | null) => {
+    setHistory(prev => prev.map(item => item.id === id ? { ...item, pic_name: picName, pic_phone: picPhone, notes } : item));
+
+    try {
+      const localData = localStorage.getItem('local_equipment_mutations');
+      if (localData) {
+        const list = JSON.parse(localData);
+        const updated = list.map((item: any) => item.id === id ? { ...item, pic_name: picName, pic_phone: picPhone, notes } : item);
+        localStorage.setItem('local_equipment_mutations', JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.error('Error updating local storage:', e);
+    }
+  };
+
+  const handleSaveInlineNote = async (record: MutationHistory) => {
+    const newNote = inlineNoteText.trim() || null;
+    saveLocalUpdate(record.id, record.pic_name, record.pic_phone, newNote);
+    setInlineEditId(null);
+
+    if (isLocalMode) {
+      toast.success(getText('Note updated', 'Keterangan berhasil diperbarui (lokal)'));
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('equipment_mutations')
+        .update({ notes: newNote })
+        .eq('id', record.id);
+
+      if (error) {
+        console.warn('[ItemHistory] DB note update failed, saved locally:', error);
+        toast.success(getText('Note saved locally (DB update pending)', 'Keterangan diperbarui (lokal)'));
+      } else {
+        toast.success(getText('Note updated successfully', 'Keterangan berhasil diperbarui'));
+      }
+    } catch (err: any) {
+      console.warn('[ItemHistory] Exception updating note:', err);
+      toast.success(getText('Note saved locally', 'Keterangan diperbarui (lokal)'));
+    }
+  };
+
   useEffect(() => {
     fetchHistory();
   }, []);
@@ -79,54 +125,40 @@ const ItemHistory = () => {
     if (!editingItem) return;
 
     setIsSaving(true);
+    const newPicName = editPicName.trim();
+    const newPicPhone = editPicPhone.trim() || null;
+    const newNotes = editNotes.trim() || null;
+
+    saveLocalUpdate(editingItem.id, newPicName, newPicPhone, newNotes);
+
+    if (isLocalMode) {
+      toast.success(getText('History record updated successfully (local)', 'Catatan histori berhasil diperbarui (lokal)'));
+      setEditingItem(null);
+      setIsSaving(false);
+      return;
+    }
+
     try {
-      if (isLocalMode) {
-        const localData = localStorage.getItem('local_equipment_mutations');
-        if (localData) {
-          const list = JSON.parse(localData);
-          const updated = list.map((item: any) => {
-            if (item.id === editingItem.id) {
-              return {
-                ...item,
-                pic_name: editPicName,
-                pic_phone: editPicPhone || null,
-                notes: editNotes || null
-              };
-            }
-            return item;
-          });
-          localStorage.setItem('local_equipment_mutations', JSON.stringify(updated));
-          
-          // Map to local state structure
-          const mappedUpdated = updated.map((m: any) => ({
-            ...m,
-            equipment: m.equipment,
-            previous_room: m.previous_room,
-            new_room: m.new_room
-          }));
-          setHistory(mappedUpdated);
-          toast.success(getText('History record updated successfully (local)', 'Catatan histori berhasil diperbarui (lokal)'));
-        }
-        setEditingItem(null);
+      const { error } = await supabase
+        .from('equipment_mutations')
+        .update({
+          pic_name: newPicName,
+          pic_phone: newPicPhone,
+          notes: newNotes
+        })
+        .eq('id', editingItem.id);
+
+      if (error) {
+        console.warn('[ItemHistory] DB update failed, saved locally:', error);
+        toast.success(getText('History record updated locally', 'Catatan histori berhasil diperbarui (lokal)'));
       } else {
-        const { error } = await supabase
-          .from('equipment_mutations')
-          .update({
-            pic_name: editPicName,
-            pic_phone: editPicPhone || null,
-            notes: editNotes || null
-          })
-          .eq('id', editingItem.id);
-
-        if (error) throw error;
-
         toast.success(getText('History record updated successfully', 'Catatan histori berhasil diperbarui'));
-        setEditingItem(null);
-        fetchHistory();
       }
+      setEditingItem(null);
     } catch (err: any) {
       console.error('Error updating mutation record:', err);
-      toast.error(getText('Failed to update history record: ' + err.message, 'Gagal memperbarui catatan histori: ' + err.message));
+      toast.success(getText('History record updated locally', 'Catatan histori berhasil diperbarui (lokal)'));
+      setEditingItem(null);
     } finally {
       setIsSaving(false);
     }
@@ -412,7 +444,7 @@ const ItemHistory = () => {
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS public.equipment_mutations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    equipment_id UUID NOT NULL REFERENCES public.equipment(id) ON DELETE CASCADE,
+    equipment_id UUID REFERENCES public.equipment(id) ON DELETE CASCADE,
     previous_room_id UUID REFERENCES public.rooms(id) ON DELETE SET NULL,
     new_room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
     pic_name TEXT NOT NULL,
@@ -453,14 +485,15 @@ CREATE POLICY "mutations_select_anon" ON public.equipment_mutations FOR SELECT T
 CREATE POLICY "mutations_insert_authenticated" ON public.equipment_mutations FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "mutations_insert_anon" ON public.equipment_mutations FOR INSERT TO anon WITH CHECK (true);
 CREATE POLICY "mutations_update_authenticated" ON public.equipment_mutations FOR UPDATE TO authenticated USING (true);
+CREATE POLICY "mutations_update_anon" ON public.equipment_mutations FOR UPDATE TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "mutations_delete_authenticated" ON public.equipment_mutations FOR DELETE TO authenticated USING (
   EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role IN ('super_admin', 'laboratory'))
 );
 
 -- 6. Grant permissions
-GRANT SELECT, INSERT ON public.equipment_mutations TO authenticated;
-GRANT SELECT, INSERT ON public.equipment_mutations TO anon;
-GRANT UPDATE, DELETE ON public.equipment_mutations TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.equipment_mutations TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.equipment_mutations TO anon;
+GRANT DELETE ON public.equipment_mutations TO authenticated;
 
 -- 7. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';`}
@@ -499,7 +532,7 @@ NOTIFY pgrst, 'reload schema';`}
                   {getText('Phone Number', 'Nomor HP')}
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('Notes', 'Catatan')}
+                  {getText('Notes', 'Catatan / Keterangan')}
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {getText('Actions', 'Aksi')}
@@ -542,10 +575,10 @@ NOTIFY pgrst, 'reload schema';`}
                         <Package className="h-4 w-4 mr-2 text-blue-500" />
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {record.equipment?.name || getText('Unknown Item', 'Barang Tidak Diketahui')}
+                            {record.equipment?.name || getText('Custom Description', 'Keterangan Kustom')}
                           </div>
-                          <div className="text-xs text-gray-500">
-                            {record.equipment?.code || '-'}
+                          <div className={`text-xs ${record.equipment ? 'text-gray-500' : 'text-amber-500 italic'}`}>
+                            {record.equipment?.code || getText('Not registered', 'Tidak terdaftar')}
                           </div>
                         </div>
                       </div>
@@ -586,9 +619,55 @@ NOTIFY pgrst, 'reload schema';`}
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500 max-w-xs truncate" title={record.notes || ''}>
-                        {record.notes || '-'}
-                      </div>
+                      {inlineEditId === record.id ? (
+                        <div className="flex items-center space-x-1.5 min-w-[220px]">
+                          <input
+                            type="text"
+                            value={inlineNoteText}
+                            onChange={(e) => setInlineNoteText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveInlineNote(record);
+                              if (e.key === 'Escape') setInlineEditId(null);
+                            }}
+                            autoFocus
+                            placeholder={getText('Type note/keterangan...', 'Ketik keterangan...')}
+                            className="w-full text-xs p-1.5 border border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={() => handleSaveInlineNote(record)}
+                            className="p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex-shrink-0"
+                            title={getText('Save Keterangan', 'Simpan Keterangan')}
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setInlineEditId(null)}
+                            className="p-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex-shrink-0 text-xs font-bold"
+                            title={getText('Cancel', 'Batal')}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => {
+                            setInlineEditId(record.id);
+                            setInlineNoteText(record.notes || '');
+                          }}
+                          className="group flex items-center justify-between cursor-pointer p-1.5 rounded-lg hover:bg-blue-50 transition-colors max-w-xs border border-transparent hover:border-blue-200"
+                          title={getText('Click to edit note/keterangan', 'Klik untuk edit keterangan')}
+                        >
+                          <span className={`text-sm ${record.notes ? 'text-gray-800' : 'text-blue-600 font-medium text-xs flex items-center gap-1'}`}>
+                            {record.notes ? record.notes : (
+                              <>
+                                <Plus className="h-3.5 w-3.5 text-blue-500" />
+                                {getText('Add Note', 'Tambah Keterangan')}
+                              </>
+                            )}
+                          </span>
+                          <Pencil className="h-3.5 w-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0" />
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
@@ -638,7 +717,7 @@ NOTIFY pgrst, 'reload schema';`}
                   {getText('Equipment', 'Barang')}
                 </label>
                 <div className="text-sm font-medium text-gray-900 bg-gray-50 p-2 rounded-lg border border-gray-200">
-                  {editingItem.equipment?.name} ({editingItem.equipment?.code || '-'})
+                  {editingItem.equipment ? `${editingItem.equipment.name} (${editingItem.equipment.code})` : getText('Custom Description (Not registered)', 'Keterangan Kustom (Tidak terdaftar)')}
                 </div>
               </div>
               

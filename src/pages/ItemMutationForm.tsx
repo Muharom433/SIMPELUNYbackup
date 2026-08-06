@@ -30,6 +30,9 @@ const ItemMutationForm = () => {
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   const [selectedEquipment, setSelectedEquipment] = useState<string>('');
+  const [customEquipmentName, setCustomEquipmentName] = useState<string>('');
+  const [isCustomEquipment, setIsCustomEquipment] = useState<boolean>(false);
+  const [currentRoomId, setCurrentRoomId] = useState<string>('');
   const [newRoomId, setNewRoomId] = useState<string>('');
   const [picName, setPicName] = useState<string>('');
   const [picPhone, setPicPhone] = useState<string>('');
@@ -66,105 +69,15 @@ const ItemMutationForm = () => {
     }
   };
 
-  const handleCreateEquipment = async (inputValue: string) => {
+  const handleCreateEquipment = (inputValue: string) => {
     if (!inputValue || !inputValue.trim()) return;
-    setLoading(true);
     const cleanName = inputValue.trim();
-    const generatedCode = `NEW-${Math.floor(Date.now() / 1000)}`;
-
-    try {
-      // 1. Try insert with full object
-      const fullEquipment: any = {
-        name: cleanName,
-        code: generatedCode,
-        category: 'Uncategorized',
-        is_mandatory: false,
-        is_available: true,
-        quantity: 1,
-        original_quantity: 1
-      };
-
-      if (defaultDeptId) {
-        fullEquipment.department_id = defaultDeptId;
-      }
-
-      let insertedData: Equipment | null = null;
-      let dbInsertSuccess = false;
-
-      const { data: d1, error: e1 } = await supabase
-        .from('equipment')
-        .insert([fullEquipment])
-        .select('id, name, code, rooms_id')
-        .single();
-
-      if (!e1 && d1) {
-        insertedData = d1;
-        dbInsertSuccess = true;
-      } else {
-        console.warn('[ItemMutation] Create equipment attempt 1 failed:', e1);
-
-        // 2. Try minimal insert (omit original_quantity and department_id in case column is missing or invalid FK)
-        const minimalEquipment: any = {
-          name: cleanName,
-          code: generatedCode,
-          category: 'Uncategorized',
-          is_mandatory: false,
-          is_available: true,
-          quantity: 1
-        };
-
-        const { data: d2, error: e2 } = await supabase
-          .from('equipment')
-          .insert([minimalEquipment])
-          .select('id, name, code, rooms_id')
-          .single();
-
-        if (!e2 && d2) {
-          insertedData = d2;
-          dbInsertSuccess = true;
-        } else {
-          console.warn('[ItemMutation] Create equipment attempt 2 failed:', e2);
-        }
-      }
-
-      if (dbInsertSuccess && insertedData) {
-        const newItem: Equipment = {
-          id: insertedData.id,
-          name: insertedData.name,
-          code: insertedData.code,
-          rooms_id: insertedData.rooms_id || null
-        };
-        setEquipmentList(prev => [...prev, newItem]);
-        setSelectedEquipment(newItem.id);
-        toast.success(getText('New item added successfully', 'Barang baru berhasil ditambahkan'));
-      } else {
-        // Fallback: Create local/client-side item if DB fails (so user can still fill form)
-        const tempId = crypto.randomUUID();
-        const localItem: Equipment = {
-          id: tempId,
-          name: cleanName,
-          code: generatedCode,
-          rooms_id: null
-        };
-        setEquipmentList(prev => [...prev, localItem]);
-        setSelectedEquipment(tempId);
-        toast.success(getText('New item added (local item created)', 'Barang baru ditambahkan'));
-      }
-    } catch (error) {
-      console.error('Error creating equipment:', error);
-      const tempId = crypto.randomUUID();
-      const localItem: Equipment = {
-        id: inputValue.trim(),
-        name: inputValue.trim(),
-        code: `NEW-${Math.floor(Date.now() / 1000)}`,
-        rooms_id: null
-      };
-      setEquipmentList(prev => [...prev, localItem]);
-      setSelectedEquipment(tempId);
-      toast.success(getText('New item added', 'Barang baru ditambahkan'));
-    } finally {
-      setLoading(false);
-    }
+    // Simply store the typed text as custom equipment name (no DB insert)
+    setCustomEquipmentName(cleanName);
+    setIsCustomEquipment(true);
+    setSelectedEquipment('');
+    setCurrentRoomId('');
+    toast.success(getText(`Using custom item: "${cleanName}"`, `Menggunakan keterangan barang: "${cleanName}"`));
   };
 
   const equipmentOptions = equipmentList.map(eq => ({
@@ -172,7 +85,7 @@ const ItemMutationForm = () => {
     label: `${eq.name} (${eq.code})`
   }));
 
-  const handleCreateRoom = async (inputValue: string) => {
+  const createRoomOption = async (inputValue: string, isCurrent: boolean) => {
     if (!inputValue || !inputValue.trim()) return;
     setLoading(true);
     const cleanName = inputValue.trim();
@@ -231,14 +144,22 @@ const ItemMutationForm = () => {
       if (dbSuccess && insertedRoom) {
         const newRoomData: Room = { id: insertedRoom.id, name: insertedRoom.name, code: insertedRoom.code };
         setRoomList(prev => [...prev, newRoomData]);
-        setNewRoomId(newRoomData.id);
+        if (isCurrent) {
+          setCurrentRoomId(newRoomData.id);
+        } else {
+          setNewRoomId(newRoomData.id);
+        }
         toast.success(getText('New room added successfully', 'Ruangan baru berhasil ditambahkan'));
       } else {
         // Fallback: local room
         const tempId = crypto.randomUUID();
         const localRoom: Room = { id: tempId, name: cleanName, code: generatedCode };
         setRoomList(prev => [...prev, localRoom]);
-        setNewRoomId(tempId);
+        if (isCurrent) {
+          setCurrentRoomId(tempId);
+        } else {
+          setNewRoomId(tempId);
+        }
         toast.success(getText('New room added', 'Ruangan baru ditambahkan'));
       }
     } catch (error) {
@@ -246,12 +167,19 @@ const ItemMutationForm = () => {
       const tempId = crypto.randomUUID();
       const localRoom: Room = { id: tempId, name: inputValue.trim(), code: `R-${Math.floor(Date.now() / 1000)}` };
       setRoomList(prev => [...prev, localRoom]);
-      setNewRoomId(tempId);
+      if (isCurrent) {
+        setCurrentRoomId(tempId);
+      } else {
+        setNewRoomId(tempId);
+      }
       toast.success(getText('New room added', 'Ruangan baru ditambahkan'));
     } finally {
       setLoading(false);
     }
   };
+
+  const handleCreateRoom = (inputValue: string) => createRoomOption(inputValue, false);
+  const handleCreateCurrentRoom = (inputValue: string) => createRoomOption(inputValue, true);
 
   const roomOptions = roomList.map(room => ({
     value: room.id,
@@ -260,19 +188,27 @@ const ItemMutationForm = () => {
 
   const saveToLocalStorage = () => {
     try {
-      const equipment = equipmentList.find(e => e.id === selectedEquipment);
-      const previousRoom = equipment?.rooms_id
-        ? roomList.find(r => r.id === equipment.rooms_id)
-        : null;
+      const equipment = isCustomEquipment ? null : equipmentList.find(e => e.id === selectedEquipment);
+      const previousRoom = currentRoomId
+        ? roomList.find(r => r.id === currentRoomId)
+        : (equipment?.rooms_id
+          ? roomList.find(r => r.id === equipment.rooms_id)
+          : null);
       const newRoom = roomList.find(r => r.id === newRoomId);
+
+      const equipmentDisplay = isCustomEquipment
+        ? { name: customEquipmentName, code: 'CUSTOM' }
+        : (equipment ? { name: equipment.name, code: equipment.code } : null);
 
       const newMutation = {
         id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         pic_name: picName,
         pic_phone: picPhone || null,
-        notes: notes || null,
+        notes: isCustomEquipment
+          ? (notes ? `[${customEquipmentName}] ${notes}` : customEquipmentName)
+          : (notes || null),
         created_at: new Date().toISOString(),
-        equipment: equipment ? { name: equipment.name, code: equipment.code } : null,
+        equipment: equipmentDisplay,
         previous_room: previousRoom ? { name: previousRoom.name, code: previousRoom.code } : null,
         new_room: newRoom ? { name: newRoom.name, code: newRoom.code } : null
       };
@@ -290,7 +226,7 @@ const ItemMutationForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEquipment || !newRoomId || !picName) {
+    if ((!selectedEquipment && !isCustomEquipment) || !newRoomId || !picName) {
       toast.error(getText('Please fill all required fields', 'Harap isi semua kolom wajib'));
       return;
     }
@@ -300,19 +236,25 @@ const ItemMutationForm = () => {
     setDebugInfo(null);
 
     try {
-      const equipment = equipmentList.find(e => e.id === selectedEquipment);
-      const previousRoomId = equipment?.rooms_id || null;
+      const equipment = isCustomEquipment ? null : equipmentList.find(e => e.id === selectedEquipment);
+      const previousRoomId = currentRoomId || equipment?.rooms_id || null;
 
       // --- Step 1: Insert mutation record ---
       // Try inserting with all fields first
       const insertData: any = {
-        equipment_id: selectedEquipment,
         previous_room_id: previousRoomId,
         new_room_id: newRoomId,
         pic_name: picName,
         pic_phone: picPhone || null,
-        notes: notes || null
+        notes: isCustomEquipment
+          ? (notes ? `[${customEquipmentName}] ${notes}` : customEquipmentName)
+          : (notes || null)
       };
+
+      // Only include equipment_id if we selected from the dropdown
+      if (!isCustomEquipment && selectedEquipment) {
+        insertData.equipment_id = selectedEquipment;
+      }
 
       let mutationInserted = false;
       let insertError: any = null;
@@ -358,11 +300,14 @@ const ItemMutationForm = () => {
           const isTableMissing = errCode === '42P01' || (errMsg.includes('relation') && errMsg.includes('does not exist'));
           const isRLSDenied = errCode === '42501' || errMsg.includes('row-level security') || errMsg.includes('permission denied') || errMsg.includes('insufficient_privilege');
           const isFKViolation = errCode === '23503' || errMsg.includes('foreign key constraint') || errMsg.includes('violates foreign key');
+          const isNotNullViolation = errCode === '23502' || errMsg.includes('null value in column') || errMsg.includes('violates not-null constraint');
 
-          if (isTableMissing || isRLSDenied || isFKViolation) {
+          if (isTableMissing || isRLSDenied || isFKViolation || isNotNullViolation) {
             // Show the SQL fix and save to localStorage
             const debugMsg = isTableMissing
               ? `Tabel equipment_mutations belum dibuat di database. Kode error: ${errCode}`
+              : isNotNullViolation
+              ? `Penambahan diblokir karena kolom equipment_id wajib diisi di database (NOT NULL). Jalankan SQL Fix untuk memperbarui skema.`
               : isFKViolation
               ? `Penambahan ke database dibatasi oleh Foreign Key (menggunakan item/ruangan baru). Kode error: ${errCode}`
               : `RLS (Row Level Security) memblokir operasi insert. Kode error: ${errCode}. Pesan: ${insertError?.message}`;
@@ -384,6 +329,9 @@ const ItemMutationForm = () => {
                 'Transfer disimpan lokal (perlu perbaikan DB - lihat instruksi di bawah)'
               ));
               setSelectedEquipment('');
+              setCustomEquipmentName('');
+              setIsCustomEquipment(false);
+              setCurrentRoomId('');
               setNewRoomId('');
               setPicName('');
               setPicPhone('');
@@ -400,25 +348,32 @@ const ItemMutationForm = () => {
         }
       }
 
-      // --- Step 2: Update equipment location ---
+      // --- Step 2: Update equipment location (only if a real equipment was selected) ---
       if (mutationInserted) {
-        const { error: updateError } = await supabase
-          .from('equipment')
-          .update({ rooms_id: newRoomId })
-          .eq('id', selectedEquipment);
+        if (!isCustomEquipment && selectedEquipment) {
+          const { error: updateError } = await supabase
+            .from('equipment')
+            .update({ rooms_id: newRoomId })
+            .eq('id', selectedEquipment);
 
-        if (updateError) {
-          console.warn('[ItemMutation] Failed to update equipment location:', updateError);
-          toast.success(getText(
-            'Transfer recorded! (Note: equipment location update failed, may need manual update)',
-            'Transfer berhasil dicatat! (Catatan: gagal update lokasi barang, mungkin perlu update manual)'
-          ));
+          if (updateError) {
+            console.warn('[ItemMutation] Failed to update equipment location:', updateError);
+            toast.success(getText(
+              'Transfer recorded! (Note: equipment location update failed, may need manual update)',
+              'Transfer berhasil dicatat! (Catatan: gagal update lokasi barang, mungkin perlu update manual)'
+            ));
+          } else {
+            toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
+          }
         } else {
           toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
         }
 
         // Reset form
         setSelectedEquipment('');
+        setCustomEquipmentName('');
+        setIsCustomEquipment(false);
+        setCurrentRoomId('');
         setNewRoomId('');
         setPicName('');
         setPicPhone('');
@@ -438,7 +393,7 @@ const ItemMutationForm = () => {
     }
   };
 
-  const selectedEquipmentData = equipmentList.find(e => e.id === selectedEquipment);
+  const selectedEquipmentData = isCustomEquipment ? null : equipmentList.find(e => e.id === selectedEquipment);
   const currentRoomData = selectedEquipmentData?.rooms_id
     ? roomList.find(r => r.id === selectedEquipmentData.rooms_id)
     : null;
@@ -450,7 +405,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS public.equipment_mutations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    equipment_id UUID NOT NULL REFERENCES public.equipment(id) ON DELETE CASCADE,
+    equipment_id UUID REFERENCES public.equipment(id) ON DELETE CASCADE,
     previous_room_id UUID REFERENCES public.rooms(id) ON DELETE SET NULL,
     new_room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
     pic_name TEXT NOT NULL,
@@ -582,12 +537,29 @@ NOTIFY pgrst, 'reload schema';`;
                   id="equipment"
                   isDisabled={loading}
                   isLoading={loading}
-                  onChange={(newValue: any) => setSelectedEquipment(newValue ? newValue.value : '')}
+                  onChange={(newValue: any) => {
+                    if (newValue) {
+                      setSelectedEquipment(newValue.value);
+                      setIsCustomEquipment(false);
+                      setCustomEquipmentName('');
+                      const selectedEq = equipmentList.find(e => e.id === newValue.value);
+                      setCurrentRoomId(selectedEq?.rooms_id || '');
+                    } else {
+                      setSelectedEquipment('');
+                      setIsCustomEquipment(false);
+                      setCustomEquipmentName('');
+                      setCurrentRoomId('');
+                    }
+                  }}
                   onCreateOption={handleCreateEquipment}
                   options={equipmentOptions}
-                  value={equipmentOptions.find(option => option.value === selectedEquipment) || null}
-                  placeholder={getText('Search or type new item...', 'Cari atau ketik barang baru...')}
-                  formatCreateLabel={(inputValue) => `${getText('Add new item', 'Tambah barang baru')}: "${inputValue}"`}
+                  value={
+                    isCustomEquipment
+                      ? { value: '__custom__', label: customEquipmentName }
+                      : (equipmentOptions.find(option => option.value === selectedEquipment) || null)
+                  }
+                  placeholder={getText('Search or type item description...', 'Cari atau ketik keterangan barang...')}
+                  formatCreateLabel={(inputValue) => `${getText('Use as description', 'Gunakan sebagai keterangan')}: "${inputValue}"`}
                   className="react-select-container"
                   classNamePrefix="react-select"
                   styles={{
@@ -609,27 +581,64 @@ NOTIFY pgrst, 'reload schema';`;
               </div>
             </div>
 
-            {/* Current Location (Read-only) */}
-            {selectedEquipment && (
-              <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-                  {getText('Current Location', 'Lokasi Saat Ini')}
-                </label>
-                <div className="flex items-center text-sm text-gray-900 font-medium">
-                  <MapPin className="h-4 w-4 text-gray-400 mr-2" />
-                  {currentRoomData
-                    ? `${currentRoomData.name} (${currentRoomData.code})`
-                    : getText('No specific location', 'Tidak ada lokasi spesifik')}
+            {/* Custom Item Description Notice */}
+            {isCustomEquipment && (
+              <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
+                <div className="flex items-center text-xs text-blue-800 font-medium">
+                  <Package className="h-4 w-4 text-blue-500 mr-2 flex-shrink-0" />
+                  <span>{getText('Custom item: ', 'Barang kustom: ')} "{customEquipmentName}"</span>
                 </div>
               </div>
             )}
+
+            {/* Editable Current Location (Lokasi Saat Ini / Ruangan Asal) */}
+            <div>
+              <label htmlFor="current_room" className="block text-sm font-medium text-gray-700">
+                {getText('Current Location (From)', 'LOKASI SAAT INI')} <span className="text-blue-600 text-xs font-normal">({getText('Editable', 'Bisa diketik / diedit')})</span>
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm z-40">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                  <MapPin className="h-5 w-5 text-gray-400" />
+                </div>
+                <CreatableSelect
+                  id="current_room"
+                  isDisabled={loading}
+                  isLoading={loading}
+                  onChange={(newValue: any) => setCurrentRoomId(newValue ? newValue.value : '')}
+                  onCreateOption={handleCreateCurrentRoom}
+                  options={roomOptions}
+                  value={roomOptions.find(option => option.value === currentRoomId) || null}
+                  placeholder={getText('Search or type current location...', 'Cari atau ketik lokasi saat ini / asal barang...')}
+                  formatCreateLabel={(inputValue) => `${getText('Add location', 'Set lokasi baru')}: "${inputValue}"`}
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  isClearable
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      paddingLeft: '2rem',
+                      borderColor: '#D1D5DB',
+                      boxShadow: 'none',
+                      backgroundColor: '#F9FAFB',
+                      '&:hover': {
+                        borderColor: '#9CA3AF'
+                      }
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      paddingLeft: '0.5rem'
+                    })
+                  }}
+                />
+              </div>
+            </div>
 
             {/* Destination Room */}
             <div>
               <label htmlFor="new_room" className="block text-sm font-medium text-gray-700">
                 {getText('Destination Room', 'Ruangan Tujuan')} <span className="text-red-500">*</span>
               </label>
-              <div className="mt-1 relative rounded-md shadow-sm z-40">
+              <div className="mt-1 relative rounded-md shadow-sm z-30">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                   <Building className="h-5 w-5 text-gray-400" />
                 </div>

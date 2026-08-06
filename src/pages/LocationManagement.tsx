@@ -2215,18 +2215,21 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                       <span className="font-semibold">{selectedBuilding?.name}</span>
                     </div>
 
-                    {/* Floor Selection Dropdown */}
+                    {/* Floor Selection Input */}
                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Target Floor', 'Lantai Tujuan')} <span className="text-red-500">*</span></label>
-                    <select
+                    <input
+                      type="text"
+                      list="assign-floor-options"
                       value={assignTargetFloor}
                       onChange={e => setAssignTargetFloor(e.target.value)}
+                      placeholder={getText('Select or type floor', 'Pilih atau ketik lantai')}
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all mb-2"
-                    >
-                      <option value="">{getText('Select Floor', 'Pilih Lantai')}</option>
+                    />
+                    <datalist id="assign-floor-options">
                       {availableFloorsForAssign.map(floor => (
-                        <option key={floor} value={floor}>{floor}</option>
+                        <option key={floor} value={floor} />
                       ))}
-                    </select>
+                    </datalist>
                   </div>
                   <div className="relative flex-1 flex flex-col min-h-0">
                     <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Search Room to Move', 'Cari Ruangan untuk Dipindah')}</label>
