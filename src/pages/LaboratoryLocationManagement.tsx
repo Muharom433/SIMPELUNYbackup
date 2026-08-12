@@ -240,7 +240,7 @@ const LaboratoryLocationManagement: React.FC = () => {
     const fetchCabinetStock = async () => {
         const { data } = await supabase
             .from('stock')
-            .select('*')
+            .select('id, nama, category, quantity')
             .or('category.ilike.%cabinet%,category.ilike.%almari%,category.ilike.%lemari%')
             .gt('quantity', 0)
             .order('nama');
@@ -251,7 +251,7 @@ const LaboratoryLocationManagement: React.FC = () => {
     const fetchBoxStock = async () => {
         const { data } = await supabase
             .from('stock')
-            .select('*')
+            .select('id, nama, category, quantity')
             .ilike('category', '%box%')
             .gt('quantity', 0)
             .order('nama');

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
@@ -191,42 +191,57 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   }, []);
 
   // Animate particles with elegant flowing motion
+  const animFrameRef = useRef<number>();
+  const lastAnimUpdate = useRef<number>(0);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setParticles(prev => prev.map(p => {
-        // Smooth phase advancement for organic motion
-        const newPhase = p.phase + 0.015;
+    const animate = (time: number) => {
+      if (time - lastAnimUpdate.current > 100) { // Limit to 10 FPS to save CPU
+        lastAnimUpdate.current = time;
+        setParticles(prev => prev.map(p => {
+          // Smooth phase advancement for organic motion
+          const newPhase = p.phase + 0.015;
 
-        // Elegant flowing swirl (like soft mist)
-        const swirlX = Math.sin(newPhase * 0.4) * 0.06 * p.amplitude;
-        const swirlY = Math.cos(newPhase * 0.25) * 0.04 * p.amplitude;
+          // Elegant flowing swirl (like soft mist)
+          const swirlX = Math.sin(newPhase * 0.4) * 0.06 * p.amplitude;
+          const swirlY = Math.cos(newPhase * 0.25) * 0.04 * p.amplitude;
 
-        // Apply smooth movement
-        let newX = p.x + p.speedX + swirlX;
-        let newY = p.y + p.speedY + swirlY;
+          // Apply smooth movement
+          let newX = p.x + p.speedX + swirlX;
+          let newY = p.y + p.speedY + swirlY;
 
-        // Seamless wraparound for continuous elegance
-        if (newY < -20) {
-          newY = 120;
-          newX = Math.random() * 100;
-        }
-        if (newX < -15) newX = 115;
-        if (newX > 115) newX = -15;
+          // Seamless wraparound for continuous elegance
+          if (newY < -20) {
+            newY = 120;
+            newX = Math.random() * 100;
+          }
+          if (newX < -15) newX = 115;
+          if (newX > 115) newX = -15;
 
-        return {
-          ...p,
-          x: newX,
-          y: newY,
-          phase: newPhase
-        };
-      }));
-    }, 60);
+          return {
+            ...p,
+            x: newX,
+            y: newY,
+            phase: newPhase
+          };
+        }));
+      }
+      animFrameRef.current = requestAnimationFrame(animate);
+    };
 
-    return () => clearInterval(interval);
+    animFrameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameRef.current!);
   }, []);
 
   // Handle mouse movement on hero section (Liquid Repulsion)
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const lastMouseUpdate = useRef<number>(0);
+  
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const now = Date.now();
+    // Throttle mouse moves to ~15 FPS to save CPU
+    if (now - lastMouseUpdate.current < 66) return;
+    lastMouseUpdate.current = now;
+
     if (!heroRef.current) return;
 
     const rect = heroRef.current.getBoundingClientRect();
@@ -261,7 +276,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       }
       return p;
     }));
-  };
+  }, []);
 
   useEffect(() => {
     // Update time every second

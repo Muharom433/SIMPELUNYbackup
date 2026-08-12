@@ -731,7 +731,7 @@ const LectureSchedules: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('reschedule')
-        .select('*');
+        .select('id, schedule_id, new_date, new_start_time, new_end_time, new_room_id, reason, status, requester_id, created_at');
 
       if (error) throw error;
       setRescheduleRequests(data || []);
@@ -1250,7 +1250,7 @@ const LectureSchedules: React.FC = () => {
       setLoadingLecturerSchedules(true);
       const { data, error } = await supabase
         .from('lecture_schedules')
-        .select('*')
+        .select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, lecturer_user_id, status')
         .eq('lecturer', lecturerName)
         .order('day', { ascending: true })
         .order('start_time', { ascending: true });
@@ -1510,7 +1510,7 @@ const LectureSchedules: React.FC = () => {
     const toastId = toast.loading('Menyiapkan PDF jadwal kuliah...');
     try {
       // Fetch ALL schedules for the current filter (no pagination)
-      let query = supabase.from('lecture_schedules').select('*');
+      let query = supabase.from('lecture_schedules').select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, status');
 
       if (debouncedSearchTerm) {
         const escapedTerm = debouncedSearchTerm

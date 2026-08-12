@@ -67,7 +67,8 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
                 equipment:equipment_id(id, name, code),
                 new_room:new_room_id(id, name, code, floor, department:departments(id, name, code), building:building_id(name, campus:campus_id(name)))
             `)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(2000);
 
         if (dbMutations) {
             dbMutations.forEach((m: any) => {
@@ -932,9 +933,11 @@ const ToolAdministration: React.FC = () => {
                 console.log('User Prodi ID:', laborStudyProgramId);
 
                 if (laborDeptId) {
-                    // STRATEGY CHANGE: Fetch ALL equipment for the department first
-                    // Then filter in JS. This avoids fragile .or() syntax issues with Supabase client.
                     query = query.eq('department_id', laborDeptId);
+                    
+                    if (laborStudyProgramId) {
+                        query = query.or(`study_program_id.is.null,study_program_id.eq.${laborStudyProgramId}`);
+                    }
                 } else {
                     console.log('WARNING: User has no department_id!');
                     setEquipment([]);
@@ -950,11 +953,8 @@ const ToolAdministration: React.FC = () => {
             let from = (equipmentPage - 1) * itemsPerPage;
             let to = from + itemsPerPage - 1;
 
-            // If Laboratory, we fetch ALL first, then filter, then paginate in JS
-            // This prevents "holes" in the page caused by filtering after pagination
-            if (!isLaboratory) {
-                query = query.range(from, to);
-            }
+            // Apply pagination directly to DB query for all users
+            query = query.range(from, to);
 
             query = query.order('created_at', { ascending: false });
 
@@ -983,31 +983,8 @@ console.log('========== QUERY RESULT ==========');
                 console.warn('Error applying room overrides to equipment in ToolAdministration:', err);
             }
 
-            // IN-MEMORY FILTER & PAGINATION FOR LABORAN
-            if (isLaboratory && profile?.study_program_id) {
-                const laborProdiId = profile.study_program_id;
-                const originalCount = finalData.length;
-
-                finalData = finalData.filter((item: any) => {
-                    // Include if item belongs to general dept (prodi is null) OR matches user prodi
-                    return item.study_program_id === null || item.study_program_id === laborProdiId;
-                });
-
-                console.log(`Filtered in-memory: ${originalCount} -> ${finalData.length} items`);
-
-                // Update total count based on valid items
-                setTotalEquipment(finalData.length);
-
-                // Manual Javascript Pagination
-                // Re-calculate from/to because we are slicing the array locally
-                const startIndex = (equipmentPage - 1) * itemsPerPage;
-                const endIndex = startIndex + itemsPerPage;
-                finalData = finalData.slice(startIndex, endIndex);
-
-            } else {
-                // For non-laboran, count from DB is accurate
-                setTotalEquipment(count || 0);
-            }
+            // No more in-memory filter and pagination needed!
+            setTotalEquipment(count || 0);
 
             setEquipment(finalData);
 

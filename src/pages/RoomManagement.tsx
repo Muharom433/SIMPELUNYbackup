@@ -413,7 +413,7 @@ const RoomManagement: React.FC = () => {
             // 1. Fetch lecture schedules
             const { data: lectureData, error: lectureError } = await supabase
                 .from('lecture_schedules')
-                .select('*')
+                .select('id, start_time, end_time, course_name, class, subject_study, lecturer, semester')
                 .eq('day', dayNameIndonesian)
                 .ilike('room', `%${roomName}%`)
                 .order('start_time');
@@ -439,7 +439,7 @@ const RoomManagement: React.FC = () => {
             // 2. Fetch exam schedules
             const { data: examData, error: examError } = await supabase
                 .from('exams')
-                .select('*')
+                .select('id, start_time, end_time, course_name, class, student_amount, course_code')
                 .eq('room_id', roomId)
                 .eq('date', targetDate)
                 .order('start_time');
@@ -1190,7 +1190,7 @@ const RoomManagement: React.FC = () => {
     const fetchEquipmentForRoom = async (roomId: string) => {
         setLoadingEquipment(true);
         try {
-            const { data, error } = await supabase.from('equipment').select('*').eq('rooms_id', roomId);
+            const { data, error } = await supabase.from('equipment').select('id, name, code, is_available, quantity, condition, image_url, category, rooms_id').eq('rooms_id', roomId);
             if (error) throw error;
             setSelectedRoomEquipment(data || []);
         } catch (error: any) {

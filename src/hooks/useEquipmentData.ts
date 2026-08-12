@@ -105,7 +105,7 @@ export const useEquipmentData = () => {
                 }
 
                 if (data && data.length > 0) {
-                    allEquipment = [...allEquipment, ...data];
+                    allEquipment.push(...data);
                     if (data.length < BATCH_SIZE) {
                         hasMore = false;
                     } else {
