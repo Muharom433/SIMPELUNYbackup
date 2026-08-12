@@ -1,6 +1,6 @@
 // components/Layout/Layout.tsx
 import React, { useState, useEffect } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -8,8 +8,6 @@ import { useAuth } from '../../hooks/useAuth';
 const Layout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, signOut, signIn } = useAuth();
-  const location = useLocation();
-  const isDashboard = location.pathname === '/';
 
   const handleMenuClick = () => {
     setSidebarOpen(!sidebarOpen);
@@ -69,7 +67,7 @@ const Layout: React.FC = () => {
         />
         
         {/* Page Content */}
-        <main className={`flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-blue-50 ${isDashboard ? '' : 'p-6 lg:p-8'}`}>
+        <main className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-blue-50">
           <Outlet />
         </main>
       </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X, Download, Filter } from 'lucide-react';
+import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X, Download, Filter, Search, ChevronDown, Check, Tag, Building, DoorClosed, Info } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ItemMutationForm from './ItemMutationForm';
 import * as XLSX from 'xlsx';
@@ -16,6 +16,114 @@ interface MutationHistory {
   equipment: { name: string; code: string } | null;
   previous_room: { name: string; code: string } | null;
   new_room: { name: string; code: string } | null;
+}
+
+interface DropdownSearchProps {
+    items: Array<{ id: string; name?: string; nama?: string; code?: string;[key: string]: any }>;
+    selectedItem: { id: string; name?: string; nama?: string;[key: string]: any } | null;
+    onSelect: (item: any) => void;
+    placeholder: string;
+    searchPlaceholder?: string;
+    disabled?: boolean;
+    className?: string;
+    showCode?: boolean;
+}
+
+const DropdownSearch: React.FC<DropdownSearchProps> = ({
+    items, selectedItem, onSelect, placeholder, searchPlaceholder = 'Search...',
+    disabled = false, className = '', showCode = false
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+    const filteredItems = items.filter(item => {
+        const itemName = item?.name || item?.nama || item?.description || '';
+        const itemCode = item?.code || '';
+        const search = searchTerm.toLowerCase();
+        return itemName.toLowerCase().includes(search) || itemCode.toLowerCase().includes(search);
+    });
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const selectedDisplayName = selectedItem?.name || selectedItem?.nama || selectedItem?.description || '';
+    const selectedDisplayCode = selectedItem?.code || '';
+
+    return (
+        <div className={`relative ${className}`} ref={dropdownRef}>
+            <button
+                type="button"
+                onClick={() => !disabled && setIsOpen(!isOpen)}
+                disabled={disabled}
+                className={`w-full px-3 py-2.5 h-[42px] text-left bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-between transition-all ${disabled ? 'bg-gray-100 text-gray-400' : 'hover:bg-gray-50'}`}
+            >
+                <div className="flex items-center space-x-2 truncate">
+                    {selectedItem ? (
+                        <>
+                            <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                <MapPin className="h-3 w-3 text-blue-600" />
+                            </div>
+                            <div className="truncate text-sm font-medium text-gray-700">
+                                {selectedDisplayName}
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                <Search className="h-3 w-3 text-gray-400" />
+                            </div>
+                            <span className="text-gray-500 text-sm truncate">{placeholder}</span>
+                        </>
+                    )}
+                </div>
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform flex-shrink-0 ml-1 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-[300px] overflow-auto">
+                    <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder={searchPlaceholder}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded text-sm focus:border-blue-500 outline-none"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+                    <div className="py-1">
+                        <div 
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer text-sm"
+                            onClick={() => { onSelect(null); setIsOpen(false); }}
+                        >
+                            <span className={!selectedItem ? "font-medium text-blue-600" : "text-gray-700"}>Semua Gedung</span>
+                            {!selectedItem && <Check className="h-4 w-4 text-blue-600" />}
+                        </div>
+                        {filteredItems.map(item => (
+                            <div
+                                key={item.id}
+                                onClick={() => { onSelect(item); setIsOpen(false); }}
+                                className="flex items-center justify-between p-2 hover:bg-blue-50 cursor-pointer transition-colors text-sm"
+                            >
+                                <div className="truncate pr-2 text-gray-700">{item.name || item.nama}</div>
+                                {selectedItem?.id === item.id && <Check className="h-4 w-4 text-blue-600 flex-shrink-0" />}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }
 
 const ItemHistory = () => {
@@ -33,8 +141,31 @@ const ItemHistory = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [buildingFilter, setBuildingFilter] = useState<{id: string, name: string} | null>(null);
 
-  const sortedHistory = [...history].sort((a, b) => {
+  const uniqueBuildings = React.useMemo(() => {
+    const buildingsMap = new Map<string, {id: string, name: string}>();
+    history.forEach(r => {
+        const prevBuilding = (r.previous_room as any)?.building?.name || (r.previous_room as any)?.building_id?.name;
+        if (prevBuilding) {
+            buildingsMap.set(prevBuilding, { id: prevBuilding, name: prevBuilding });
+        }
+        const newBuilding = (r.new_room as any)?.building?.name || (r.new_room as any)?.building_id?.name;
+        if (newBuilding) {
+            buildingsMap.set(newBuilding, { id: newBuilding, name: newBuilding });
+        }
+    });
+    return Array.from(buildingsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [history]);
+
+  const filteredHistory = history.filter(item => {
+    if (!buildingFilter) return true;
+    const prevBuilding = (item.previous_room as any)?.building?.name || (item.previous_room as any)?.building_id?.name;
+    const newBuilding = (item.new_room as any)?.building?.name || (item.new_room as any)?.building_id?.name;
+    return prevBuilding === buildingFilter.name || newBuilding === buildingFilter.name;
+  });
+
+  const sortedHistory = [...filteredHistory].sort((a, b) => {
     const dateA = new Date(a.created_at).getTime();
     const dateB = new Date(b.created_at).getTime();
     return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
@@ -263,8 +394,8 @@ const ItemHistory = () => {
   const fetchWithEmbeddedRelations = async (includePicPhone: boolean): Promise<{ success: boolean; data: MutationHistory[]; errorType?: string; errorMessage?: string }> => {
     try {
       const selectFields = includePicPhone
-        ? `id, pic_name, pic_phone, notes, created_at, equipment:equipment_id(name, code), previous_room:previous_room_id(name, code), new_room:new_room_id(name, code)`
-        : `id, pic_name, notes, created_at, equipment:equipment_id(name, code), previous_room:previous_room_id(name, code), new_room:new_room_id(name, code)`;
+        ? `id, pic_name, pic_phone, notes, created_at, equipment:equipment_id(name, code), previous_room:previous_room_id(name, code, building:building_id(name)), new_room:new_room_id(name, code, building:building_id(name))`
+        : `id, pic_name, notes, created_at, equipment:equipment_id(name, code), previous_room:previous_room_id(name, code, building:building_id(name)), new_room:new_room_id(name, code, building:building_id(name))`;
 
       const { data, error } = await supabase
         .from('equipment_mutations')
@@ -337,13 +468,13 @@ const ItemHistory = () => {
           ? supabase.from('equipment').select('id, name, code').in('id', equipmentIds)
           : Promise.resolve({ data: [], error: null }),
         roomIds.length > 0
-          ? supabase.from('rooms').select('id, name, code').in('id', roomIds as string[])
+          ? supabase.from('rooms').select('id, name, code, building:building_id(name)').in('id', roomIds as string[])
           : Promise.resolve({ data: [], error: null }),
       ]);
 
       // Build lookup maps
       const equipmentMap = new Map((equipmentRes.data || []).map((e: any) => [e.id, { name: e.name, code: e.code }]));
-      const roomMap = new Map((roomsRes.data || []).map((r: any) => [r.id, { name: r.name, code: r.code }]));
+      const roomMap = new Map((roomsRes.data || []).map((r: any) => [r.id, { name: r.name, code: r.code, building: r.building }]));
 
       // Step 4: Join data client-side
       const joined: MutationHistory[] = mutations.map((m: any) => ({
@@ -389,54 +520,58 @@ const ItemHistory = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-            <History className="h-6 w-6 mr-2 text-blue-600" />
-            {getText('Item Transfer History', 'Histori Mutasi Barang')}
-          </h1>
-          <p className="text-gray-500 mt-1">
-            {getText('Track all equipment movements across rooms', 'Lacak semua perpindahan barang antar ruangan')}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
-            className="flex items-center justify-center w-[42px] h-[42px] bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-            title={sortOrder === 'desc' ? getText('Sort: Newest to Oldest', 'Urutkan: Terbaru ke Terlama') : getText('Sort: Oldest to Newest', 'Urutkan: Terlama ke Terbaru')}
-          >
-            <Filter className="h-5 w-5" />
-          </button>
-          
-          <button
-            onClick={handleExportExcel}
-            className="flex items-center justify-center w-[42px] h-[42px] bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
-            title={getText('Export to Excel', 'Export ke Excel')}
-          >
-            <Download className="h-5 w-5" />
-          </button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 sticky top-0 z-30">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-lg">
+                <History className="h-8 w-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  {getText('Item Transfer History', 'Histori Mutasi Barang')}
+                </h1>
+                <p className="text-gray-600 mt-1 text-sm max-w-2xl">
+                  {getText('Track all equipment movements across rooms', 'Lacak semua perpindahan barang antar ruangan')}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleExportExcel}
+                className="flex items-center justify-center px-4 h-[42px] bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
+                title={getText('Export to Excel', 'Export ke Excel')}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {getText('Export', 'Export')}
+              </button>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center px-4 h-[42px] bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            {getText('Add Transfer', 'Tambah Mutasi')}
-          </button>
-          
-          <button
-            onClick={handleCopyLink}
-            className="flex items-center px-4 h-[42px] bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm font-medium"
-          >
-            {copied ? <CheckCircle className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
-            {copied ? getText('Copied!', 'Tersalin!') : getText('Copy Form Link', 'Salin Link Form')}
-          </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center px-4 h-[42px] bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {getText('Add Transfer', 'Tambah Mutasi')}
+              </button>
+              
+              <button
+                onClick={handleCopyLink}
+                className="flex items-center px-4 h-[42px] bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors shadow-sm text-sm font-medium"
+              >
+                {copied ? <CheckCircle className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                {copied ? getText('Copied!', 'Tersalin!') : getText('Form Link', 'Link Form')}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-8 space-y-6">
+
       {isLocalMode && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
@@ -456,7 +591,7 @@ const ItemHistory = () => {
 
       {/* Error Banner with SQL Fix */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
@@ -542,32 +677,62 @@ NOTIFY pgrst, 'reload schema';`}
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
+        <div className="flex-1"></div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="w-full sm:w-[220px]">
+            <DropdownSearch
+                items={uniqueBuildings}
+                selectedItem={buildingFilter}
+                onSelect={(item) => setBuildingFilter(item)}
+                placeholder={getText('All Buildings', 'Semua Gedung')}
+                searchPlaceholder={getText('Search building...', 'Cari gedung...')}
+            />
+          </div>
+          <button
+            onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+            className="flex items-center justify-center w-[42px] h-[42px] bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 shadow-sm"
+            title={sortOrder === 'desc' ? getText('Sort: Newest to Oldest', 'Urutkan: Terbaru ke Terlama') : getText('Sort: Oldest to Newest', 'Urutkan: Terlama ke Terbaru')}
+          >
+            <Filter className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-x-auto shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-xs text-gray-500">
+                {getText(
+                    `Showing ${sortedHistory.length} records`,
+                    `Menampilkan ${sortedHistory.length} catatan`
+                )}
+            </span>
+        </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {getText('Time', 'Waktu')}
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {getText('Equipment', 'Barang')}
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {getText('Movement', 'Perpindahan')}
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {getText('PIC', 'Penanggung Jawab')}
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {getText('Notes', 'Catatan')}
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap text-right">
                   {getText('Actions', 'Aksi')}
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
@@ -591,52 +756,62 @@ NOTIFY pgrst, 'reload schema';`}
                 </tr>
               ) : (
                 sortedHistory.map((record) => (
-                  <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <tr key={record.id} className="border-b border-gray-100 transition-all duration-150 hover:bg-emerald-50/20">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center">
-                        <Clock className="h-4 w-4 mr-1.5 text-gray-400" />
-                        {formatDate(record.created_at)}
+                        <Clock className="h-4 w-4 mr-1.5 text-gray-400 flex-shrink-0" />
+                        <span className="text-xs">{formatDate(record.created_at)}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <Package className="h-4 w-4 mr-2 text-blue-500" />
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {record.equipment?.name || getText('Unknown Item', 'Barang Tidak Diketahui')}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {record.equipment?.code || '-'}
-                          </div>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-800">
+                          {record.equipment?.name || getText('Unknown Item', 'Barang Tidak Diketahui')}
+                        </span>
+                        <span className="text-xs text-gray-400 font-mono mt-0.5">
+                          {record.equipment?.code || '-'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 min-w-[200px] whitespace-nowrap">
+                      <div className="flex flex-col gap-2 text-sm text-gray-700">
+                        <div className="flex flex-col gap-0.5">
+                           <div className="text-xs text-gray-400">{getText('From', 'Dari')}</div>
+                           <div className="flex items-center gap-1.5 pl-2">
+                             <DoorClosed className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />
+                             <span>{record.previous_room?.name || '-'}</span>
+                           </div>
+                           {(record.previous_room as any)?.building?.name && (
+                             <div className="flex items-center gap-1.5 pl-7">
+                               <Building className="h-3 w-3 text-gray-300 flex-shrink-0" />
+                               <span className="text-xs text-gray-400">{(record.previous_room as any).building.name}</span>
+                             </div>
+                           )}
+                        </div>
+                        <div className="w-full border-b border-gray-100 my-0.5 border-dashed"></div>
+                        <div className="flex flex-col gap-0.5">
+                           <div className="text-xs text-gray-400">{getText('To', 'Ke')}</div>
+                           <div className="flex items-center gap-1.5 pl-2">
+                             <DoorClosed className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                             <span className="font-medium text-gray-800">{record.new_room?.name || '-'}</span>
+                           </div>
+                           {(record.new_room as any)?.building?.name && (
+                             <div className="flex items-center gap-1.5 pl-7">
+                               <Building className="h-3 w-3 text-gray-300 flex-shrink-0" />
+                               <span className="text-xs text-gray-400">{(record.new_room as any).building.name}</span>
+                             </div>
+                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 min-w-[200px]">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center text-sm">
-                          <span className="text-xs text-gray-500 w-10">{getText('From', 'Dari')}</span>
-                          <span className="text-gray-400 mx-1">:</span>
-                          <span className="font-medium text-gray-700">
-                            {record.previous_room?.name || getText('Unknown', 'Tidak diketahui')}
-                          </span>
-                        </div>
-                        <div className="flex items-center text-sm">
-                          <span className="text-xs text-gray-500 w-10">{getText('To', 'Ke')}</span>
-                          <span className="text-gray-400 mx-1">:</span>
-                          <span className="font-medium text-blue-700">
-                            {record.new_room?.name || getText('Unknown', 'Tidak diketahui')}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex flex-col">
                         <div className="flex items-center">
-                          <User className="h-4 w-4 mr-1.5 text-gray-400" />
+                          <User className="h-4 w-4 mr-1.5 text-gray-400 flex-shrink-0" />
                           <span className="text-sm font-medium text-gray-900">{record.pic_name}</span>
                         </div>
                         {record.pic_phone && (
-                          <div className="flex items-center text-xs text-blue-600 mt-1 ml-5">
+                          <div className="flex items-center text-xs text-blue-600 mt-1 pl-5">
                             <Phone className="h-3 w-3 mr-1" />
                             <a href={`https://wa.me/${record.pic_phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
                               {record.pic_phone}
@@ -645,23 +820,27 @@ NOTIFY pgrst, 'reload schema';`}
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500 max-w-xs truncate" title={record.notes || ''}>
-                        {record.notes || '-'}
-                      </div>
+                    <td className="px-4 py-3 max-w-xs truncate text-sm text-gray-500" title={record.notes || ''}>
+                      {record.notes ? (
+                        <div className="flex items-start">
+                          <span className="truncate">{record.notes}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 italic text-xs">{getText('No notes', 'Tanpa catatan')}</span>
+                      )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
+                    <td className="px-4 py-3 whitespace-nowrap text-right">
+                      <div className="flex justify-end gap-2">
                         <button
                           onClick={() => handleEditClick(record)}
-                          className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 p-1.5 rounded transition-colors"
+                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
                           title={getText('Edit', 'Edit')}
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(record.id)}
-                          className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 p-1.5 rounded transition-colors"
+                          className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded transition-colors"
                           title={getText('Delete', 'Hapus')}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -673,6 +852,7 @@ NOTIFY pgrst, 'reload schema';`}
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
