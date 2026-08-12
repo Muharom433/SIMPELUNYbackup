@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X } from 'lucide-react';
+import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X, Download, Filter } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ItemMutationForm from './ItemMutationForm';
+import * as XLSX from 'xlsx';
 
 
 interface MutationHistory {
@@ -31,6 +32,51 @@ const ItemHistory = () => {
   const [editNotes, setEditNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+
+  const sortedHistory = [...history].sort((a, b) => {
+    const dateA = new Date(a.created_at).getTime();
+    const dateB = new Date(b.created_at).getTime();
+    return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+  });
+
+  const handleExportExcel = () => {
+    if (sortedHistory.length === 0) {
+      toast.error(getText('No data to export', 'Tidak ada data untuk diekspor'));
+      return;
+    }
+
+    const exportData = sortedHistory.map((item, index) => ({
+      'No': index + 1,
+      'Waktu': formatDate(item.created_at),
+      'Nama Barang': item.equipment?.name || 'Barang Tidak Diketahui',
+      'Kode Barang': item.equipment?.code || '-',
+      'Dari Ruangan': item.previous_room?.name || 'Tidak diketahui',
+      'Ke Ruangan': item.new_room?.name || 'Tidak diketahui',
+      'Penanggung Jawab': item.pic_name,
+      'No. HP': item.pic_phone || '-',
+      'Catatan': item.notes || '-'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    
+    // Mengatur lebar kolom agar lebih rapi
+    worksheet['!cols'] = [
+      { wch: 5 },  // A: No
+      { wch: 20 }, // B: Waktu
+      { wch: 35 }, // C: Nama Barang
+      { wch: 25 }, // D: Kode Barang
+      { wch: 25 }, // E: Dari Ruangan
+      { wch: 25 }, // F: Ke Ruangan
+      { wch: 25 }, // G: Penanggung Jawab
+      { wch: 15 }, // H: No. HP
+      { wch: 45 }  // I: Catatan
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Histori Mutasi');
+    XLSX.writeFile(workbook, `Histori_Mutasi_Barang_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   useEffect(() => {
     fetchHistory();
@@ -354,17 +400,34 @@ const ItemHistory = () => {
             {getText('Track all equipment movements across rooms', 'Lacak semua perpindahan barang antar ruangan')}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+            className="flex items-center justify-center w-[42px] h-[42px] bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+            title={sortOrder === 'desc' ? getText('Sort: Newest to Oldest', 'Urutkan: Terbaru ke Terlama') : getText('Sort: Oldest to Newest', 'Urutkan: Terlama ke Terbaru')}
+          >
+            <Filter className="h-5 w-5" />
+          </button>
+          
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center justify-center w-[42px] h-[42px] bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            title={getText('Export to Excel', 'Export ke Excel')}
+          >
+            <Download className="h-5 w-5" />
+          </button>
+
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            className="flex items-center px-4 h-[42px] bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium"
           >
             <Plus className="h-4 w-4 mr-2" />
             {getText('Add Transfer', 'Tambah Mutasi')}
           </button>
+          
           <button
             onClick={handleCopyLink}
-            className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+            className="flex items-center px-4 h-[42px] bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm font-medium"
           >
             {copied ? <CheckCircle className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
             {copied ? getText('Copied!', 'Tersalin!') : getText('Copy Form Link', 'Salin Link Form')}
@@ -497,9 +560,6 @@ NOTIFY pgrst, 'reload schema';`}
                   {getText('PIC', 'Penanggung Jawab')}
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {getText('Phone Number', 'Nomor HP')}
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {getText('Notes', 'Catatan')}
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -510,7 +570,7 @@ NOTIFY pgrst, 'reload schema';`}
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     <div className="flex justify-center">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                     </div>
@@ -519,7 +579,7 @@ NOTIFY pgrst, 'reload schema';`}
                 </tr>
               ) : history.length === 0 && !error ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     <History className="mx-auto h-12 w-12 text-gray-400" />
                     <h3 className="mt-2 text-sm font-medium text-gray-900">
                       {getText('No transfers yet', 'Belum ada perpindahan')}
@@ -530,7 +590,7 @@ NOTIFY pgrst, 'reload schema';`}
                   </td>
                 </tr>
               ) : (
-                history.map((record) => (
+                sortedHistory.map((record) => (
                   <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center">
@@ -551,40 +611,39 @@ NOTIFY pgrst, 'reload schema';`}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        <div className="flex flex-col">
-                          <span className="text-xs text-gray-500">{getText('From', 'Dari')}</span>
-                          <span className="text-sm font-medium text-gray-700">
+                    <td className="px-6 py-4 min-w-[200px]">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center text-sm">
+                          <span className="text-xs text-gray-500 w-10">{getText('From', 'Dari')}</span>
+                          <span className="text-gray-400 mx-1">:</span>
+                          <span className="font-medium text-gray-700">
                             {record.previous_room?.name || getText('Unknown', 'Tidak diketahui')}
                           </span>
                         </div>
-                        <ArrowRight className="h-4 w-4 text-gray-400" />
-                        <div className="flex flex-col">
-                          <span className="text-xs text-gray-500">{getText('To', 'Ke')}</span>
-                          <span className="text-sm font-medium text-blue-700">
+                        <div className="flex items-center text-sm">
+                          <span className="text-xs text-gray-500 w-10">{getText('To', 'Ke')}</span>
+                          <span className="text-gray-400 mx-1">:</span>
+                          <span className="font-medium text-blue-700">
                             {record.new_room?.name || getText('Unknown', 'Tidak diketahui')}
                           </span>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <User className="h-4 w-4 mr-1.5 text-gray-400" />
-                        <span className="text-sm text-gray-900">{record.pic_name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {record.pic_phone ? (
-                        <div className="flex items-center text-sm text-blue-600 hover:text-blue-800">
-                          <Phone className="h-4 w-4 mr-1.5" />
-                          <a href={`https://wa.me/${record.pic_phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer">
-                            {record.pic_phone}
-                          </a>
+                      <div className="flex flex-col">
+                        <div className="flex items-center">
+                          <User className="h-4 w-4 mr-1.5 text-gray-400" />
+                          <span className="text-sm font-medium text-gray-900">{record.pic_name}</span>
                         </div>
-                      ) : (
-                        <span className="text-sm text-gray-500">-</span>
-                      )}
+                        {record.pic_phone && (
+                          <div className="flex items-center text-xs text-blue-600 mt-1 ml-5">
+                            <Phone className="h-3 w-3 mr-1" />
+                            <a href={`https://wa.me/${record.pic_phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                              {record.pic_phone}
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-500 max-w-xs truncate" title={record.notes || ''}>
