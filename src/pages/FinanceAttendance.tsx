@@ -436,7 +436,7 @@ const FinanceAttendance: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('attendance_week_settings')
-                .select('*')
+                .select('id, month, year, week_number, start_date, end_date, is_active')
                 .eq('month', settingsMonth)
                 .eq('year', settingsYear)
                 .order('week_number');
@@ -452,7 +452,7 @@ const FinanceAttendance: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('attendance_special_dates')
-                .select('*')
+                .select('id, date, reason, month, year')
                 .eq('month', settingsMonth)
                 .eq('year', settingsYear)
                 .order('date');
@@ -468,7 +468,7 @@ const FinanceAttendance: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('attendance_payment_rates')
-                .select('*')
+                .select('id, lecturer_type, rate, effective_month, effective_year')
                 .eq('effective_month', settingsMonth)
                 .eq('effective_year', settingsYear);
 
@@ -623,7 +623,7 @@ const FinanceAttendance: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('attendance_global_settings')
-                .select('*')
+                .select('id, is_attendance_disabled, disabled_from_date, disabled_message, max_weekly_attendance_hbv, max_weekly_attendance_nhbv')
                 .limit(1)
                 .maybeSingle();
 
@@ -912,7 +912,7 @@ const FinanceAttendance: React.FC = () => {
 
             const { data, error } = await supabase
                 .from('lecturer_attendance_details')
-                .select('*')
+                .select('id, attendance_id, activity_type, course_name, course_code, study_program_name, class_group, semester, session_schedule_id, student_name, student_nim, session_type, role_in_session, scheduled_date, start_time, end_time, room_name')
                 .eq('attendance_id', attendanceId)
                 .order('start_time', { ascending: true });
 
@@ -1117,7 +1117,7 @@ const FinanceAttendance: React.FC = () => {
             if (attendanceIds.length > 0) {
                 const { data: detailsData } = await supabase
                     .from('lecturer_attendance_details')
-                    .select('*')
+                    .select('id, attendance_id, activity_type, course_name, course_code, study_program_name, class_group, semester, session_schedule_id, student_name, student_nim, session_type, role_in_session, scheduled_date, start_time, end_time, room_name')
                     .in('attendance_id', attendanceIds);
 
                 if (detailsData) {
@@ -1469,7 +1469,7 @@ const FinanceAttendance: React.FC = () => {
 
             const { data: holidayData } = await supabase
                 .from('attendance_special_dates')
-                .select('*')
+                .select('id, date, reason, month, year')
                 .eq('month', exportMonth)
                 .eq('year', exportYear)
                 .order('date');
@@ -1482,7 +1482,7 @@ const FinanceAttendance: React.FC = () => {
             // akan berisi data bulan ini → kolom tanggal tidak muncul / salah bulan.
             const { data: weekSettingsData, error: weekSettingsError } = await supabase
                 .from('attendance_week_settings')
-                .select('*')
+                .select('id, month, year, week_number, start_date, end_date, is_active')
                 .eq('month', exportMonth)
                 .eq('year', exportYear)
                 .order('week_number');
@@ -1503,7 +1503,7 @@ const FinanceAttendance: React.FC = () => {
             // Sama seperti weekSettings, paymentRates state bisa berisi data bulan lain.
             const { data: paymentRatesData } = await supabase
                 .from('attendance_payment_rates')
-                .select('*')
+                .select('id, lecturer_type, rate, effective_month, effective_year')
                 .eq('effective_month', exportMonth)
                 .eq('effective_year', exportYear);
 

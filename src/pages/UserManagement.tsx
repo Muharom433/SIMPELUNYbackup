@@ -66,7 +66,7 @@ const userSchema = z.object({
   identity_number: z.string().min(1, 'Identity number is required'),
   phone_number: z.string().optional().or(z.literal('')),
   jabatan: z.string().optional().or(z.literal('')), // Position/Title field
-  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff', 'finance']),
+  role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff', 'finance', 'pool staff']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
   pangkat_golongan: z.string().optional().or(z.literal('')),
@@ -1513,18 +1513,18 @@ const UserManagement: React.FC = () => {
       </div>
 
       {/* Enhanced Controls */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col xl:flex-row xl:flex-nowrap gap-2 items-start xl:items-center justify-between">
+          <div className="flex flex-col sm:flex-row xl:flex-nowrap flex-wrap gap-2 flex-1 w-full xl:w-auto">
             {/* Search */}
-            <div className="relative w-full sm:w-80 lg:w-[350px] shrink-0">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <div className="relative w-full sm:w-64 shrink-0">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 placeholder={getText('Search users...', 'Cari pengguna...')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
               />
             </div>
 
@@ -1532,7 +1532,7 @@ const UserManagement: React.FC = () => {
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 shrink-0"
             >
               <option value="all">{getText('All Roles', 'Semua Peran')}</option>
               <option value="student">{getText('Students', 'Mahasiswa')}</option>
@@ -1545,6 +1545,7 @@ const UserManagement: React.FC = () => {
               <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
               <option value="staff">{getText('Staff', 'Tenaga Kependidikan')}</option>
               <option value="finance">{getText('Finance', 'Keuangan')}</option>
+              <option value="pool staff">{getText('Pool Staff', 'Pegawai Kolam')}</option>
               {profile?.role === 'super_admin' && (
                 <option value="super_admin">{getText('Super Admins', 'Super Admin')}</option>
               )}
@@ -1555,7 +1556,7 @@ const UserManagement: React.FC = () => {
               <select
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 shrink-0 max-w-[200px] truncate"
               >
                 <option value="all">{getText('All Departments', 'Semua Departemen')}</option>
                 {departments.map(dept => (
@@ -1573,7 +1574,7 @@ const UserManagement: React.FC = () => {
                 setHomebaseFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 shrink-0"
             >
               <option value="all">{getText('All Users', 'Semua Pengguna')}</option>
               <option value="homebase">{getText('Homebase Only', 'Homebase Saja')}</option>
@@ -1582,30 +1583,30 @@ const UserManagement: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto xl:justify-end shrink-0">
             <button
               onClick={() => {
                 fetchUsers();
                 setCurrentPage(1);
               }}
               disabled={loading}
-              className="p-3 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200 disabled:opacity-50"
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200 disabled:opacity-50"
               title={getText('Refresh', 'Refresh')}
             >
-              <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
             {/* Export Button */}
             <button
               onClick={handleExportUsers}
               disabled={isExportingUsers || loading}
-              className="flex items-center space-x-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
               title={getText('Export filtered users to Excel', 'Ekspor pengguna terfilter ke Excel')}
             >
               {isExportingUsers ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-5 w-5" />
+                <Download className="h-4 w-4" />
               )}
               <span className="hidden sm:inline">
                 {isExportingUsers
@@ -1619,10 +1620,10 @@ const UserManagement: React.FC = () => {
             {(profile?.role === 'super_admin' || profile?.role === 'department_admin') && (
               <button
                 onClick={() => setShowCleanupModal(true)}
-                className="p-3 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors duration-200"
                 title={getText('Cleanup Old Students', 'Hapus Mahasiswa Lama')}
               >
-                <Trash2 className="h-5 w-5" />
+                <Trash2 className="h-4 w-4" />
               </button>
             )}
 
@@ -1649,9 +1650,9 @@ const UserManagement: React.FC = () => {
                 }
                 setShowModal(true);
               }}
-              className="flex items-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm hover:shadow-md"
+              className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm hover:shadow-md text-sm font-medium"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">{getText('Add User', 'Tambah Pengguna')}</span>
             </button>
           </div>
@@ -2511,6 +2512,7 @@ const UserManagement: React.FC = () => {
                           <option value="frontdesk">{getText('Front Desk', 'Front Desk')}</option>
                           <option value="staff">{getText('Staff', 'Tenaga Kependidikan')}</option>
                           <option value="finance">{getText('Finance', 'Keuangan')}</option>
+                          <option value="pool staff">{getText('Pool Staff', 'Pegawai Kolam')}</option>
                         </>
                       )}
                       {profile?.role === 'super_admin' && (

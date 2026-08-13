@@ -1,10 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { chunkedFetch } from '../lib/queryUtils';
 import { Package, MapPin, FileText, Send, User, Building, Phone, AlertTriangle, ChevronLeft } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
 import CreatableSelect from 'react-select/creatable';
+import Select from 'react-select';
 import { useNavigate } from 'react-router-dom';
+
+interface ItemMutationFormProps {
+  /** Called after a successful save. If provided, renders in "modal" mode (no page wrapper). */
+  onSuccess?: () => void;
+  /** Called when the user cancels. If provided, renders in "modal" mode. */
+  onCancel?: () => void;
+}
 
 interface Equipment {
   id: string;
@@ -19,12 +28,24 @@ interface Room {
   code: string;
 }
 
-const ItemMutationForm = () => {
+interface UserOption {
+  value: string;       // user id
+  label: string;       // full_name (for filtering)
+  fullName: string;
+  username: string;
+  identityNumber: string;
+}
+
+const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) => {
+  // If onSuccess/onCancel props are provided, we're running as an embedded modal
+  const isModal = Boolean(onSuccess || onCancel);
   const { getText } = useLanguage();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [roomList, setRoomList] = useState<Room[]>([]);
+  const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [defaultDeptId, setDefaultDeptId] = useState<string>('');
   const [dbError, setDbError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
@@ -34,35 +55,126 @@ const ItemMutationForm = () => {
   const [isCustomEquipment, setIsCustomEquipment] = useState<boolean>(false);
   const [currentRoomId, setCurrentRoomId] = useState<string>('');
   const [newRoomId, setNewRoomId] = useState<string>('');
+  const [selectedPicUser, setSelectedPicUser] = useState<UserOption | null>(null);
   const [picName, setPicName] = useState<string>('');
   const [picPhone, setPicPhone] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
 
+  const searchTimeoutRef = useRef<any>(null);
+
+  const fetchUsers = useCallback(async (searchTerm: string = '') => {
+    setUsersLoading(true);
+    try {
+      let query = supabase
+        .from('users')
+        .select('id, full_name, username, identity_number')
+        .order('full_name');
+
+      const cleanTerm = searchTerm.trim().replace(/[%_]/g, '');
+      if (cleanTerm) {
+        query = query.or(
+          `full_name.ilike.%${cleanTerm}%,username.ilike.%${cleanTerm}%,identity_number.ilike.%${cleanTerm}%`
+        );
+      } else {
+        query = query.limit(100);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('[ItemMutation] Users fetch error:', error);
+        setUsersLoading(false);
+        return;
+      }
+
+      console.log(`[ItemMutation] Users fetch result (${data?.length || 0} items) for term "${cleanTerm}":`, data);
+
+      const opts: UserOption[] = (data || [])
+        .map((u: any) => {
+          const nameStr = (u.full_name || u.name || u.username || '').trim();
+          return {
+            value: u.id,
+            label: nameStr,
+            fullName: nameStr,
+            username: (u.username || '').trim(),
+            identityNumber: (u.identity_number || '').trim(),
+          };
+        })
+        .filter((o: UserOption) => o.label !== '');
+
+      setUserOptions(opts);
+    } catch (err) {
+      console.error('[ItemMutation] Unexpected error fetching users:', err);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  const handleUserInputChange = (inputValue: string, { action }: { action: string }) => {
+    if (action === 'input-change') {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      searchTimeoutRef.current = setTimeout(() => {
+        fetchUsers(inputValue);
+      }, 300);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+
+    // Re-fetch data when user navigates back to this tab/page
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData();
+      }
+    };
+    const handleFocus = () => fetchData();
+    // Listen for equipment changes dispatched by ToolAdministration
+    const handleEquipmentUpdated = () => fetchData();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('equipment-location-updated', handleEquipmentUpdated);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('equipment-location-updated', handleEquipmentUpdated);
+    };
   }, []);
 
   const fetchData = async () => {
     try {
-      const [equipmentRes, roomsRes, deptRes] = await Promise.all([
-        supabase.from('equipment').select('id, name, code, rooms_id').order('name'),
+      // Fetch ALL equipment using chunkedFetch to bypass Supabase's default 1000-row limit.
+      // Without this, newly added items may not appear if total rows exceed 1000.
+      const [allEquipment, roomsRes, deptRes] = await Promise.all([
+        chunkedFetch<Equipment>(
+          (from, to) => supabase
+            .from('equipment')
+            .select('id, name, code, rooms_id')
+            .order('name')
+            .range(from, to),
+          { chunkSize: 1000, maxChunks: 50 }
+        ),
         supabase.from('rooms').select('id, name, code').order('name'),
-        supabase.from('departments').select('id').limit(1)
+        supabase.from('departments').select('id').limit(1),
       ]);
 
-      if (equipmentRes.error) {
-        console.error('[ItemMutation] Equipment fetch error:', equipmentRes.error);
-        // Don't throw, still try to show partial data
-      }
       if (roomsRes.error) {
         console.error('[ItemMutation] Rooms fetch error:', roomsRes.error);
       }
 
-      setEquipmentList(equipmentRes.data || []);
+      console.log(`[ItemMutation] Fetched ${allEquipment.length} equipment items (chunked).`);
+      setEquipmentList(allEquipment);
       setRoomList(roomsRes.data || []);
       if (deptRes.data && deptRes.data.length > 0) {
         setDefaultDeptId(deptRes.data[0].id);
       }
+
+      // Fetch initial users list
+      await fetchUsers('');
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error(getText('Failed to load data', 'Gagal memuat data'));
@@ -202,21 +314,28 @@ const ItemMutationForm = () => {
 
       const newMutation = {
         id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        equipment_id: selectedEquipment,
+        previous_room_id: previousRoom ? previousRoom.id : null,
+        new_room_id: newRoomId,
         pic_name: picName,
         pic_phone: picPhone || null,
         notes: isCustomEquipment
           ? (notes ? `[${customEquipmentName}] ${notes}` : customEquipmentName)
           : (notes || null),
         created_at: new Date().toISOString(),
-        equipment: equipmentDisplay,
-        previous_room: previousRoom ? { name: previousRoom.name, code: previousRoom.code } : null,
-        new_room: newRoom ? { name: newRoom.name, code: newRoom.code } : null
+        equipment: isCustomEquipment ? equipmentDisplay : (equipment ? { id: equipment.id, name: equipment.name, code: equipment.code } : null),
+        previous_room: previousRoom ? { id: previousRoom.id, name: previousRoom.name, code: previousRoom.code } : null,
+        new_room: newRoom ? { id: newRoom.id, name: newRoom.name, code: newRoom.code } : null
       };
 
       const existingData = localStorage.getItem('local_equipment_mutations');
       const list = existingData ? JSON.parse(existingData) : [];
       list.unshift(newMutation);
       localStorage.setItem('local_equipment_mutations', JSON.stringify(list));
+
+      if (newRoom && equipment) {
+        updateEquipmentLocationOverride(selectedEquipment, equipment.code, newRoom);
+      }
       return true;
     } catch (e) {
       console.error('Error saving local mutation:', e);
@@ -224,9 +343,29 @@ const ItemMutationForm = () => {
     }
   };
 
+  const updateEquipmentLocationOverride = (equipmentId: string, equipmentCode: string, newRoom: Room) => {
+    try {
+      const existingOverrides = localStorage.getItem('local_equipment_room_overrides');
+      const overrides = existingOverrides ? JSON.parse(existingOverrides) : {};
+      const overrideObj = {
+        rooms_id: newRoom.id,
+        rooms: {
+          id: newRoom.id,
+          name: newRoom.name,
+          code: newRoom.code
+        }
+      };
+      if (equipmentId) overrides[equipmentId] = overrideObj;
+      if (equipmentCode) overrides[equipmentCode] = overrideObj;
+      localStorage.setItem('local_equipment_room_overrides', JSON.stringify(overrides));
+    } catch (e) {
+      console.error('Error updating local equipment location override:', e);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!selectedEquipment && !isCustomEquipment) || !newRoomId || !picName) {
+    if ((!selectedEquipment && !isCustomEquipment) || !newRoomId || !picName || !picPhone.trim()) {
       toast.error(getText('Please fill all required fields', 'Harap isi semua kolom wajib'));
       return;
     }
@@ -333,10 +472,12 @@ const ItemMutationForm = () => {
               setIsCustomEquipment(false);
               setCurrentRoomId('');
               setNewRoomId('');
+              setSelectedPicUser(null);
               setPicName('');
               setPicPhone('');
               setNotes('');
               await fetchData();
+              if (onSuccess) onSuccess();
             } else {
               toast.error(getText('Failed to save transfer', 'Gagal menyimpan transfer'));
             }
@@ -348,26 +489,52 @@ const ItemMutationForm = () => {
         }
       }
 
-      // --- Step 2: Update equipment location (only if a real equipment was selected) ---
+      // --- Step 2: Always update equipment location in Supabase and local state ---
       if (mutationInserted) {
         if (!isCustomEquipment && selectedEquipment) {
-          const { error: updateError } = await supabase
-            .from('equipment')
-            .update({ rooms_id: newRoomId })
-            .eq('id', selectedEquipment);
+          const targetRoom = roomList.find(r => r.id === newRoomId);
+          const targetEquipment = equipmentList.find(e => e.id === selectedEquipment);
 
-          if (updateError) {
-            console.warn('[ItemMutation] Failed to update equipment location:', updateError);
-            toast.success(getText(
-              'Transfer recorded! (Note: equipment location update failed, may need manual update)',
-              'Transfer berhasil dicatat! (Catatan: gagal update lokasi barang, mungkin perlu update manual)'
-            ));
-          } else {
+          if (targetRoom) {
+            updateEquipmentLocationOverride(
+              selectedEquipment,
+              targetEquipment?.code || '',
+              targetRoom
+            );
+          }
+
+          try {
+            const { error: updateError } = await supabase
+              .from('equipment')
+              .update({ rooms_id: newRoomId })
+              .eq('id', selectedEquipment);
+
+            if (updateError) {
+              console.warn('[ItemMutation] Warning updating equipment rooms_id in Supabase:', updateError);
+              toast.success(getText(
+                'Transfer recorded! (Note: equipment location update failed, may need manual update)',
+                'Transfer berhasil dicatat! (Catatan: gagal update lokasi barang, mungkin perlu update manual)'
+              ));
+            } else {
+              toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
+            }
+          } catch (err) {
+            console.warn('Error in Supabase update:', err);
             toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
           }
         } else {
           toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
         }
+      }
+
+      // Dispatch event to notify all components (ToolAdministration, RoomInfo, etc.)
+      window.dispatchEvent(new CustomEvent('equipment-location-updated', {
+        detail: { equipmentId: selectedEquipment, roomId: newRoomId }
+      }));
+      window.dispatchEvent(new Event('storage'));
+
+      if (mutationInserted) {
+        toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
 
         // Reset form
         setSelectedEquipment('');
@@ -375,12 +542,16 @@ const ItemMutationForm = () => {
         setIsCustomEquipment(false);
         setCurrentRoomId('');
         setNewRoomId('');
+        setSelectedPicUser(null);
         setPicName('');
         setPicPhone('');
         setNotes('');
 
         // Refresh data
         await fetchData();
+
+        // Notify parent (modal mode)
+        if (onSuccess) onSuccess();
       }
 
     } catch (error: any) {
@@ -456,34 +627,21 @@ GRANT SELECT, INSERT, UPDATE ON public.rooms TO anon, authenticated;
 -- Reload schema cache
 NOTIFY pgrst, 'reload schema';`;
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="bg-blue-600 p-3 rounded-full">
-            <Package className="h-8 w-8 text-white" />
-          </div>
-        </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          {getText('Item Transfer Form', 'Formulir Pemindahan Barang')}
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          {getText('Record equipment movement between rooms', 'Catat perpindahan barang antar ruangan')}
-        </p>
-      </div>
+  // Inner form card content (shared between standalone page and modal)
+  const formContent = (
+    <div className={isModal ? 'space-y-0' : 'bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10'}>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-
-          {/* Back button */}
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="mb-4 flex items-center text-sm text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            {getText('Back', 'Kembali')}
-          </button>
+      {/* Back button — only in standalone page mode */}
+      {!isModal && (
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="mb-4 flex items-center text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4 mr-1" />
+          {getText('Back', 'Kembali')}
+        </button>
+      )}
 
           {/* Error Banner with SQL Fix */}
           {dbError && (
@@ -673,24 +831,73 @@ NOTIFY pgrst, 'reload schema';`;
               </div>
             </div>
 
-            {/* PIC Name */}
+            {/* PIC Name — searchable dropdown from users table */}
             <div>
               <label htmlFor="pic_name" className="block text-sm font-medium text-gray-700">
                 {getText('PIC Name', 'Nama Penanggung Jawab')} <span className="text-red-500">*</span>
               </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <div className="mt-1 relative rounded-md shadow-sm z-30">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                   <User className="h-5 w-5 text-gray-400" />
                 </div>
-                <input
-                  type="text"
-                  name="pic_name"
-                  id="pic_name"
-                  required
-                  value={picName}
-                  onChange={(e) => setPicName(e.target.value)}
-                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
-                  placeholder={getText('Name of person moving the item', 'Nama orang yang memindahkan barang')}
+                <Select
+                  inputId="pic_name"
+                  isDisabled={loading}
+                  isLoading={usersLoading}
+                  options={userOptions}
+                  value={selectedPicUser}
+                  onChange={(opt: any) => {
+                    setSelectedPicUser(opt);
+                    setPicName(opt ? opt.fullName : '');
+                  }}
+                  onInputChange={handleUserInputChange}
+                  placeholder={getText('Search user by name...', 'Cari nama pengguna...')}
+                  noOptionsMessage={() => getText('No user found', 'Pengguna tidak ditemukan')}
+                  isClearable
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  formatOptionLabel={(opt: any) => (
+                    <div className="flex flex-col py-0.5">
+                      <span className="text-sm font-medium text-gray-800">{opt.fullName}</span>
+                      {(opt.identityNumber || opt.username) && (
+                        <span className="text-xs text-gray-400 mt-0.5">
+                          {opt.identityNumber ? opt.identityNumber : opt.username}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  filterOption={(option: any, inputValue: string) => {
+                    if (!inputValue) return true;
+                    const q = inputValue.toLowerCase().trim();
+                    const d = option.data || {};
+                    return (
+                      (d.fullName || '').toLowerCase().includes(q) ||
+                      (d.username || '').toLowerCase().includes(q) ||
+                      (d.identityNumber || '').toLowerCase().includes(q) ||
+                      (option.label || '').toLowerCase().includes(q)
+                    );
+                  }}
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      paddingLeft: '2rem',
+                      borderColor: '#D1D5DB',
+                      boxShadow: 'none',
+                      '&:hover': { borderColor: '#9CA3AF' }
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      paddingLeft: '0.5rem',
+                      flexWrap: 'nowrap',
+                    }),
+                    singleValue: (base) => ({
+                      ...base,
+                      overflow: 'visible',
+                      textOverflow: 'unset',
+                      whiteSpace: 'normal',
+                      maxWidth: '100%',
+                    }),
+                  }}
                 />
               </div>
             </div>
@@ -698,7 +905,7 @@ NOTIFY pgrst, 'reload schema';`;
             {/* PIC Phone */}
             <div>
               <label htmlFor="pic_phone" className="block text-sm font-medium text-gray-700">
-                {getText('PIC Phone Number', 'Nomor HP Penanggung Jawab')}
+                {getText('PIC Phone Number', 'Nomor HP Penanggung Jawab')} <span className="text-red-500">*</span>
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -708,6 +915,7 @@ NOTIFY pgrst, 'reload schema';`;
                   type="tel"
                   name="pic_phone"
                   id="pic_phone"
+                  required
                   value={picPhone}
                   onChange={(e) => setPicPhone(e.target.value)}
                   className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
@@ -737,11 +945,22 @@ NOTIFY pgrst, 'reload schema';`;
               </div>
             </div>
 
-            <div>
+            <div className={isModal ? 'flex justify-end gap-3 pt-2' : ''}>
+              {/* Cancel button — only shown in modal mode */}
+              {isModal && (
+                <button
+                  type="button"
+                  onClick={() => onCancel && onCancel()}
+                  disabled={loading}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  {getText('Cancel', 'Batal')}
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${isModal ? 'px-4 py-2' : 'w-full py-2.5'} flex justify-center items-center px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {loading ? (
                   <div className="flex items-center">
@@ -757,10 +976,35 @@ NOTIFY pgrst, 'reload schema';`;
               </button>
             </div>
           </form>
-        </div>
-      </div>
     </div>
   );
+
+  // Standalone page mode — wrap in full page layout
+  if (!isModal) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="flex justify-center">
+            <div className="bg-blue-600 p-3 rounded-full">
+              <Package className="h-8 w-8 text-white" />
+            </div>
+          </div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            {getText('Item Transfer Form', 'Formulir Pemindahan Barang')}
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            {getText('Record equipment movement between rooms', 'Catat perpindahan barang antar ruangan')}
+          </p>
+        </div>
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
+          {formContent}
+        </div>
+      </div>
+    );
+  }
+
+  // Modal mode — just render the inner form (parent handles the modal shell)
+  return formContent;
 };
 
 export default ItemMutationForm;

@@ -24,6 +24,57 @@ export const parseEquipmentSpec = (spec: string | null) => {
     return { purchaseYear, procurementType, specs };
 };
 
+const getLatestEquipmentRoomOverride = (
+    eqId?: string | null,
+    eqCode?: string | null,
+    eqName?: string | null
+) => {
+    try {
+        const localOverridesStr = localStorage.getItem('local_equipment_room_overrides');
+        if (localOverridesStr) {
+            const overrides = JSON.parse(localOverridesStr);
+            const ov = (eqId && overrides[eqId]) || (eqCode && overrides[eqCode]) || (eqName && overrides[eqName]);
+            if (ov) return ov;
+        }
+
+        const localMutationsStr = localStorage.getItem('local_equipment_mutations');
+        if (localMutationsStr) {
+            const mutations = JSON.parse(localMutationsStr);
+            const sorted = [...mutations].sort(
+                (a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+            );
+
+            const match = sorted.find((m: any) => {
+                const mEqId = m.equipment_id || m.equipment?.id;
+                const mEqCode = m.equipment?.code;
+                const mEqName = m.equipment?.name;
+
+                if (eqId && mEqId && String(mEqId) === String(eqId)) return true;
+                if (eqCode && mEqCode && String(mEqCode).toLowerCase() === String(eqCode).toLowerCase()) return true;
+                if (eqName && mEqName && String(mEqName).toLowerCase() === String(eqName).toLowerCase()) return true;
+                return false;
+            });
+
+            if (match && match.new_room) {
+                return {
+                    rooms_id: match.new_room_id || match.new_room.id,
+                    rooms: {
+                        id: match.new_room_id || match.new_room.id,
+                        name: match.new_room.name,
+                        code: match.new_room.code || '',
+                        building: match.new_room.building || null,
+                        floor: match.new_room.floor || null,
+                        department: match.new_room.department || null
+                    }
+                };
+            }
+        }
+    } catch (e) {
+        console.warn('Error computing equipment room override:', e);
+    }
+    return null;
+};
+
 interface EnhancedRoomStatus extends Room {
     department?: Department;
     building?: {
@@ -643,8 +694,26 @@ const RoomInfo: React.FC = () => {
                 .range(page * limit, (page + 1) * limit - 1);
 
             if (error) throw error;
+            let newData = data || [];
 
-            const newData = data || [];
+            // Apply room overrides from mutations / local storage
+            try {
+                newData = newData.map((item: any) => {
+                    const ov = getLatestEquipmentRoomOverride(item.id, item.code, item.name);
+                    if (ov && ov.rooms) {
+                        return {
+                            ...item,
+                            rooms: {
+                                ...item.rooms,
+                                ...ov.rooms
+                            }
+                        };
+                    }
+                    return item;
+                });
+            } catch (err) {
+                console.warn('Error applying room overrides to equipment in RoomInfo:', err);
+            }
             setAllEquipment(prev => page === 0 ? newData : [...prev, ...newData]);
             setHasMoreEquipment(newData.length === limit);
             setEquipmentPage(page);
@@ -655,9 +724,19 @@ const RoomInfo: React.FC = () => {
         }
     };
 
-    // Load initial equipment data on component mount
+    // Load initial equipment data on component mount and listen for mutation updates
     useEffect(() => {
         fetchAllEquipment(0);
+
+        const handleUpdate = () => {
+            fetchAllEquipment(0);
+        };
+        window.addEventListener('equipment-location-updated', handleUpdate);
+        window.addEventListener('storage', handleUpdate);
+        return () => {
+            window.removeEventListener('equipment-location-updated', handleUpdate);
+            window.removeEventListener('storage', handleUpdate);
+        };
     }, []);
 
     // Fetch room photo (attachments)

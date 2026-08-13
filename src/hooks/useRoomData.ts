@@ -161,7 +161,8 @@ export const useRoomData = (targetDate: string) => {
           academics_year,
           type
         `)
-        .eq('day', dayName);
+        .eq('day', dayName)
+        .limit(500);
 
       if (lecturesError) throw lecturesError;
 
@@ -227,6 +228,10 @@ export const useRoomData = (targetDate: string) => {
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
       const nextDayRange = getDateRangeForBookings(getLocalDateString(nextDay));
+      
+      const thirtyDaysLater = new Date(date);
+      thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+      const thirtyDaysRange = getDateRangeForBookings(getLocalDateString(thirtyDaysLater));
 
       const { data: futureBookingsData, error: futureError } = await supabase
         .from('bookings')
@@ -243,8 +248,10 @@ export const useRoomData = (targetDate: string) => {
           )
         `)
         .gte('start_time', nextDayRange.startUTC)
+        .lte('start_time', thirtyDaysRange.endUTC)
         .in('status', ['approved', 'booked']) // APPROVED dan BOOKED
-        .order('start_time', { ascending: true });
+        .order('start_time', { ascending: true })
+        .limit(200);
 
       if (futureError) console.warn('Future bookings fetch error:', futureError);
 

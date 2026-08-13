@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Menu,
   Bell,
@@ -60,142 +60,74 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
   }, []);
 
   // Fetch notification counts function
-  const fetchNotificationCounts = async () => {
-    if (!supabase) return;
+  const fetchNotificationCounts = useCallback(async () => {
+    if (!supabase || !user) return;
 
     try {
       // Fetch for technician's pending todos
-      if (user?.role === 'technician') {
+      if (user.role === 'technician') {
         const { count: todosCount } = await supabase
           .from('technician_tasks')
           .select('id', { count: 'exact', head: true })
-          .eq('technician_id', user?.id)
+          .eq('technician_id', user.id)
           .eq('status', 'pending');
         setPendingTodosCount(todosCount || 0);
         return; // Return early for technicians
       }
 
       // Only fetch for super_admin
-      if (user?.role !== 'super_admin') {
+      if (user.role !== 'super_admin') {
         return;
       }
 
+      // Run parallel queries instead of serial
+      const [bookings, checkouts, reports, tools] = await Promise.all([
+        supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('checkouts').select('id', { count: 'exact', head: true }).eq('status', 'returned'),
+        supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'new'),
+        supabase.from('lending_tool').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      ]);
 
-
-
-      // Fetch for bookings
-      const { count: bookingsCount } = await supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      setPendingBookingsCount(bookingsCount || 0);
-
-      // Fetch for checkouts
-      const { count: checkoutsCount } = await supabase
-        .from('checkouts')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'returned');
-      setPendingCheckoutsCount(checkoutsCount || 0);
-
-      // Fetch for reports
-      const { count: reportsCount } = await supabase
-        .from('reports')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'new');
-      setNewReportsCount(reportsCount || 0);
-
-      // Fetch for tool lending (pending requests)
-      const { count: toolLendingCount } = await supabase
-        .from('lending_tool')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      setPendingToolLendingCount(toolLendingCount || 0);
+      setPendingBookingsCount(bookings.count || 0);
+      setPendingCheckoutsCount(checkouts.count || 0);
+      setNewReportsCount(reports.count || 0);
+      setPendingToolLendingCount(tools.count || 0);
 
     } catch (error) {
       console.error('Error fetching notification counts:', error);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     // Initial fetch
     fetchNotificationCounts();
 
-    // Set up interval to refresh every minute (60000ms) for super_admin and technician
+    if (!supabase || !user) return;
+
     let intervalId: NodeJS.Timeout;
-    let bookingSubscription: any;
-    let checkoutSubscription: any;
-    let reportsSubscription: any;
 
-    if (user?.role === 'technician' && supabase) {
-      // Set up interval for technician
+    if (user.role === 'technician') {
+      // Set up interval for technician only
       intervalId = setInterval(fetchNotificationCounts, 60000);
-    } else if (user?.role === 'super_admin' && supabase) {
-      // Set up interval for periodic refresh
-      intervalId = setInterval(fetchNotificationCounts, 60000);
-
-      // Set up real-time subscriptions for immediate updates
-      bookingSubscription = supabase
-        .channel('pending-bookings')
-        .on('postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'bookings',
-            filter: 'status=eq.pending'
-          },
-          () => {
-            fetchNotificationCounts();
-          }
-        )
-        .subscribe();
-
-      checkoutSubscription = supabase
-        .channel('pending-checkouts')
-        .on('postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'checkouts',
-            filter: 'status=eq.returned'
-          },
-          () => {
-            fetchNotificationCounts();
-          }
-        )
-        .subscribe();
-
-      reportsSubscription = supabase
-        .channel('new-reports')
-        .on('postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'reports',
-            filter: 'status=eq.new'
-          },
-          () => {
-            fetchNotificationCounts();
-          }
-        )
-        .subscribe();
-    }
-
-    // Cleanup on unmount or user change
-    return () => {
-      if (intervalId) {
+      
+      return () => {
         clearInterval(intervalId);
-      }
-      if (bookingSubscription) {
-        bookingSubscription.unsubscribe();
-      }
-      if (checkoutSubscription) {
-        checkoutSubscription.unsubscribe();
-      }
-      if (reportsSubscription) {
-        reportsSubscription.unsubscribe();
-      }
-    };
-  }, [user]);
+      };
+    } else if (user.role === 'super_admin') {
+      // Only Real-time subscriptions for admin, NO POLLING
+      const channel = supabase
+        .channel('admin-notifications')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: 'status=eq.pending' }, fetchNotificationCounts)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'checkouts', filter: 'status=eq.returned' }, fetchNotificationCounts)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'reports', filter: 'status=eq.new' }, fetchNotificationCounts)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'lending_tool', filter: 'status=eq.pending' }, fetchNotificationCounts)
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [fetchNotificationCounts, user?.role, user?.id]);
 
   const totalNotifications = user?.role === 'technician'
     ? pendingTodosCount

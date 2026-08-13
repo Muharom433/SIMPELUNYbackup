@@ -140,84 +140,72 @@ class EquipmentQuantityManager {
 
     // ✅ EXISTING: Bulk decrease method
     async bulkDecreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason: string = '') {
-        console.log('🔄 BULK DECREASE: Starting bulk operation', {
+        console.log('🔄 BULK DECREASE: Starting bulk operation via RPC', {
             equipmentList,
             reason,
             totalItems: equipmentList.length
         });
 
-        const results = [];
-        const errors = [];
+        try {
+            const adjustments = equipmentList.map(item => ({
+                id: item.id,
+                delta: -item.quantity
+            }));
 
-        for (const item of equipmentList) {
-            try {
-                const result = await this.decreaseQuantity(item.id, item.quantity, reason);
-                results.push(result);
-            } catch (error) {
-                console.error(`❌ Error processing equipment ${item.id}:`, error);
-                errors.push({
-                    equipment_id: item.id,
-                    error: error.message,
-                    success: false
-                });
+            const { data, error } = await this.supabase
+                .rpc('bulk_adjust_quantities', { adjustments });
+
+            if (error) {
+                console.error('❌ BULK DECREASE RPC ERROR:', error);
+                throw new Error(`Bulk update failed: ${error.message}`);
             }
+
+            console.log('📋 BULK DECREASE SUMMARY:', {
+                total: equipmentList.length,
+                successful: data ? data.length : 0,
+                reason
+            });
+
+            return data;
+        } catch (error) {
+            console.error('❌ Error in bulkDecreaseQuantity:', error);
+            throw error;
         }
-
-        // ✅ SUMMARY LOGGING
-        console.log('📋 BULK DECREASE SUMMARY:', {
-            total: equipmentList.length,
-            successful: results.length,
-            failed: errors.length,
-            reason
-        });
-
-        if (errors.length > 0) {
-            console.error('❌ BULK VALIDATION ERRORS:', errors);
-            throw new Error(`Bulk validation failed: ${errors.map(e => e.error).join(', ')}`);
-        }
-
-        return results;
     }
 
     // ✅ EXISTING: Bulk increase method
     async bulkIncreaseQuantity(equipmentList: Array<{id: string, quantity: number}>, reason: string = '') {
-        console.log('🔄 BULK INCREASE: Starting bulk operation', {
+        console.log('🔄 BULK INCREASE: Starting bulk operation via RPC', {
             equipmentList,
             reason,
             totalItems: equipmentList.length
         });
 
-        const results = [];
-        const errors = [];
+        try {
+            const adjustments = equipmentList.map(item => ({
+                id: item.id,
+                delta: +item.quantity
+            }));
 
-        for (const item of equipmentList) {
-            try {
-                const result = await this.increaseQuantity(item.id, item.quantity, reason);
-                results.push(result);
-            } catch (error) {
-                console.error(`❌ Error processing equipment ${item.id}:`, error);
-                errors.push({
-                    equipment_id: item.id,
-                    error: error.message,
-                    success: false
-                });
+            const { data, error } = await this.supabase
+                .rpc('bulk_adjust_quantities', { adjustments });
+
+            if (error) {
+                console.error('❌ BULK INCREASE RPC ERROR:', error);
+                throw new Error(`Bulk update failed: ${error.message}`);
             }
+
+            console.log('📋 BULK INCREASE SUMMARY:', {
+                total: equipmentList.length,
+                successful: data ? data.length : 0,
+                reason
+            });
+
+            return data;
+        } catch (error) {
+            console.error('❌ Error in bulkIncreaseQuantity:', error);
+            throw error;
         }
-
-        // ✅ SUMMARY LOGGING
-        console.log('📋 BULK INCREASE SUMMARY:', {
-            total: equipmentList.length,
-            successful: results.length,
-            failed: errors.length,
-            reason
-        });
-
-        if (errors.length > 0) {
-            console.error('❌ BULK VALIDATION ERRORS:', errors);
-            throw new Error(`Bulk validation failed: ${errors.map(e => e.error).join(', ')}`);
-        }
-
-        return results;
     }
 
     // ✅ EXISTING: Helper method for building equipment list from booking
@@ -333,59 +321,48 @@ class EquipmentQuantityManager {
         quantity: number;
         reason?: string;
     }>) {
-        console.log('🔄 BATCH UPDATE: Starting batch operation', {
+        console.log('🔄 BATCH UPDATE: Starting batch operation via RPC', {
             operations,
             totalOperations: operations.length
         });
 
-        const results = [];
-        const errors = [];
+        try {
+            const adjustments = operations.map(op => ({
+                id: op.equipmentId,
+                delta: op.type === 'increase' ? op.quantity : -op.quantity
+            }));
 
-        for (const operation of operations) {
-            try {
-                let result;
-                if (operation.type === 'increase') {
-                    result = await this.increaseQuantity(
-                        operation.equipmentId, 
-                        operation.quantity, 
-                        operation.reason || 'Batch operation'
-                    );
-                } else {
-                    result = await this.decreaseQuantity(
-                        operation.equipmentId, 
-                        operation.quantity, 
-                        operation.reason || 'Batch operation'
-                    );
-                }
-                results.push(result);
-            } catch (error) {
-                console.error(`❌ Error in batch operation for ${operation.equipmentId}:`, error);
-                errors.push({
-                    equipment_id: operation.equipmentId,
-                    operation_type: operation.type,
-                    error: error.message,
+            const { data, error } = await this.supabase
+                .rpc('bulk_adjust_quantities', { adjustments });
+
+            if (error) {
+                console.error('❌ BATCH UPDATE RPC ERRORS:', error);
+                return {
+                    results: [],
+                    errors: [{ error: error.message }],
                     success: false
-                });
+                };
             }
+
+            console.log('📋 BATCH UPDATE SUMMARY:', {
+                total: operations.length,
+                successful: data ? data.length : 0,
+                failed: 0
+            });
+
+            return {
+                results: data || [],
+                errors: [],
+                success: true
+            };
+        } catch (error) {
+            console.error('❌ Error in batchUpdateQuantities:', error);
+            return {
+                results: [],
+                errors: [{ error: error.message }],
+                success: false
+            };
         }
-
-        // ✅ SUMMARY LOGGING
-        console.log('📋 BATCH UPDATE SUMMARY:', {
-            total: operations.length,
-            successful: results.length,
-            failed: errors.length
-        });
-
-        if (errors.length > 0) {
-            console.error('❌ BATCH UPDATE ERRORS:', errors);
-            // Don't throw error for batch operations, just return results with errors
-        }
-
-        return {
-            results,
-            errors,
-            success: errors.length === 0
-        };
     }
 }
 
