@@ -69,6 +69,8 @@ const userSchema = z.object({
   role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff', 'finance']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
+  pangkat_golongan: z.string().optional().or(z.literal('')),
+  address: z.string().optional().or(z.literal('')),
   // Password: optional, but if provided must be at least 6 characters
   password: z.string().optional().or(z.literal('')).refine(
     (val) => !val || val.length === 0 || val.length >= 6,
@@ -90,6 +92,8 @@ interface User {
   role: string;
   department_id?: string;
   study_program_id?: string;
+  pangkat_golongan?: string;
+  address?: string;
   is_homebase?: boolean;
   attachments?: string | null;
   created_at: string;
@@ -444,6 +448,8 @@ const UserManagement: React.FC = () => {
       department_id: '',
       study_program_id: '',
       password: '',
+      pangkat_golongan: '',
+      address: '',
     },
   });
 
@@ -519,9 +525,7 @@ const UserManagement: React.FC = () => {
 
       // Start building the query
       let query = supabase.from('users').select(`
-        id, username, email, full_name, identity_number, phone_number,
-        role, jabatan, department_id, study_program_id, is_homebase,
-        created_at, attachments,
+        *,
         department:departments(id, name, code),
         study_program:study_programs(id, name, code)
       `, { count: 'exact' });
@@ -1245,6 +1249,8 @@ const UserManagement: React.FC = () => {
         identity_number: data.identity_number.trim(),
         phone_number: data.phone_number?.trim() || null,
         jabatan: data.jabatan?.trim() || null, // Position/Title
+        pangkat_golongan: data.role === 'lecturer' ? (data.pangkat_golongan?.trim() || null) : null,
+        address: data.role === 'lecturer' ? (data.address?.trim() || null) : null,
         role: data.role,
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
@@ -1325,6 +1331,8 @@ const UserManagement: React.FC = () => {
       role: user.role as any,
       department_id: user.department_id || '',
       study_program_id: user.study_program_id || '',
+      pangkat_golongan: user.pangkat_golongan || '',
+      address: user.address || '',
       password: '',
       is_homebase: user.is_homebase ?? true,
     });
@@ -2392,23 +2400,85 @@ const UserManagement: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Jabatan (Position/Title) */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Position/Title', 'Jabatan')}
-                      </label>
-                      <input
-                        {...form.register('jabatan')}
-                        type="text"
-                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                        placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
-                        disabled={submitting}
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
-                      </p>
-                    </div>
+                    {watchRole === 'lecturer' ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {/* Pangkat/Golongan */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Rank/Category', 'Pangkat/Golongan')}
+                            </label>
+                            <select
+                              {...form.register('pangkat_golongan')}
+                              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.pangkat_golongan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'}`}
+                              disabled={submitting}
+                            >
+                              <option value="">{getText('Select Rank', 'Pilih Pangkat')}</option>
+                              <option value="Pembina (IV/a)">Pembina (IV/a)</option>
+                              <option value="Pembina Tingkat I (IV/b)">Pembina Tingkat I (IV/b)</option>
+                              <option value="Pembina Utama Muda (IV/c)">Pembina Utama Muda (IV/c)</option>
+                              <option value="Pembina Utama Madya (IV/d)">Pembina Utama Madya (IV/d)</option>
+                              <option value="Pembina Utama (IV/e)">Pembina Utama (IV/e)</option>
+                              <option value="Penata Muda (III/a)">Penata Muda (III/a)</option>
+                              <option value="Penata Muda Tingkat I (III/b)">Penata Muda Tingkat I (III/b)</option>
+                              <option value="Penata (III/c)">Penata (III/c)</option>
+                              <option value="Penata Tingkat I (III/d)">Penata Tingkat I (III/d)</option>
+                              <option value="Pengatur (II/c)">Pengatur (II/c)</option>
+                              <option value="Pengatur Tingkat I (II/d)">Pengatur Tingkat I (II/d)</option>
+                            </select>
+                          </div>
+
+                          {/* Jabatan (Position/Title) */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Position/Title', 'Jabatan')}
+                            </label>
+                            <input
+                              {...form.register('jabatan')}
+                              type="text"
+                              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'}`}
+                              placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
+                              disabled={submitting}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Address */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {getText('Address', 'Alamat')}
+                          </label>
+                          <textarea
+                            {...form.register('address')}
+                            rows={3}
+                            className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.address ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'}`}
+                            placeholder={getText('Complete address', 'Alamat lengkap')}
+                            disabled={submitting}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      /* Jabatan for non-lecturers */
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Position/Title', 'Jabatan')}
+                        </label>
+                        <input
+                          {...form.register('jabatan')}
+                          type="text"
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                            }`}
+                          placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
+                          disabled={submitting}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
