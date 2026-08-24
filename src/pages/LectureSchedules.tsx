@@ -1250,7 +1250,7 @@ const LectureSchedules: React.FC = () => {
       setLoadingLecturerSchedules(true);
       const { data, error } = await supabase
         .from('lecture_schedules')
-        .select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, lecturer_user_id, status')
+        .select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, lecturer_user_id')
         .eq('lecturer', lecturerName)
         .order('day', { ascending: true })
         .order('start_time', { ascending: true });
@@ -1510,7 +1510,7 @@ const LectureSchedules: React.FC = () => {
     const toastId = toast.loading('Menyiapkan PDF jadwal kuliah...');
     try {
       // Fetch ALL schedules for the current filter (no pagination)
-      let query = supabase.from('lecture_schedules').select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, status');
+      let query = supabase.from('lecture_schedules').select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study');
 
       if (debouncedSearchTerm) {
         const escapedTerm = debouncedSearchTerm
