@@ -439,7 +439,7 @@ const RoomManagement: React.FC = () => {
             // 2. Fetch exam schedules
             const { data: examData, error: examError } = await supabase
                 .from('exams')
-                .select('id, start_time, end_time, course_name, class, student_amount, course_code')
+                .select('id, start_time, end_time, course_name, class, student_amount, course_code, is_take_home, semester, inspector')
                 .eq('room_id', roomId)
                 .eq('date', targetDate)
                 .order('start_time');
