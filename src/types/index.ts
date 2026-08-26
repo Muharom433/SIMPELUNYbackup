@@ -67,6 +67,7 @@ export interface Equipment {
   condition: string | null;
   Spesification: string | null;
   rooms_id: string | null;
+  image_url?: string | null;
   created_at: string;
   updated_at: string;
 }
