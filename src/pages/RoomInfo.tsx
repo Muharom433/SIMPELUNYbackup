@@ -70,7 +70,6 @@ const getLatestEquipmentRoomOverride = (
             }
         }
     } catch (e) {
-        console.warn('Error computing equipment room override:', e);
     }
     return null;
 };
@@ -242,7 +241,6 @@ const RoomInfo: React.FC = () => {
 
                 await fetchRooms();
             } catch (err) {
-                console.error('Error fetching initial data:', err);
             } finally {
                 setLoading(false);
             }
@@ -285,11 +283,9 @@ const RoomInfo: React.FC = () => {
             const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
             const onScanSuccess = (decodedText: string) => {
-                console.log('[QR RoomInfo] Scanned:', decodedText);
                 html5QrCode.stop().then(() => {
                     if (isMounted) handleScanResult(decodedText);
                 }).catch((err: any) => {
-                    console.error('Failed to stop scanner:', err);
                     if (isMounted) handleScanResult(decodedText);
                 });
             };
@@ -299,7 +295,6 @@ const RoomInfo: React.FC = () => {
             // Strategy 1: enumerate cameras → prefer back camera
             try {
                 const devices = await Html5Qrcode.getCameras();
-                console.log('[QR RoomInfo] Cameras found:', devices.map(d => d.label));
                 if (devices && devices.length > 0) {
                     const backCamera = devices.find(d =>
                         d.label.toLowerCase().includes('back') ||
@@ -316,7 +311,6 @@ const RoomInfo: React.FC = () => {
                     return;
                 }
             } catch (enumErr) {
-                console.warn('[QR RoomInfo] Enumerate/start failed:', enumErr);
             }
 
             // Strategy 2: facingMode user (fallback)
@@ -328,7 +322,6 @@ const RoomInfo: React.FC = () => {
                 }
                 return;
             } catch (fallbackErr) {
-                console.warn('[QR RoomInfo] facingMode user failed:', fallbackErr);
             }
 
             // All failed
@@ -341,7 +334,7 @@ const RoomInfo: React.FC = () => {
             isMounted = false;
             clearTimeout(timeoutId);
             if (html5QrCode.isScanning) {
-                html5QrCode.stop().catch((err: any) => console.error('Failed to stop on cleanup', err));
+                html5QrCode.stop().catch(() => {});
             }
         };
     }, [showBarcodeScanner, scanRetry]);
@@ -378,11 +371,9 @@ const RoomInfo: React.FC = () => {
                         }
                     }
                 } catch (urlErr) {
-                    console.warn('[QR RoomInfo] URL parsing failed, using raw value:', urlErr);
                 }
             }
 
-            console.log('[QR RoomInfo] Searching for:', searchValue);
 
             // Strategy 1: Try exact match by ID (UUID format)
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -495,7 +486,6 @@ const RoomInfo: React.FC = () => {
                 }
             }
         } catch (err) {
-            console.error('[QR RoomInfo] Scan result processing error:', err);
             setScanResult({
                 rawValue: rawValue,
                 equipment: null,
@@ -514,7 +504,6 @@ const RoomInfo: React.FC = () => {
                     await html5QrCodeRef.current.stop();
                 }
             } catch (err) {
-                console.error('[QR RoomInfo] Failed to stop scanner on close:', err);
             }
             html5QrCodeRef.current = null;
         }
@@ -593,7 +582,6 @@ const RoomInfo: React.FC = () => {
 
             setRooms(enhanced);
         } catch (err) {
-            console.error('Error fetching rooms:', err);
         }
     };
 
@@ -674,7 +662,6 @@ const RoomInfo: React.FC = () => {
                 .order('created_at', { ascending: true });
             setEquipmentDetailItems(details || []);
         } catch (err) {
-            console.error('Error fetching equipment detail:', err);
         } finally {
             setLoadingEquipmentDetail(false);
         }
@@ -712,13 +699,11 @@ const RoomInfo: React.FC = () => {
                     return item;
                 });
             } catch (err) {
-                console.warn('Error applying room overrides to equipment in RoomInfo:', err);
             }
             setAllEquipment(prev => page === 0 ? newData : [...prev, ...newData]);
             setHasMoreEquipment(newData.length === limit);
             setEquipmentPage(page);
         } catch (err) {
-            console.error('Error fetching all equipment:', err);
         } finally {
             setLoadingAllEquipment(false);
         }
@@ -754,7 +739,6 @@ const RoomInfo: React.FC = () => {
                 setRoomPhoto(null);
             }
         } catch (err) {
-            console.error('Error fetching room photo:', err);
             setRoomPhoto(null);
         }
     };
@@ -774,7 +758,6 @@ const RoomInfo: React.FC = () => {
             if (error) throw error;
             setSelectedRoomEquipment(data || []);
         } catch (err) {
-            console.error('Error fetching room equipment:', err);
         } finally {
             setLoadingEquipment(false);
         }
@@ -804,7 +787,6 @@ const RoomInfo: React.FC = () => {
             if (error) throw error;
             setRoomUsers(data || []);
         } catch (err) {
-            console.error('Error fetching room users:', err);
         } finally {
             setLoadingRoomUsers(false);
         }
@@ -944,7 +926,6 @@ const RoomInfo: React.FC = () => {
             setCombinedSchedules(combined);
 
         } catch (err) {
-            console.error('Error fetching schedules:', err);
         } finally {
             setLoadingSchedules(false);
         }

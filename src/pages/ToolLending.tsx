@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Wrench, Search, Package, User, Building, MapPin,
     X, Plus, Minus, CheckCircle, Send, Info,
@@ -638,7 +638,6 @@ const ToolLending: React.FC = () => {
                 setShowDetailModal(true);
             }
         } catch (err) {
-            console.error("Error fetching details for URL query:", err);
             toast.error(getText('Failed to load details', 'Gagal memuat detail'));
         }
     }, [getText]);
@@ -754,7 +753,6 @@ const ToolLending: React.FC = () => {
             setIsManualEntry(false);
 
         } catch (err) {
-            console.error("Error fetching identity suggestions:", err);
             setIdentitySuggestions([]);
             setShowIdentityDropdown(false);
             setIsManualEntry(true);
@@ -837,7 +835,6 @@ const ToolLending: React.FC = () => {
             if (error) throw error;
             setStudyPrograms(data || []);
         } catch (error) {
-            console.error('Error fetching study programs:', error);
         }
     }, []);
 
@@ -1091,7 +1088,7 @@ const ToolLending: React.FC = () => {
                         })
                         .eq('id', existingUser.id);
 
-                    if (updateError) console.warn('Error updating user:', updateError);
+                    
 
                 } else {
                     // Create new user
@@ -1192,7 +1189,6 @@ const ToolLending: React.FC = () => {
             setShowSuccessModal(true);
 
         } catch (err: any) {
-            console.error('Submit error:', err);
             toast.error(err.message || getText('Failed to submit request', 'Gagal mengirim permintaan'));
         } finally {
             setSubmitting(false);
@@ -1702,7 +1698,6 @@ const ToolLending: React.FC = () => {
                                                                                     setShowDetailModal(true);
                                                                                 }
                                                                             } catch (err) {
-                                                                                console.error("Error fetching details:", err);
                                                                                 toast.error(getText('Failed to load details', 'Gagal memuat detail'));
                                                                             }
                                                                         }}
@@ -1775,7 +1770,6 @@ const ToolLending: React.FC = () => {
                                                                                             setShowDetailModal(true);
                                                                                         }
                                                                                     } catch (err) {
-                                                                                        console.error("Error fetching details:", err);
                                                                                         toast.error(getText('Failed to load details', 'Gagal memuat detail'));
                                                                                     }
                                                                                 }}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { useRoomStore } from '../stores/roomStore';
 import { supabase } from '../lib/supabase';
 import { useDebouncedCallback } from 'use-debounce';
@@ -7,12 +7,10 @@ export const useRealTimeRoomUpdates = (targetDate: string) => {
   const { markStale } = useRoomStore();
   
   const debouncedRefresh = useDebouncedCallback(() => {
-    console.log('📡 Real-time update triggered - marking cache as stale');
     markStale();
   }, 2000);
   
   useEffect(() => {
-    console.log(`🔔 Setting up real-time subscription for ${targetDate}`);
     
     const subscription = supabase
       .channel('room-status-changes')
@@ -21,7 +19,6 @@ export const useRealTimeRoomUpdates = (targetDate: string) => {
         schema: 'public',
         table: 'bookings'
       }, (payload) => {
-        console.log('📡 Real-time booking update received:', payload);
         
         const record = payload.new || payload.old;
         const bookingDate = record?.start_time ? 
@@ -29,7 +26,6 @@ export const useRealTimeRoomUpdates = (targetDate: string) => {
           null;
         
         if (bookingDate === targetDate) {
-          console.log(`🎯 Update affects target date ${targetDate} - triggering refresh`);
           debouncedRefresh();
         }
       })
@@ -38,11 +34,9 @@ export const useRealTimeRoomUpdates = (targetDate: string) => {
         schema: 'public',
         table: 'exams'
       }, (payload) => {
-        console.log('📡 Real-time exam update received:', payload);
         
         const examDate = payload.new?.date || payload.old?.date;
         if (examDate === targetDate) {
-          console.log(`🎯 Exam update affects target date ${targetDate} - triggering refresh`);
           debouncedRefresh();
         }
       })
@@ -51,18 +45,15 @@ export const useRealTimeRoomUpdates = (targetDate: string) => {
         schema: 'public',
         table: 'final_sessions'
       }, (payload) => {
-        console.log('📡 Real-time session update received:', payload);
         
         const sessionDate = payload.new?.date || payload.old?.date;
         if (sessionDate === targetDate) {
-          console.log(`🎯 Session update affects target date ${targetDate} - triggering refresh`);
           debouncedRefresh();
         }
       })
       .subscribe();
     
     return () => {
-      console.log('🔌 Cleaning up real-time subscription');
       subscription.unsubscribe();
     };
   }, [targetDate, debouncedRefresh]);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2, Plus, Edit2, Trash2, ChevronDown, ChevronRight, X, Save, DoorOpen,
   Layers, Loader2, Table2, MapPin, Search, Eye, Users, Calendar,
@@ -307,7 +307,6 @@ const LocationManagement: React.FC = () => {
 
       setBuildings(buildingsWithRooms);
     } catch (error) {
-      console.error(error);
       Swal.fire('Error', getText('Failed to load data', 'Gagal memuat data'), 'error');
     } finally {
       if (!isBackground) setLoading(false);
@@ -331,7 +330,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setBuildingAttachment(data?.attachments || '');
     } catch (error) {
-      console.error('Error fetching building attachment:', error);
     } finally {
       setLoadingAttachment(false);
     }
@@ -350,7 +348,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setRoomAttachment(data?.attachments || '');
     } catch (error) {
-      console.error('Error fetching room attachment:', error);
     } finally {
       setLoadingAttachment(false);
     }
@@ -369,7 +366,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setCabinetAttachment(data?.attachments || '');
     } catch (error) {
-      console.error('Error fetching cabinet attachment:', error);
     } finally {
       setLoadingAttachment(false);
     }
@@ -388,7 +384,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setBoxAttachment(data?.attachments || '');
     } catch (error) {
-      console.error('Error fetching box attachment:', error);
     } finally {
       setLoadingAttachment(false);
     }
@@ -489,7 +484,6 @@ const LocationManagement: React.FC = () => {
         showConfirmButton: false
       });
     } catch (error: any) {
-      console.error('Error assigning rooms:', error);
       Swal.fire('Error', getText('Failed to reassign room', 'Gagal memindahkan ruangan') + ': ' + (error.message || ''), 'error');
     } finally {
       setLoadingRoom(false);
@@ -560,7 +554,6 @@ const LocationManagement: React.FC = () => {
       setRoomImagePreview('');
       Swal.fire({ icon: 'success', title: getText('Room saved!', 'Ruangan disimpan!'), timer: 1500, showConfirmButton: false });
     } catch (e: any) {
-      console.error('Error saving room:', e);
 
       // Handle specific error codes
       if (e.code === '23505') {
@@ -614,7 +607,6 @@ const LocationManagement: React.FC = () => {
         await fetchData(true);
         Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
       } catch (e: any) {
-        console.error(e);
         Swal.fire('Error', getText('Failed to save cabinet', 'Gagal menyimpan kabinet') + (e.message ? `: ${e.message}` : ''), 'error');
       } finally {
         setLoadingCabinet(false);
@@ -668,7 +660,6 @@ const LocationManagement: React.FC = () => {
           showConfirmButton: false
         });
       } catch (e: any) {
-        console.error(e);
         Swal.fire('Error', getText('Failed to claim cabinet', 'Gagal mengambil kabinet') + (e.message ? `: ${e.message}` : ''), 'error');
       } finally {
         setLoadingCabinet(false);
@@ -695,7 +686,6 @@ const LocationManagement: React.FC = () => {
       await fetchData(true);
       Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
     } catch (e: any) {
-      console.error(e);
       Swal.fire('Error', getText('Failed to save rack', 'Gagal menyimpan rak') + (e.message ? `: ${e.message}` : ''), 'error');
     } finally {
       setLoadingRack(false);
@@ -735,7 +725,6 @@ const LocationManagement: React.FC = () => {
         await fetchData(true);
         Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
       } catch (e: any) {
-        console.error(e);
         Swal.fire('Error', getText('Failed to save box', 'Gagal menyimpan box') + (e.message ? `: ${e.message}` : ''), 'error');
       } finally {
         setLoadingBox(false);
@@ -789,7 +778,6 @@ const LocationManagement: React.FC = () => {
           showConfirmButton: false
         });
       } catch (e: any) {
-        console.error(e);
         Swal.fire('Error', getText('Failed to claim box', 'Gagal mengambil box') + (e.message ? `: ${e.message}` : ''), 'error');
       } finally {
         setLoadingBox(false);
@@ -826,7 +814,6 @@ const LocationManagement: React.FC = () => {
           showConfirmButton: false
         });
       } catch (error) {
-        console.error('Error downloading QR:', error);
         Swal.fire('Error', getText('Failed to download QR Code', 'Gagal mengunduh QR Code'), 'error');
       } finally {
         setIsDownloadingQR(false);
@@ -873,7 +860,6 @@ const LocationManagement: React.FC = () => {
       const uniqueRooms = [...new Set(data.map(item => item.room).filter(Boolean))].sort();
       setRoomNameSuggestions(uniqueRooms as string[]);
     } catch (error) {
-      console.error('Error fetching room suggestions:', error);
     }
   };
 
@@ -888,7 +874,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setDepartments(data || []);
     } catch (error) {
-      console.error('Error fetching departments:', error);
     }
   };
 
@@ -905,7 +890,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setAvailableStockForCabinet(data || []);
     } catch (error) {
-      console.error('Error fetching cabinet stock:', error);
     }
   };
 
@@ -922,7 +906,6 @@ const LocationManagement: React.FC = () => {
       if (error) throw error;
       setAvailableStockForBox(data || []);
     } catch (error) {
-      console.error('Error fetching box stock:', error);
     }
   };
 
@@ -1106,7 +1089,6 @@ const LocationManagement: React.FC = () => {
       setBatchMoveTargetRack('');
       Swal.fire({ icon: 'success', title: getText('Moved!', 'Dipindahkan!'), text: `${ids.length} ${getText('boxes moved successfully', 'box berhasil dipindahkan')} `, timer: 2000, showConfirmButton: false });
     } catch (error) {
-      console.error('Error moving boxes:', error);
       Swal.fire('Error', getText('Failed to move boxes', 'Gagal memindahkan box'), 'error');
     } finally {
       setLoadingBatchMove(false);
@@ -1152,7 +1134,6 @@ const LocationManagement: React.FC = () => {
       await fetchData(true);
       Swal.fire({ icon: 'success', title: getText('Moved!', 'Dipindahkan!'), timer: 1000, showConfirmButton: false });
     } catch (error) {
-      console.error('Error moving box:', error);
       Swal.fire('Error', getText('Failed to move box', 'Gagal memindahkan box'), 'error');
     }
 
@@ -1180,7 +1161,6 @@ const LocationManagement: React.FC = () => {
       setInlineEditingId(null);
       setInlineEditValue('');
     } catch (error) {
-      console.error('Error updating:', error);
     }
   };
 
@@ -1876,7 +1856,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                       else await supabase.from('campus').insert([dataToSave]);
                       setShowCampusModal(false); fetchData();
                       Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
-                    } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to save', 'Gagal menyimpan'), 'error'); }
+                    } catch (e) {  Swal.fire('Error', getText('Failed to save', 'Gagal menyimpan'), 'error'); }
                   }} className="px-5 py-2 bg-slate-800 text-white font-medium rounded-lg hover:bg-slate-900 shadow-sm transition-all flex items-center gap-1.5">
                     <Save className="h-4 w-4" /> {getText('Save', 'Simpan')}
                   </button>
@@ -1978,14 +1958,9 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                       return;
                     }
 
-                    console.log('=== Building Save Start ===');
-                    console.log('buildingForm:', buildingForm);
-                    console.log('editingBuilding:', editingBuilding);
 
                     try {
                       if (editingBuilding) {
-                        console.log('🔄 UPDATE mode');
-                        console.log('Building ID:', editingBuilding.id);
 
                         const updateData = {
                           name: buildingForm.name.trim(),
@@ -1995,7 +1970,6 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                           attachments: buildingForm.attachments || null
                         };
 
-                        console.log('Update payload:', updateData);
 
                         const { data, error } = await supabase
                           .from('building')
@@ -2003,41 +1977,24 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                           .eq('id', editingBuilding.id)
                           .select();
 
-                        console.log('Supabase response:', { data, error });
 
                         if (error) {
-                          console.error('❌ Supabase error details:', {
-                            message: error.message,
-                            details: error.details,
-                            hint: error.hint,
-                            code: error.code
-                          });
                           throw error;
                         }
 
-                        console.log('✅ Update successful');
 
                       } else {
-                        console.log('🆕 INSERT mode');
 
                         const { data, error } = await supabase
                           .from('building')
                           .insert([buildingForm])
                           .select();
 
-                        console.log('Supabase response:', { data, error });
 
                         if (error) {
-                          console.error('❌ Supabase error details:', {
-                            message: error.message,
-                            details: error.details,
-                            hint: error.hint,
-                            code: error.code
-                          });
                           throw error;
                         }
 
-                        console.log('✅ Insert successful');
                       }
 
                       setShowBuildingModal(false);
@@ -2050,8 +2007,6 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                       });
 
                     } catch (e: any) {
-                      console.error('=== Exception Caught ===');
-                      console.error('Error:', e);
                       Swal.fire(
                         'Error',
                         getText('Failed to save', 'Gagal menyimpan') + ': ' + (e.message || 'Unknown'),
@@ -3043,7 +2998,7 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
                       setShowEditFloorModal(false);
                       fetchData();
                       Swal.fire({ icon: 'success', title: getText('Floor renamed!', 'Lantai diganti nama!'), timer: 1500, showConfirmButton: false });
-                    } catch (e) { console.error(e); Swal.fire('Error', getText('Failed to rename floor', 'Gagal mengganti nama lantai'), 'error'); }
+                    } catch (e) {  Swal.fire('Error', getText('Failed to rename floor', 'Gagal mengganti nama lantai'), 'error'); }
                   }} className="px-5 py-2 bg-purple-500 text-white font-medium rounded-lg hover:bg-purple-600 shadow-sm transition-all flex items-center gap-1.5">
                     <Save className="h-4 w-4" /> {getText('Save', 'Simpan')}
                   </button>

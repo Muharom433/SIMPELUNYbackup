@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     FileText,
@@ -110,7 +110,6 @@ const FormView: React.FC = () => {
             });
             setValues(initialValues);
         } catch (error: any) {
-            console.error('Error loading form:', error);
             toast.error(getText('Failed to load form', 'Gagal memuat formulir'));
         } finally {
             setLoading(false);
@@ -145,7 +144,6 @@ const FormView: React.FC = () => {
                     }
                     const matches = normalize(triggerValue) === normalize(matchValue as string);
                     // Debug log
-                    console.log(`[Conditional] Field "${field.label}" - Trigger: "${triggerValue}" vs Match: "${matchValue}" = ${matches}`);
                     return matches;
                 }
             });
@@ -313,7 +311,6 @@ const FormView: React.FC = () => {
             setSubmitted(true);
             toast.success(getText('Form submitted successfully', 'Formulir berhasil dikirim'));
         } catch (error: any) {
-            console.error('Error submitting form:', error);
             toast.error(getText('Failed to submit form', 'Gagal mengirim formulir'));
         } finally {
             setSubmitting(false);

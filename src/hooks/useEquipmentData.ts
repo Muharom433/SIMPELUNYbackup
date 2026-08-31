@@ -1,4 +1,4 @@
-// src/hooks/useEquipmentData.ts
+﻿// src/hooks/useEquipmentData.ts
 import { useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useEquipmentStore, EquipmentItem, EquipmentRoom } from '../stores/equipmentStore';
@@ -40,7 +40,6 @@ export const useEquipmentData = () => {
 
 
         } catch (err) {
-            console.warn('⚠️ Location data warning:', err);
         }
     }, [setLocations]);
 
@@ -68,7 +67,6 @@ export const useEquipmentData = () => {
                 .order('name');
 
             if (roomsRes.error) {
-                console.warn('Rooms fetch warning:', roomsRes.error);
             }
 
             // Fetch equipment WITH ROOMS - TANPA attachments untuk menghindari timeout
@@ -94,7 +92,6 @@ export const useEquipmentData = () => {
                     .range(from, from + BATCH_SIZE - 1);
 
                 if (error) {
-                    console.error('Equipment fetch error:', error);
                     if (from === 0) {
                         setEquipment([]);
                         setLoading(false);
@@ -143,7 +140,6 @@ export const useEquipmentData = () => {
             return processedEquipment;
 
         } catch (err: any) {
-            console.error('❌ Error loading equipment:', err);
             setError(err.message || 'Gagal memuat peralatan');
             return [];
         } finally {

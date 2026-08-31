@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -232,7 +232,6 @@ const ExamManagement = () => {
                 setExamModeEnabled(data.setting_value === 'true');
             }
         } catch (error) {
-            console.error('Error fetching exam mode status:', error);
             setExamModeEnabled(false);
         } finally {
             setLoading(false);
@@ -265,7 +264,6 @@ const ExamManagement = () => {
                 `Mode Ujian telah ${newMode ? 'diaktifkan' : 'dinonaktifkan'} dan semua jadwal sebelumnya telah dihapus.`
             ));
         } catch (error: any) {
-            console.error('Error updating exam mode:', error);
             alert.error(getText('Failed to update exam mode.', 'Gagal memperbarui mode ujian.'));
         } finally {
             setLoading(false);
@@ -286,7 +284,6 @@ const ExamManagement = () => {
             if (error) throw error;
             setExams(data || []);
         } catch (error: any) {
-            console.error('Error fetching exams:', error);
             alert.error(getText('Failed to load exams.', 'Gagal memuat ujian.'));
         }
     };
@@ -301,7 +298,6 @@ const ExamManagement = () => {
             if (error) throw error;
             setStudyPrograms(data || []);
         } catch (error: any) {
-            console.error('Error fetching study programs:', error);
             alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
         }
     };
@@ -318,7 +314,6 @@ const ExamManagement = () => {
             if (error) throw error;
             setRooms(data || []);
         } catch (error: any) {
-            console.error('Error fetching rooms:', error);
             alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
         }
     };
@@ -337,7 +332,6 @@ const ExamManagement = () => {
             setLecturers(data || []);
             setFilteredLecturers(data || []);
         } catch (error: any) {
-            console.error('Error fetching lecturers:', error);
             alert.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.'));
         }
     };
@@ -352,7 +346,6 @@ const ExamManagement = () => {
             if (error) throw error;
             setDepartments(data || []);
         } catch (error: any) {
-            console.error('Error fetching departments:', error);
             alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.'));
         }
     };
@@ -372,14 +365,12 @@ const ExamManagement = () => {
             if (error) throw error;
             setDepartmentHeads(data || []);
         } catch (error: any) {
-            console.error('Error fetching department heads:', error);
             alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.'));
         }
     };
 
     const fetchBookedRooms = async (date: string, startTime: string, endTime: string) => {
         try {
-            console.log('🔍 Checking room availability for:', { date, startTime, endTime });
 
             // Fetch all exams on the same date that are not take home
             const { data, error } = await supabase
@@ -391,14 +382,12 @@ const ExamManagement = () => {
 
             if (error) throw error;
 
-            console.log('📅 Found exams on same date:', data);
 
             // Filter rooms that have time conflicts
             const conflictingRoomIds = data
                 .filter(exam => {
                     // Skip if it's the current exam being edited
                     if (editingExam && exam.id === editingExam.id) {
-                        console.log('⏭️ Skipping current editing exam:', exam.course_name);
                         return false;
                     }
 
@@ -407,7 +396,6 @@ const ExamManagement = () => {
                     const examEnd = exam.end_time;
 
                     if (!examStart || !examEnd) {
-                        console.log('⚠️ Exam missing time data:', exam.course_name);
                         return false;
                     }
 
@@ -416,12 +404,6 @@ const ExamManagement = () => {
                     const hasOverlap = startTime < examEnd && endTime > examStart;
 
                     if (hasOverlap) {
-                        console.log('❌ Time conflict found:', {
-                            exam: exam.course_name,
-                            examTime: `${examStart}-${examEnd}`,
-                            newTime: `${startTime}-${endTime}`,
-                            roomId: exam.room_id
-                        });
                     }
 
                     return hasOverlap;
@@ -429,12 +411,10 @@ const ExamManagement = () => {
                 .map(exam => exam.room_id)
                 .filter(Boolean);
 
-            console.log('🚫 Conflicting room IDs:', conflictingRoomIds);
 
             const key = `${date}-${startTime}-${endTime}`;
             setBookedRooms(prev => ({ ...prev, [key]: conflictingRoomIds }));
         } catch (error: any) {
-            console.error('Error fetching booked rooms:', error);
         }
     };
 
@@ -507,7 +487,6 @@ const ExamManagement = () => {
 
             fetchExams();
         } catch (error: any) {
-            console.error('Error saving exam:', error);
             alert.error(error.message || getText('Failed to save exam', 'Gagal menyimpan ujian'));
         } finally {
             setLoading(false);
@@ -550,7 +529,6 @@ const ExamManagement = () => {
             setShowDeleteConfirm(null);
             fetchExams();
         } catch (error: any) {
-            console.error('Error deleting exam:', error);
             alert.error(error.message || getText('Failed to delete exam', 'Gagal menghapus ujian'));
         } finally {
             setLoading(false);
@@ -760,7 +738,6 @@ const ExamManagement = () => {
             doc.save(`Jadwal_UAS_${selectedProgram.code}_${formData.semester}.pdf`);
             setShowPrintModal(false);
         } catch (e: any) {
-            console.error("PDF Generation Error:", e);
             alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
         }
     };

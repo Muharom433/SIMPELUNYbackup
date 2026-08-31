@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
@@ -261,7 +261,6 @@ const FinanceAttendance: React.FC = () => {
             if (error) throw error;
             setCampuses(data || []);
         } catch (error) {
-            console.error('Error fetching campuses:', error);
         }
     };
 
@@ -283,7 +282,6 @@ const FinanceAttendance: React.FC = () => {
             appCache.set('study_programs', data || [], 10 * 60 * 1000); // cache 10 menit
             setStudyPrograms(data || []);
         } catch (error) {
-            console.error('Error fetching study programs:', error);
         }
     };
 
@@ -357,7 +355,6 @@ const FinanceAttendance: React.FC = () => {
                 page++;
             }
 
-            console.log(`📋 FinanceAttendance: Fetched ${allData.length} records in ${page} page(s)`);
 
             // Bungkus dalam object agar kompatibel dengan kode di bawahnya
             const data = allData;
@@ -405,7 +402,6 @@ const FinanceAttendance: React.FC = () => {
             toast.dismiss('retry-toast');
             // Abaikan error AbortError (request di-cancel karena filter berubah)
             if (error?.name === 'AbortError') return;
-            console.error('Error fetching attendance:', error);
             toast.error(
                 error?.code === '57014'
                     ? 'Query timeout — coba perkecil rentang tanggal atau gunakan filter'
@@ -427,7 +423,6 @@ const FinanceAttendance: React.FC = () => {
             if (error) throw error;
             setAllLecturers(data || []);
         } catch (error) {
-            console.error('Error fetching lecturers:', error);
         }
     };
 
@@ -444,7 +439,6 @@ const FinanceAttendance: React.FC = () => {
             if (error) throw error;
             setWeekSettings(data || []);
         } catch (error) {
-            console.error('Error fetching week settings:', error);
         }
     };
 
@@ -460,7 +454,6 @@ const FinanceAttendance: React.FC = () => {
             if (error) throw error;
             setSpecialDates(data || []);
         } catch (error) {
-            console.error('Error fetching special dates:', error);
         }
     };
 
@@ -475,7 +468,6 @@ const FinanceAttendance: React.FC = () => {
             if (error) throw error;
             setPaymentRates(data || []);
         } catch (error) {
-            console.error('Error fetching payment rates:', error);
         }
     };
 
@@ -509,10 +501,8 @@ const FinanceAttendance: React.FC = () => {
                 }
             }
 
-            console.log('📅 Fetched ALL lecture schedules:', allData.length, 'records (in', page, 'pages)');
             setLectureSchedules(allData);
         } catch (error) {
-            console.error('Error fetching lecture schedules:', error);
         }
     };
 
@@ -538,7 +528,6 @@ const FinanceAttendance: React.FC = () => {
             fetchWeekSettings();
             setNewWeekSetting({ ...newWeekSetting, start_date: '', end_date: '' });
         } catch (error) {
-            console.error('Error saving week setting:', error);
             toast.error('Gagal menyimpan pengaturan minggu');
         } finally {
             setSavingSettings(false);
@@ -569,7 +558,6 @@ const FinanceAttendance: React.FC = () => {
             fetchSpecialDates();
             setNewSpecialDate({ date: '', reason: '' });
         } catch (error) {
-            console.error('Error saving special date:', error);
             toast.error('Gagal menyimpan tanggal khusus');
         } finally {
             setSavingSettings(false);
@@ -588,7 +576,6 @@ const FinanceAttendance: React.FC = () => {
             toast.success('Tanggal khusus berhasil dihapus');
             fetchSpecialDates();
         } catch (error) {
-            console.error('Error deleting special date:', error);
             toast.error('Gagal menghapus tanggal khusus');
         }
     };
@@ -611,7 +598,6 @@ const FinanceAttendance: React.FC = () => {
             toast.success(`Tarif ${type} berhasil disimpan`);
             fetchPaymentRates();
         } catch (error) {
-            console.error('Error saving payment rate:', error);
             toast.error('Gagal menyimpan tarif');
         } finally {
             setSavingSettings(false);
@@ -628,7 +614,6 @@ const FinanceAttendance: React.FC = () => {
                 .maybeSingle();
 
             if (error) {
-                console.error('Error fetching global settings:', error);
                 return;
             }
 
@@ -642,7 +627,6 @@ const FinanceAttendance: React.FC = () => {
                 });
             }
         } catch (error) {
-            console.error('Error fetching global settings:', error);
         }
     };
 
@@ -692,7 +676,6 @@ const FinanceAttendance: React.FC = () => {
 
             toast.success('Pengaturan presensi berhasil disimpan');
         } catch (error) {
-            console.error('Error saving global settings:', error);
             toast.error('Gagal menyimpan pengaturan');
         } finally {
             setSavingSettings(false);
@@ -756,7 +739,6 @@ const FinanceAttendance: React.FC = () => {
             });
             fetchAttendanceRecords();
         } catch (error: any) {
-            console.error('Error saving manual attendance:', error);
             toast.error('Gagal menyimpan presensi manual');
         } finally {
             setSavingManualAttendance(false);
@@ -917,14 +899,12 @@ const FinanceAttendance: React.FC = () => {
                 .order('start_time', { ascending: true });
 
             if (error) {
-                console.warn('Error fetching attendance details:', error);
                 // Table might not exist yet, don't show error
                 return;
             }
 
             setSelectedRecordDetails(data || []);
         } catch (error) {
-            console.warn('Error fetching attendance details:', error);
         } finally {
             setLoadingDetails(false);
         }
@@ -980,7 +960,6 @@ const FinanceAttendance: React.FC = () => {
             setVerificationNotes('');
             fetchAttendanceRecords();
         } catch (error: any) {
-            console.error('Error updating verification:', error);
             toast.error('Gagal memproses verifikasi');
         } finally {
             setProcessing(false);
@@ -1003,7 +982,6 @@ const FinanceAttendance: React.FC = () => {
             toast.success('Data presensi berhasil dihapus');
             fetchAttendanceRecords();
         } catch (error: any) {
-            console.error('Error deleting attendance:', error);
             toast.error('Gagal menghapus data presensi');
         }
     };
@@ -1079,7 +1057,6 @@ const FinanceAttendance: React.FC = () => {
             doc.save(`Rekap_Kehadiran_Dosen_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
             toast.success('PDF berhasil diunduh');
         } catch (error) {
-            console.error('Error generating PDF:', error);
             toast.error('Gagal membuat PDF');
         }
     };
@@ -1093,14 +1070,12 @@ const FinanceAttendance: React.FC = () => {
     // LAMPIRAN LPJ PDF GENERATOR (REFINED)
     // ==========================================
     const generateLPJPDF = async (type: 'homebase' | 'non_homebase', selectedDate: string) => {
-        console.log(`Starting generateLPJPDF for ${type} on ${selectedDate}`);
         try {
             const recordsForDate = attendanceRecords.filter(r =>
                 r.verification_status === 'verified' &&
                 r.attendance_date === selectedDate
             );
 
-            console.log(`Found ${recordsForDate.length} verified records for date ${selectedDate}`);
 
             if (recordsForDate.length === 0) {
                 toast.error(`Tidak ada data terverifikasi untuk tanggal ${format(new Date(selectedDate), 'd MMMM yyyy', { locale: localeId })}`);
@@ -1150,7 +1125,6 @@ const FinanceAttendance: React.FC = () => {
                 signature_url: signatureMap[r.id] ?? (r as any).signature_url ?? null,
             }));
 
-            console.log(`Enriched ${enrichedRecords.length} records with details & signatures`);
 
             // Group records
             const lecturerMap = new Map<string, {
@@ -1412,7 +1386,6 @@ const FinanceAttendance: React.FC = () => {
                 doc.rect(qrX - 1, qrY - 1, qrSize + 2, qrSize + 2);
 
             } catch (qrErr) {
-                console.error('QR generation error:', qrErr);
             }
 
             // Page Numbers
@@ -1429,8 +1402,7 @@ const FinanceAttendance: React.FC = () => {
             toast.success(`Lampiran LPJ berhasil diunduh`);
 
         } catch (error) {
-            console.error('Error generating LPJ PDF:', error);
-            if (error instanceof Error) console.error('Stack:', error.stack);
+            
             toast.error('Gagal membuat PDF');
         }
     };
@@ -1454,14 +1426,12 @@ const FinanceAttendance: React.FC = () => {
                 .maybeSingle();
 
             if (settingsError) {
-                console.error('Gagal fetch batas mingguan dari DB:', settingsError);
             }
 
             // Gunakan nilai DB, fallback ke 3/2 jika belum ada setting
             const maxWeeklyHBV: number = dbSettings?.max_weekly_attendance_hbv ?? 3;
             const maxWeeklyNHBV: number = dbSettings?.max_weekly_attendance_nhbv ?? 2;
 
-            console.log(`📋 Batas minggu dari DB: HBV=${maxWeeklyHBV}x, NHBV=${maxWeeklyNHBV}x`);
 
             // ─── FETCH HARI LIBUR (SPECIAL DATES) ─────────────────────────
             const exportMonth = dateRange.start ? new Date(dateRange.start).getMonth() + 1 : new Date().getMonth() + 1;
@@ -1488,11 +1458,9 @@ const FinanceAttendance: React.FC = () => {
                 .order('week_number');
 
             if (weekSettingsError) {
-                console.error('Gagal fetch week settings dari DB:', weekSettingsError);
             }
 
             const exportWeekSettings: WeekSetting[] = weekSettingsData || [];
-            console.log(`📅 Week settings dari DB untuk ${exportMonth}/${exportYear}:`, exportWeekSettings.length, 'minggu');
 
             if (exportWeekSettings.length === 0) {
                 toast.error(`Tidak ada pengaturan minggu untuk bulan ${exportMonth}/${exportYear}. Silakan atur di menu Pengaturan terlebih dahulu.`);
@@ -1508,7 +1476,6 @@ const FinanceAttendance: React.FC = () => {
                 .eq('effective_year', exportYear);
 
             const exportPaymentRates: PaymentRate[] = paymentRatesData || [];
-            console.log(`💰 Payment rates dari DB untuk ${exportMonth}/${exportYear}:`, exportPaymentRates);
 
             // ─── FETCH SEMUA VERIFIED RECORDS LANGSUNG DARI DB (PAGINATION) ──────
             // PENTING: attendanceRecords state bisa terpotong di 1000 baris (Supabase default).
@@ -1560,7 +1527,6 @@ const FinanceAttendance: React.FC = () => {
             }
 
             toast.dismiss('export-fetch-toast');
-            console.log(`✅ Export: Fetched ${allVerifiedRecordsRaw.length} verified records in ${exportPage} page(s)`);
 
             // Enrich with is_homebase from users table
             const exportLecturerIds = [...new Set(allVerifiedRecordsRaw.map((r: any) => r.lecturer_user_id).filter(Boolean))];
@@ -1587,14 +1553,6 @@ const FinanceAttendance: React.FC = () => {
             }
 
             // 🔍 DEBUG: Comprehensive logging
-            console.log('📊 Export Excel Debug:');
-            console.log('- Lecture Schedules Count:', lectureSchedules.length);
-            console.log('- Week Settings Count (DB):', exportWeekSettings.length);
-            console.log('- Week Settings (DB):', exportWeekSettings);
-            console.log('- Special Dates Count:', currentSpecialDates.length);
-            console.log('- Special Dates:', currentSpecialDates);
-            console.log('- All Verified Records (fresh from DB):', verifiedRecords.length);
-            console.log('- Sample Verified Records:', verifiedRecords.slice(0, 3).map((r: any) => ({ name: r.lecturer_name, date: r.attendance_date })));
 
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Rekap Kehadiran');
@@ -1837,7 +1795,6 @@ const FinanceAttendance: React.FC = () => {
             });
 
             // Debug: Log holiday columns
-            console.log('🎨 Holiday Columns (Yellow):', Array.from(holidayCols));
 
             // Stats Columns
             const statsStartCol = colCursor;
@@ -1900,11 +1857,6 @@ const FinanceAttendance: React.FC = () => {
 
                 // Debug logging for first few lecturers
                 if (counter <= 3) {
-                    console.log(`🔍 Lecturer: ${lecturer.name}`);
-                    console.log(`   Total dates: ${lecturer.dates.length}`, lecturer.dates);
-                    console.log(`   Paid dates per week:`, Object.fromEntries(paidDatesPerWeek));
-                    console.log(`   Total paid days: ${totalPaidDays}`);
-                    console.log(`   Unpaid dates (>3/week):`, unpaidDates);
                 }
 
                 // Process Study Programs
@@ -1922,7 +1874,6 @@ const FinanceAttendance: React.FC = () => {
 
                 // FALLBACK: If no teaching prodi found in details (e.g. old records), try matching with Schedule
                 if (teachingProdiNames.length === 0) {
-                    console.warn(`⚠️ No teaching prodi in details for ${lecturer.name}, trying schedule fallback...`);
 
                     // Match lecturer to schedules
                     let schedulesForProdi: LectureSchedule[] = [];
@@ -1951,7 +1902,6 @@ const FinanceAttendance: React.FC = () => {
 
                     if (scheduleProdis.size > 0) {
                         teachingProdiNames = Array.from(scheduleProdis);
-                        console.log(`✅ Found fallback prodis for ${lecturer.name}:`, teachingProdiNames);
                     }
                 }
 
@@ -2150,7 +2100,6 @@ const FinanceAttendance: React.FC = () => {
 
             // Log ringkasan
             if (totalUnpaidDaysAll > 0) {
-                console.log(`📊 Grand Total: ${totalPaidDaysAll} hari dibayar, ${totalUnpaidDaysAll} hari melebihi batas (HBV:${maxWeeklyHBV}x | NHBV:${maxWeeklyNHBV}x per minggu)`);
             }
 
             const totalValueCell = worksheet.getCell(lastRowIdx, footStatsStartCol + 3);
@@ -2206,22 +2155,16 @@ const FinanceAttendance: React.FC = () => {
             }
 
             // Write File
-            console.log('Writing Excel buffer...');
             const buffer = await workbook.xlsx.writeBuffer();
-            console.log('Buffer created, size:', buffer.byteLength);
 
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const filename = `Rekap_Kehadiran_Vokasi_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
-            console.log('Saving as:', filename);
 
             saveAs(blob, filename);
-            console.log('SaveAs called');
 
             toast.success('Excel berhasil dibuat dan diunduh');
         } catch (error) {
-            console.error('Error exporting Excel:', error);
             if (error instanceof Error) {
-                console.error('Stack:', error.stack);
             }
             toast.error('Gagal membuat file Excel');
         }

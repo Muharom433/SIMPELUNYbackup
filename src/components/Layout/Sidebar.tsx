@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router-dom';
 import {
@@ -139,7 +139,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, isOpen, onClose }) => {
             setPendingToolLendingCount(toolLendingCount || 0);
 
         } catch (error) {
-            console.error("Error fetching notification counts:", error);
         }
     };
 

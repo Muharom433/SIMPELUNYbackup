@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { chunkedFetch } from '../lib/queryUtils';
 import { Package, MapPin, FileText, Send, User, Building, Phone, AlertTriangle, ChevronLeft } from 'lucide-react';
@@ -82,12 +82,10 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
       const { data, error } = await query;
 
       if (error) {
-        console.error('[ItemMutation] Users fetch error:', error);
         setUsersLoading(false);
         return;
       }
 
-      console.log(`[ItemMutation] Users fetch result (${data?.length || 0} items) for term "${cleanTerm}":`, data);
 
       const opts: UserOption[] = (data || [])
         .map((u: any) => {
@@ -104,7 +102,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
 
       setUserOptions(opts);
     } catch (err) {
-      console.error('[ItemMutation] Unexpected error fetching users:', err);
     } finally {
       setUsersLoading(false);
     }
@@ -163,10 +160,8 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
       ]);
 
       if (roomsRes.error) {
-        console.error('[ItemMutation] Rooms fetch error:', roomsRes.error);
       }
 
-      console.log(`[ItemMutation] Fetched ${allEquipment.length} equipment items (chunked).`);
       setEquipmentList(allEquipment);
       setRoomList(roomsRes.data || []);
       if (deptRes.data && deptRes.data.length > 0) {
@@ -176,7 +171,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
       // Fetch initial users list
       await fetchUsers('');
     } catch (error) {
-      console.error('Error fetching data:', error);
       toast.error(getText('Failed to load data', 'Gagal memuat data'));
     }
   };
@@ -229,7 +223,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
         insertedRoom = d1;
         dbSuccess = true;
       } else {
-        console.warn('[ItemMutation] Create room attempt 1 failed:', e1);
 
         // 2. Try minimal room without department_id
         const minimalRoom: any = {
@@ -249,7 +242,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
           insertedRoom = d2;
           dbSuccess = true;
         } else {
-          console.warn('[ItemMutation] Create room attempt 2 failed:', e2);
         }
       }
 
@@ -275,7 +267,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
         toast.success(getText('New room added', 'Ruangan baru ditambahkan'));
       }
     } catch (error) {
-      console.error('Error creating room:', error);
       const tempId = crypto.randomUUID();
       const localRoom: Room = { id: tempId, name: inputValue.trim(), code: `R-${Math.floor(Date.now() / 1000)}` };
       setRoomList(prev => [...prev, localRoom]);
@@ -338,7 +329,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
       }
       return true;
     } catch (e) {
-      console.error('Error saving local mutation:', e);
       return false;
     }
   };
@@ -359,7 +349,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
       if (equipmentCode) overrides[equipmentCode] = overrideObj;
       localStorage.setItem('local_equipment_room_overrides', JSON.stringify(overrides));
     } catch (e) {
-      console.error('Error updating local equipment location override:', e);
     }
   };
 
@@ -407,7 +396,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
         mutationInserted = true;
       } else {
         insertError = err1;
-        console.warn('[ItemMutation] Insert attempt 1 failed:', err1.code, err1.message);
 
         // Attempt 2: If pic_phone column missing, try without it
         const isPicPhoneError =
@@ -417,7 +405,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
             (err1.message || '').toLowerCase().includes('does not exist'));
 
         if (isPicPhoneError) {
-          console.warn('[ItemMutation] Retrying without pic_phone...');
           const { pic_phone, ...insertDataNoPhone } = insertData;
           const { error: err2 } = await supabase
             .from('equipment_mutations')
@@ -428,7 +415,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
             insertError = null;
           } else {
             insertError = err2;
-            console.warn('[ItemMutation] Insert attempt 2 (no phone) failed:', err2.code, err2.message);
           }
         }
 
@@ -510,7 +496,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
               .eq('id', selectedEquipment);
 
             if (updateError) {
-              console.warn('[ItemMutation] Warning updating equipment rooms_id in Supabase:', updateError);
               toast.success(getText(
                 'Transfer recorded! (Note: equipment location update failed, may need manual update)',
                 'Transfer berhasil dicatat! (Catatan: gagal update lokasi barang, mungkin perlu update manual)'
@@ -519,7 +504,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
               toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
             }
           } catch (err) {
-            console.warn('Error in Supabase update:', err);
             toast.success(getText('Transfer recorded successfully!', 'Transfer berhasil dicatat!'));
           }
         } else {
@@ -555,7 +539,6 @@ const ItemMutationForm = ({ onSuccess, onCancel }: ItemMutationFormProps = {}) =
       }
 
     } catch (error: any) {
-      console.error('[ItemMutation] Unexpected error:', error);
       const errMsg = error?.message || 'Unknown error';
       toast.error(getText(`Transfer failed: ${errMsg}`, `Transfer gagal: ${errMsg}`));
       setDbError(errMsg);

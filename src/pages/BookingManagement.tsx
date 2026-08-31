@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Calendar, Clock, User, Building, XCircle, AlertTriangle,
     Eye, Edit, Trash2, RefreshCw, Search, ChevronDown, ChevronUp,
@@ -116,7 +116,6 @@ const formatDateTimeForInput = (dateString: string) => {
 
         return `${year}-${month}-${day}T${hours}:${minutes}`;
     } catch (error) {
-        console.error('Error formatting date:', error);
         return '';
     }
 };
@@ -129,7 +128,6 @@ const parseInputToISO = (inputValue: string) => {
         if (isNaN(date.getTime())) return '';
         return date.toISOString();
     } catch (error) {
-        console.error('Error parsing input date:', error);
         return '';
     }
 };
@@ -140,7 +138,6 @@ const updateEquipmentQuantities = async (
     action: 'borrow' | 'return'
 ) => {
     try {
-        console.log(`📊 Updating equipment quantities (${action})...`);
 
         for (const change of equipmentChanges) {
             const { data: currentEq, error: fetchError } = await supabase
@@ -150,7 +147,6 @@ const updateEquipmentQuantities = async (
                 .single();
 
             if (fetchError) {
-                console.error(`Error fetching equipment ${change.equipment_name}:`, fetchError);
                 continue;
             }
 
@@ -158,7 +154,6 @@ const updateEquipmentQuantities = async (
             if (action === 'borrow') {
                 newQuantity = currentEq.quantity - change.quantity;
                 if (newQuantity < 0) {
-                    console.log(`⚠️ Stok "${change.equipment_name}" tidak cukup (tersedia: ${currentEq.quantity}, diminta: ${change.quantity}) - borrow tanpa kurangi stok`);
                     continue;
                 }
             } else {
@@ -174,11 +169,9 @@ const updateEquipmentQuantities = async (
                 .eq('id', change.equipment_id);
 
             if (updateError) {
-                console.error(`Error updating equipment ${change.equipment_name}:`, updateError);
                 continue;
             }
 
-            console.log(`  ✅ ${change.equipment_name}: ${currentEq.quantity} → ${newQuantity} (${action === 'borrow' ? '-' : '+'}${change.quantity})`);
 
             await supabase
                 .from('equipment_quantity_logs')
@@ -193,7 +186,6 @@ const updateEquipmentQuantities = async (
                 });
         }
     } catch (error: any) {
-        console.error('❌ Error updating equipment quantities:', error);
         throw error;
     }
 };
@@ -488,13 +480,11 @@ const BookingManagement: React.FC = () => {
                     return false;
                 });
 
-                console.log(`🔬 Laboran filter: ${filteredData.length} bookings from ${data?.length || 0}`);
             }
 
             setBookings(filteredData);
 
         } catch (error: any) {
-            console.error('Error fetching bookings:', error);
             toast.error(`Gagal memuat data booking: ${error.message}`);
         } finally {
             setLoading(false);
@@ -522,7 +512,6 @@ const BookingManagement: React.FC = () => {
             setEquipmentMap(eqMap);
 
         } catch (error: any) {
-            console.error('Error fetching equipment:', error);
         }
     };
 
@@ -574,12 +563,10 @@ const BookingManagement: React.FC = () => {
                     return false;
                 });
 
-                console.log(`🔬 Laboran rooms filter: ${filteredData.length} rooms from ${data?.length || 0}`);
             }
 
             setRooms(filteredData as any);
         } catch (error: any) {
-            console.error('Error fetching rooms:', error);
         }
     };
 
@@ -620,7 +607,6 @@ const BookingManagement: React.FC = () => {
             };
 
         } catch (error: any) {
-            console.error('Error fetching equipment by room:', error);
             toast.error('Gagal memuat data peralatan');
             return { mandatory: [], optional: [] };
         } finally {
@@ -632,10 +618,6 @@ const BookingManagement: React.FC = () => {
     // Konsep: equipment_requested = array ID equipment yang dipinjam
     //         equipment_quantities = array jumlah yang dipinjam (index sama dengan equipment_requested)
     const initializeEquipmentSelections = async (booking: Booking, newRoomId?: string) => {
-        console.log('📦 Initialize Equipment Selections:');
-        console.log('  - equipment_requested:', booking.equipment_requested);
-        console.log('  - equipment_quantities:', booking.equipment_quantities);
-        console.log('  - booking status:', booking.status);
 
         const targetRoomId = newRoomId || booking.room_id;
         const { mandatory, optional } = await fetchEquipmentByRoom(targetRoomId);
@@ -1065,7 +1047,6 @@ const BookingManagement: React.FC = () => {
             // Tidak ada konflik sama sekali, langsung approve
             await handleStatusChange(bookingId, 'approved');
         } catch (error: any) {
-            console.error('Error checking approval conflict:', error);
             toast.error(`Gagal memeriksa jadwal: ${error.message}`);
             setProcessingIds(prev => {
                 const newSet = new Set(prev);
@@ -1088,11 +1069,9 @@ const BookingManagement: React.FC = () => {
             const booking = bookings.find(b => b.id === bookingId);
             if (!booking) throw new Error('Booking tidak ditemukan');
 
-            console.log(`📊 Changing status: ${booking.status} → ${newStatus}`);
 
             // ===== CASE 1: PENDING/APPROVED → BORROWED (Kurangi stok equipment) =====
             if ((booking.status === 'pending' || booking.status === 'approved') && newStatus === 'borrowed') {
-                console.log('🔍 Processing change to borrowed status - deducting equipment...');
 
                 // === AUTO-COMPLETE: Cek apakah ada booking lain di ruangan yang sama dengan status 'borrowed' ===
                 const { data: existingBorrowedBookings, error: existingError } = await supabase
@@ -1103,18 +1082,15 @@ const BookingManagement: React.FC = () => {
                     .neq('id', bookingId);
 
                 if (existingError) {
-                    console.error('Error checking existing borrowed bookings:', existingError);
                 }
 
                 let transferredEquipmentIds: string[] = [...(booking.equipment_requested || [])];
                 let transferredEquipmentQtys: number[] = [...(booking.equipment_quantities || [])];
 
                 if (existingBorrowedBookings && existingBorrowedBookings.length > 0) {
-                    console.log(`🔄 Found ${existingBorrowedBookings.length} existing borrowed booking(s) in room ${booking.room_id}`);
 
                     for (const oldBooking of existingBorrowedBookings) {
                         const oldUserName = (oldBooking.user as any)?.full_name || 'Unknown';
-                        console.log(`  📦 Auto-completing old booking: ${oldBooking.id} (${oldUserName})`);
 
                         // Transfer equipment dari peminjaman lama ke peminjaman baru
                         // Hanya tambahkan equipment yang belum ada di peminjaman baru
@@ -1129,11 +1105,9 @@ const BookingManagement: React.FC = () => {
                                     // Equipment belum ada, tambahkan
                                     transferredEquipmentIds.push(oldEqId);
                                     transferredEquipmentQtys.push(oldQty);
-                                    console.log(`    ➕ Transferred equipment ${oldEqId} (qty: ${oldQty}) to new booking`);
                                 } else {
                                     // Equipment sudah ada, tambahkan quantity
                                     transferredEquipmentQtys[existingIndex] += oldQty;
-                                    console.log(`    ➕ Added qty ${oldQty} to existing equipment ${oldEqId} (total: ${transferredEquipmentQtys[existingIndex]})`);
                                 }
                             }
                         }
@@ -1149,7 +1123,6 @@ const BookingManagement: React.FC = () => {
                             .eq('id', oldBooking.id);
 
                         if (completeError) {
-                            console.error(`Error auto-completing booking ${oldBooking.id}:`, completeError);
                         } else {
                             toast.success(`Peminjaman ${oldUserName} otomatis diselesaikan, equipment dipindahkan.`);
                         }
@@ -1170,9 +1143,7 @@ const BookingManagement: React.FC = () => {
                         .eq('id', bookingId);
 
                     if (transferUpdateError) {
-                        console.error('Error updating transferred equipment:', transferUpdateError);
                     } else {
-                        console.log('✅ Equipment transferred to new booking successfully');
                     }
                 }
 
@@ -1197,13 +1168,11 @@ const BookingManagement: React.FC = () => {
 
                     // Skip jika quantity 0
                     if (qty <= 0) {
-                        console.log(`  ⏭️ Skipping equipment ${eqId} - quantity is 0`);
                         continue;
                     }
 
                     // Skip jika equipment ini sudah dipinjam dari booking lama (sudah dikurangi stoknya)
                     if (alreadyBorrowedEqIds.has(eqId)) {
-                        console.log(`  ⏭️ Skipping equipment ${eqId} - already borrowed from previous booking (transferred)`);
                         continue;
                     }
 
@@ -1220,14 +1189,12 @@ const BookingManagement: React.FC = () => {
                     if (!currentEq.is_available) {
                         // Tidak tersedia sama sekali -> skip, catat sebagai insufficient
                         insufficientEquipment.push(currentEq.name);
-                        console.log(`  ⚠️ Equipment "${currentEq.name}" tidak tersedia - borrow tanpa kurangi stok`);
                         continue;
                     }
 
                     if (currentEq.quantity < qty) {
                         // Stok kurang -> allow borrow tapi JANGAN kurangi stok
                         insufficientEquipment.push(`${currentEq.name} (stok: ${currentEq.quantity}, diminta: ${qty})`);
-                        console.log(`  ⚠️ Stok "${currentEq.name}" tidak cukup (tersedia: ${currentEq.quantity}, diminta: ${qty}) - borrow tanpa kurangi stok`);
                         continue;
                     }
 
@@ -1250,7 +1217,6 @@ const BookingManagement: React.FC = () => {
 
             // ===== CASE 2: BORROWED → CANCELLED (Kembalikan stok equipment) =====
             if (booking.status === 'borrowed' && (newStatus === 'cancelled' || newStatus === 'rejected')) {
-                console.log('🔄 Returning equipment quantities for cancelled booking...');
 
                 const equipmentChanges = [];
 
@@ -1344,7 +1310,6 @@ const BookingManagement: React.FC = () => {
 
 
         } catch (error: any) {
-            console.error('❌ Error changing status:', error);
             toast.error(`Gagal mengubah status: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -1366,13 +1331,6 @@ const BookingManagement: React.FC = () => {
             const originalStatus = selectedBooking.status;
             const roomChanged = editFormData.room_id !== originalRoomId;
 
-            console.log('🔄 Updating booking...', {
-                bookingId: selectedBooking.id,
-                originalStatus,
-                roomChanged,
-                oldRoomId: originalRoomId,
-                newRoomId: editFormData.room_id
-            });
             // Variabel untuk menyimpan equipment yang akan di-save ke booking
             // Menggunakan let agar bisa di-reassign jika room changed
             let finalEquipmentRequested = equipmentSelections.map(s => s.equipment_id);
@@ -1380,7 +1338,6 @@ const BookingManagement: React.FC = () => {
 
             // ===== HANDLE STATUS BORROWED =====
             if (roomChanged && originalStatus === 'borrowed') {
-                console.log('🔄 Room transfer detected for borrowed booking');
 
                 // STEP 1: Pisahkan mandatory vs optional
                 const mandatoryEquipmentOld = originalEquipmentSelections.filter(e => e.is_mandatory);
@@ -1389,16 +1346,9 @@ const BookingManagement: React.FC = () => {
                 const mandatoryEquipmentNew = equipmentSelections.filter(e => e.is_mandatory);
                 const optionalEquipmentNew = equipmentSelections.filter(e => !e.is_mandatory);
 
-                console.log('📦 Equipment breakdown:', {
-                    mandatoryOld: mandatoryEquipmentOld.length,
-                    optionalOld: optionalEquipmentOld.length,
-                    mandatoryNew: mandatoryEquipmentNew.length,
-                    optionalNew: optionalEquipmentNew.length
-                });
 
                 // STEP 2: Buat checkout untuk perpindahan ruangan + MANDATORY equipment LAMA SAJA
                 if (mandatoryEquipmentOld.length > 0) {
-                    console.log('🏢 Creating room transfer checkout...');
 
                     const checkoutData = {
                         user_id: selectedBooking.user_id,
@@ -1420,7 +1370,6 @@ const BookingManagement: React.FC = () => {
 
                     if (checkoutError) throw checkoutError;
 
-                    console.log('✅ Checkout created:', checkoutResult.id);
 
                     // Insert checkout_items - HANYA equipment MANDATORY LAMA
                     // Equipment ini akan divalidasi di Validation Queue untuk dikembalikan stocknya
@@ -1437,13 +1386,11 @@ const BookingManagement: React.FC = () => {
 
                     if (itemsError) throw itemsError;
 
-                    console.log(`✅ ${checkoutItems.length} mandatory items added to checkout_items`);
                 }
 
                 // STEP 3: Kurangi stock MANDATORY BARU (dari ruang baru)
                 // Equipment mandatory baru langsung dikurangi stocknya
                 if (mandatoryEquipmentNew.length > 0) {
-                    console.log('📦 Processing new mandatory equipment...');
 
                     for (const eq of mandatoryEquipmentNew) {
                         // Cek apakah ini equipment baru atau sudah ada di lama
@@ -1462,7 +1409,6 @@ const BookingManagement: React.FC = () => {
                             }
 
                             if (currentEq.quantity < eq.quantity) {
-                                console.log(`⚠️ Stock "${currentEq.name}" tidak cukup. Tersedia: ${currentEq.quantity}, Dibutuhkan: ${eq.quantity} - borrow tanpa kurangi stok`);
                             } else {
                                 await updateEquipmentQuantities([{
                                     equipment_id: eq.equipment_id,
@@ -1470,7 +1416,6 @@ const BookingManagement: React.FC = () => {
                                     quantity: eq.quantity
                                 }], 'borrow');
 
-                                console.log(`✅ Borrowed new equipment: ${eq.equipment_name} (${eq.quantity})`);
                             }
                         }
                     }
@@ -1491,7 +1436,6 @@ const BookingManagement: React.FC = () => {
                         })),
                         'return'
                     );
-                    console.log(`✅ Returned ${optionalReturn.length} optional equipment`);
                 }
 
                 // Borrow optional yang ditambah
@@ -1505,7 +1449,6 @@ const BookingManagement: React.FC = () => {
                         })),
                         'borrow'
                     );
-                    console.log(`✅ Borrowed ${optionalBorrow.length} additional optional equipment`);
                 }
 
                 // STEP 5: Update finalEquipmentRequested
@@ -1514,15 +1457,10 @@ const BookingManagement: React.FC = () => {
                 finalEquipmentRequested = optionalEquipmentNew.map(e => e.equipment_id);
                 finalEquipmentQuantities = optionalEquipmentNew.map(e => e.quantity);
 
-                console.log('📝 Final equipment for bookings table (optional only):', {
-                    count: finalEquipmentRequested.length,
-                    items: optionalEquipmentNew.map(e => e.equipment_name)
-                });
             }
             // ===== STATUS APPROVED + ROOM CHANGE =====
             // TIDAK perlu buat checkout karena approved belum mengurangi stok
             else if (originalStatus === 'approved' && roomChanged) {
-                console.log('ℹ️ Room changed while approved - no checkout needed (equipment not deducted yet)');
             }
 
             // ===== FINAL STEP: UPDATE BOOKING (ROOM_ID + EQUIPMENT) =====
@@ -1546,9 +1484,6 @@ const BookingManagement: React.FC = () => {
 
             if (updateError) throw updateError;
 
-            console.log('✅ Booking updated successfully');
-            console.log('✅ New room_id:', editFormData.room_id);
-            console.log('✅ Status remains:', originalStatus);
 
             const successMessage = roomChanged && originalStatus === 'borrowed'
                 ? 'Booking berhasil diperbarui! Checkout otomatis dibuat untuk validasi equipment lama di Validation Queue.'
@@ -1561,7 +1496,6 @@ const BookingManagement: React.FC = () => {
             await fetchBookings();
 
         } catch (error: any) {
-            console.error('❌ Error updating booking:', error);
             toast.error(`Gagal memperbarui booking: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -1581,7 +1515,6 @@ const BookingManagement: React.FC = () => {
 
             // Jika status borrowed, kembalikan equipment ke stok
             if (selectedBooking.status === 'borrowed') {
-                console.log('🔄 Returning equipment quantities before deletion...');
 
                 const equipmentChanges = [];
 
@@ -1629,7 +1562,6 @@ const BookingManagement: React.FC = () => {
             await fetchBookings();
 
         } catch (error: any) {
-            console.error('❌ Error deleting booking:', error);
             toast.error(`Gagal menghapus booking: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -1723,7 +1655,6 @@ const BookingManagement: React.FC = () => {
             }, 500);
 
         } catch (error: any) {
-            console.error('❌ Error rejecting booking:', error);
             toast.error(`Gagal menolak booking: ${error.message}`);
         } finally {
             setProcessingIds(prev => {

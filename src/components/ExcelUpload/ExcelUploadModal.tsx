@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { X, FileSpreadsheet, AlertCircle, CheckCircle, Loader2, Download, ChevronLeft, ChevronRight, UserPlus, Trash2, Copy, Edit } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -187,7 +187,6 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
       setShowUserModal(false);
 
     } catch (err: any) {
-      console.error(err);
       toast.error(`Gagal: ${err.message}`, { id: toastId });
     }
   };
@@ -290,7 +289,7 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
         toast.error("Tidak ada data yang dapat dibaca. Pastikan header kolom sudah benar di semua sheet.");
       }
     } catch (error) {
-      console.error('Error processing Excel file:', error); toast.error('Gagal memproses file Excel.');
+toast.error('Gagal memproses file Excel.');
     } finally { setUploading(false); }
   };
 
@@ -344,7 +343,6 @@ const ExcelUploadModal: React.FC<ExcelUploadModalProps> = ({ isOpen, onClose, on
       onClose();
     } catch (error: any) {
       toast.dismiss(loadingToast);
-      console.error('Error uploading schedules:', error);
       toast.error(error.message || 'Gagal mengunggah jadwal');
     } finally {
       setUploading(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -94,7 +94,6 @@ const StudyProgramManagement: React.FC = () => {
             .eq('study_program_id', program.id);
 
           if (countError) {
-            console.error('Error fetching student count:', countError);
           }
 
           return {
@@ -106,7 +105,6 @@ const StudyProgramManagement: React.FC = () => {
 
       setStudyPrograms(programsWithStats);
     } catch (error) {
-      console.error('Error fetching study programs:', error);
       toast.error('Failed to load study programs');
     } finally {
       setLoading(false);
@@ -123,7 +121,6 @@ const StudyProgramManagement: React.FC = () => {
       if (error) throw error;
       setDepartments(data || []);
     } catch (error) {
-      console.error('Error fetching departments:', error);
       toast.error('Failed to load departments');
     }
   };
@@ -166,7 +163,6 @@ const StudyProgramManagement: React.FC = () => {
       form.reset();
       fetchStudyPrograms();
     } catch (error: any) {
-      console.error('Error saving study program:', error);
       if (error.code === '23505') {
         toast.error('Study program code already exists');
       } else {
@@ -202,7 +198,6 @@ const StudyProgramManagement: React.FC = () => {
       setShowDeleteConfirm(null);
       fetchStudyPrograms();
     } catch (error: any) {
-      console.error('Error deleting study program:', error);
       toast.error(error.message || 'Failed to delete study program');
     } finally {
       setLoading(false);

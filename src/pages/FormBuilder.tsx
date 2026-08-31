@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
     Save,
@@ -163,7 +163,6 @@ const FormBuilder: React.FC = () => {
                     `${newOptions.length} opsi berhasil diimpor dari kolom "${matchedHeader}"`
                 );
             } catch (err) {
-                console.error('Excel import error:', err);
                 toast.error('Gagal membaca file Excel. Pastikan format file benar.');
             }
         };
@@ -246,7 +245,6 @@ const FormBuilder: React.FC = () => {
                 }))
             );
         } catch (error: any) {
-            console.error('Error loading form:', error);
             toast.error(getText('Failed to load form', 'Gagal memuat formulir'));
             navigate('/forms');
         } finally {
@@ -476,7 +474,6 @@ const FormBuilder: React.FC = () => {
 
             navigate('/forms');
         } catch (error: any) {
-            console.error('Error saving form:', error);
             toast.error(getText('Failed to save form', 'Gagal menyimpan formulir'));
         } finally {
             setSaving(false);

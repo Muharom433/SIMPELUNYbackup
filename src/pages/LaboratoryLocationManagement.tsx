@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
     Building2, Plus, Edit2, Trash2, ChevronDown, ChevronRight, X, Save, DoorOpen,
     Loader2, Table2, MapPin, Search, Eye, Box, Archive,
@@ -229,7 +229,6 @@ const LaboratoryLocationManagement: React.FC = () => {
 
             setRooms(filteredRooms);
         } catch (error) {
-            console.error('Error fetching rooms:', error);
             Swal.fire('Error', getText('Failed to load data', 'Gagal memuat data'), 'error');
         } finally {
             setLoading(false);
@@ -391,7 +390,6 @@ const LaboratoryLocationManagement: React.FC = () => {
                 fetchRooms();
                 Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
             } catch (e) {
-                console.error(e);
                 Swal.fire('Error', getText('Failed to save cabinet', 'Gagal menyimpan kabinet'), 'error');
             }
         } else {
@@ -416,7 +414,6 @@ const LaboratoryLocationManagement: React.FC = () => {
                 fetchRooms();
                 Swal.fire({ icon: 'success', title: getText('Cabinet claimed!', 'Kabinet diambil!'), timer: 1500, showConfirmButton: false });
             } catch (e) {
-                console.error(e);
                 Swal.fire('Error', getText('Failed to claim cabinet', 'Gagal mengambil kabinet'), 'error');
             }
         }
@@ -440,7 +437,6 @@ const LaboratoryLocationManagement: React.FC = () => {
             fetchRooms();
             Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
         } catch (e) {
-            console.error(e);
             Swal.fire('Error', getText('Failed to save rack', 'Gagal menyimpan rak'), 'error');
         }
     };
@@ -472,7 +468,6 @@ const LaboratoryLocationManagement: React.FC = () => {
                 fetchRooms();
                 Swal.fire({ icon: 'success', title: getText('Saved!', 'Tersimpan!'), timer: 1500, showConfirmButton: false });
             } catch (e) {
-                console.error(e);
                 Swal.fire('Error', getText('Failed to save box', 'Gagal menyimpan box'), 'error');
             }
         } else {
@@ -497,7 +492,6 @@ const LaboratoryLocationManagement: React.FC = () => {
                 fetchRooms();
                 Swal.fire({ icon: 'success', title: getText('Box claimed!', 'Box diambil!'), timer: 1500, showConfirmButton: false });
             } catch (e) {
-                console.error(e);
                 Swal.fire('Error', getText('Failed to claim box', 'Gagal mengambil box'), 'error');
             }
         }

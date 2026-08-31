@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { parseISO, format, differenceInMinutes, isBefore, startOfDay, isSameDay } from "date-fns";
 import { id } from "date-fns/locale";
@@ -1065,7 +1065,6 @@ const BookRoom: React.FC = () => {
       setMandatoryEquipment(mandatorySelections);
 
     } catch (error) {
-      console.error('❌ Error fetching mandatory equipment:', error);
       setMandatoryEquipment([]);
     } finally {
       setLoadingEquipment(false);
@@ -1097,7 +1096,6 @@ const BookRoom: React.FC = () => {
       setOptionalEquipment((data as any[]) || []);
 
     } catch (error) {
-      console.error('❌ Error fetching optional equipment:', error);
       setOptionalEquipment([]);
     }
   };
@@ -1136,7 +1134,6 @@ const BookRoom: React.FC = () => {
 
       setTodaySchedules(data || []);
     } catch (error) {
-      console.error("Error fetching today's lectures:", error);
       alert.error(getText("Failed to load today's lecture schedule", "Gagal memuat jadwal kuliah hari ini"), "");
     } finally {
       setLoadingCourses(false);
@@ -1186,7 +1183,6 @@ const BookRoom: React.FC = () => {
 
       setPendingBookings(data || []);
     } catch (error) {
-      console.error("Error fetching pending bookings:", error);
     } finally {
       setLoadingPendingBookings(false);
     }
@@ -1203,7 +1199,6 @@ const BookRoom: React.FC = () => {
       if (error) throw error;
       setStudyPrograms(data || []);
     } catch (err) {
-      console.error("Error fetching study programs:", err);
     }
   }
 
@@ -1217,7 +1212,6 @@ const BookRoom: React.FC = () => {
       if (error) throw error;
       setCampuses(data || []);
     } catch (error) {
-      console.error('Error fetching campuses:', error);
     }
   };
 
@@ -1262,7 +1256,6 @@ const BookRoom: React.FC = () => {
           .range(from, from + BATCH_SIZE - 1);
 
         if (error) {
-          console.error('Error fetching rooms batch:', error);
           if (from === 0) {
             throw error; // Throw error only on first batch
           } else {
@@ -1282,7 +1275,6 @@ const BookRoom: React.FC = () => {
         }
       }
 
-      console.log(`✅ Fetched ${allRoomsData.length} rooms in ${Math.ceil(allRoomsData.length / BATCH_SIZE)} batch(es)`);
 
       if (!allRoomsData || allRoomsData.length === 0) {
         setRooms([]);
@@ -1347,7 +1339,6 @@ const BookRoom: React.FC = () => {
             .in('status', ['approved', 'borrowed', 'pending']);
 
           if (error) {
-            console.error("Error fetching bookings:", error);
             return [];
           }
           return data || [];
@@ -1361,7 +1352,6 @@ const BookRoom: React.FC = () => {
             .eq('day', dayNameIndonesian);
 
           if (error) {
-            console.error("Error fetching lectures:", error);
             return [];
           }
           return data || [];
@@ -1375,7 +1365,6 @@ const BookRoom: React.FC = () => {
             .eq('date', selectedDate);
 
           if (error) {
-            console.error("Error fetching exams:", error);
             return [];
           }
           return data || [];
@@ -1389,7 +1378,6 @@ const BookRoom: React.FC = () => {
             .eq('date', selectedDate);
 
           if (error) {
-            console.error("Error fetching sessions:", error);
             return [];
           }
           return data || [];
@@ -1445,7 +1433,6 @@ const BookRoom: React.FC = () => {
       setRooms(fullyMergedRooms);
 
     } catch (err) {
-      console.error("Error loading rooms:", err);
       setRooms([]);
     } finally {
       setLoadingRooms(false);
@@ -1780,7 +1767,6 @@ const BookRoom: React.FC = () => {
       setCombinedSchedules(combined);
 
     } catch (error) {
-      console.error('Error fetching schedules:', error);
       alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini."));
     } finally {
       setLoadingSchedules(false);
@@ -1844,7 +1830,6 @@ const BookRoom: React.FC = () => {
       setIsManualEntry(false);
 
     } catch (err) {
-      console.error("Error fetching identity suggestions:", err);
       setIdentitySuggestions([]);
       setShowIdentityDropdown(false);
       setIsManualEntry(true);
@@ -1956,10 +1941,6 @@ const BookRoom: React.FC = () => {
     });
 
     if (matchedRoom) {
-      console.log('✅ Found matching room for course:', {
-        courseRoom: course.room,
-        matchedRoom: matchedRoom.name
-      });
 
       setSelectedRoom(matchedRoom);
       setValue("room_id", matchedRoom.id);
@@ -1967,10 +1948,6 @@ const BookRoom: React.FC = () => {
       // Fetch equipment untuk ruangan yang cocok
       fetchMandatoryEquipmentForRoom(matchedRoom.id);
     } else {
-      console.warn('❌ No matching room found for course:', {
-        courseRoom: course.room,
-        availableRooms: rooms.map(r => r.name)
-      });
 
       // Reset state
       setSelectedRoom(null);
@@ -2110,7 +2087,6 @@ const BookRoom: React.FC = () => {
 
 
       } catch (error) {
-        console.error('❌ Error initializing data:', error);
       }
     };
 
@@ -2186,7 +2162,6 @@ const BookRoom: React.FC = () => {
           setValue("end_datetime", formattedEndTime);
         }
       } catch (err) {
-        console.error("Error calculating end time:", err);
       }
     }
   }, [startDateTime, sks, classType, setValue, activeTab, showSKSField]);
@@ -2421,7 +2396,6 @@ const BookRoom: React.FC = () => {
       setShowSuccessModal(true);
 
     } catch (err: any) {
-      console.error("Booking error:", err);
       alert.error(err.message || getText("Failed to send booking", "Gagal mengirim pemesanan"), "");
     } finally {
       setLoading(false);
@@ -3059,7 +3033,6 @@ const BookRoom: React.FC = () => {
                                                 .single();
 
                                               if (roomError) {
-                                                console.error('Error fetching room:', roomError);
                                                 setLoadingRoomDetail(false);
                                                 return;
                                               }
@@ -3088,7 +3061,6 @@ const BookRoom: React.FC = () => {
                                               });
                                               setSelectedRoomBuilding(buildingResult.data);
                                             } catch (err) {
-                                              console.error('Error in room details:', err);
                                             } finally {
                                               setLoadingRoomDetail(false);
                                             }

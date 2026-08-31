@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -91,7 +91,6 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
             });
         }
     } catch (e) {
-        console.warn('[MutationMap] Error fetching DB mutations:', e);
     }
 
     // 2. Merge local_equipment_mutations
@@ -127,7 +126,6 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
             });
         }
     } catch (e) {
-        console.warn('[MutationMap] Error parsing local mutations:', e);
     }
 
     // 3. Merge local_equipment_room_overrides
@@ -142,7 +140,6 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
             });
         }
     } catch (e) {
-        console.warn('[MutationMap] Error parsing room overrides:', e);
     }
 
     return mutationMap;
@@ -196,7 +193,6 @@ export const getLatestEquipmentRoomOverride = (
             }
         }
     } catch (e) {
-        console.warn('Error computing equipment room override:', e);
     }
     return null;
 };
@@ -557,7 +553,6 @@ const compressImage = (file: File): Promise<string> => {
 
                 // Reduce quality to 0.5
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-                console.log('📸 Compressed image size:', dataUrl.length, 'chars (~', Math.round(dataUrl.length / 1024), 'KB)');
                 resolve(dataUrl);
             };
             img.onerror = (err) => reject(err);
@@ -805,7 +800,6 @@ const ToolAdministration: React.FC = () => {
                 // Actually, the specific fetchers will set loading to true/false.
 
             } catch (error) {
-                console.error('Error loading initial data:', error);
                 toast.error('Failed to load data');
             } finally {
                 // We don't turn off loading here because fetchStocks/fetchEquipment will handle their own loading states
@@ -851,7 +845,6 @@ const ToolAdministration: React.FC = () => {
             setStocks(data || []);
             setTotalStocks(count || 0);
         } catch (error) {
-            console.error('Error fetching stocks:', error);
             toast.error('Failed to load stocks');
         } finally {
             setLoadingStocks(false);
@@ -887,7 +880,6 @@ const ToolAdministration: React.FC = () => {
             }));
             setStockTrackRecords(trackRecords);
         } catch (error) {
-            console.error('Error fetching stock track record:', error);
             toast.error('Failed to load stock track record');
             setStockTrackRecords([]);
         } finally {
@@ -927,11 +919,6 @@ const ToolAdministration: React.FC = () => {
                 const laborDeptId = profile?.department_id;
                 const laborStudyProgramId = profile?.study_program_id;
 
-                console.log('========== LABORAN EQUIPMENT FILTER DEBUG ==========');
-                console.log('User Profile:', profile);
-                console.log('User Role:', profile?.role);
-                console.log('User Dept ID:', laborDeptId);
-                console.log('User Prodi ID:', laborStudyProgramId);
 
                 if (laborDeptId) {
                     query = query.eq('department_id', laborDeptId);
@@ -940,7 +927,6 @@ const ToolAdministration: React.FC = () => {
                         query = query.or(`study_program_id.is.null,study_program_id.eq.${laborStudyProgramId}`);
                     }
                 } else {
-                    console.log('WARNING: User has no department_id!');
                     setEquipment([]);
                     setTotalEquipment(0);
                     setLoadingEquipment(false);
@@ -961,8 +947,6 @@ const ToolAdministration: React.FC = () => {
 
             const { data, count, error } = await query;
 
-console.log('========== QUERY RESULT ==========');
-            console.log('Count (from DB):', count);
 
             if (error) throw error;
 
@@ -981,7 +965,6 @@ console.log('========== QUERY RESULT ==========');
                     return item;
                 });
             } catch (err) {
-                console.warn('Error applying room overrides to equipment in ToolAdministration:', err);
             }
 
             // No more in-memory filter and pagination needed!
@@ -990,7 +973,6 @@ console.log('========== QUERY RESULT ==========');
             setEquipment(finalData);
 
         } catch (error) {
-            console.error('Error fetching equipment:', error);
             toast.error('Failed to load equipment');
         } finally {
             setLoadingEquipment(false);
@@ -1047,7 +1029,6 @@ console.log('========== QUERY RESULT ==========');
             if (error) throw error;
             setDetailEquipments(data || []);
         } catch (error) {
-            console.error('Error fetching detail equipment:', error);
             toast.error(getText('Failed to load detail equipment', 'Gagal memuat detail peralatan'));
             setDetailEquipments([]);
         } finally {
@@ -1081,7 +1062,6 @@ console.log('========== QUERY RESULT ==========');
             setDetailImagePreview('');
             await fetchDetailEquipments(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error adding detail equipment:', error);
             toast.error(error.message || getText('Failed to add detail equipment', 'Gagal menambah detail peralatan'));
         } finally {
             setLoadingDetailEquipments(false);
@@ -1115,7 +1095,6 @@ console.log('========== QUERY RESULT ==========');
             setDetailImagePreview('');
             await fetchDetailEquipments(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error editing detail equipment:', error);
             toast.error(error.message || getText('Failed to update detail equipment', 'Gagal memperbarui detail peralatan'));
         } finally {
             setLoadingDetailEquipments(false);
@@ -1143,7 +1122,6 @@ console.log('========== QUERY RESULT ==========');
             toast.success(getText('Detail equipment deleted successfully', 'Detail peralatan berhasil dihapus'));
             await fetchDetailEquipments(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error deleting detail equipment:', error);
             toast.error(error.message || getText('Failed to delete detail equipment', 'Gagal menghapus detail peralatan'));
         } finally {
             setLoadingDetailEquipments(false);
@@ -1187,7 +1165,6 @@ console.log('========== QUERY RESULT ==========');
                 const compressed = await compressImage(file);
                 setDetailImagePreview(compressed);
             } catch (error) {
-                console.error('Error compressing image:', error);
                 toast.error(getText('Failed to process image', 'Gagal memproses gambar'));
             } finally {
                 setLoadingDetailImage(false);
@@ -1214,7 +1191,7 @@ console.log('========== QUERY RESULT ==========');
                 `)
                 .contains('equipment_requested', [equipmentId]);
 
-            if (checkoutsError) console.error('Error fetching checkouts:', checkoutsError);
+            
 
             if (checkoutItemsData && checkoutItemsData.length > 0) {
                 const checkoutRecords = await Promise.all(
@@ -1273,7 +1250,7 @@ console.log('========== QUERY RESULT ==========');
                 .contains('equipment_requested', [equipmentId])
                 .order('created_at', { ascending: false });
 
-            if (borrowedBookingsError) console.error('Error fetching borrowed bookings:', borrowedBookingsError);
+            
 
             if (borrowedBookings && borrowedBookings.length > 0) {
                 for (const booking of borrowedBookings) {
@@ -1299,7 +1276,7 @@ console.log('========== QUERY RESULT ==========');
                 .contains('id_equipment', [equipmentId])
                 .order('created_at', { ascending: false });
 
-            if (borrowedLendingsError) console.error('Error fetching borrowed lendings:', borrowedLendingsError);
+            
 
             if (borrowedLendings && borrowedLendings.length > 0) {
                 for (const lending of borrowedLendings) {
@@ -1334,7 +1311,6 @@ console.log('========== QUERY RESULT ==========');
             filteredRecords.sort((a, b) => new Date(b.date || b.created_at).getTime() - new Date(a.date || a.created_at).getTime());
             setLendingDetails(filteredRecords);
         } catch (error) {
-            console.error('Error in track record analysis:', error);
             toast.error('Failed to load track record');
             setLendingDetails([]);
         } finally {
@@ -1440,7 +1416,6 @@ console.log('========== QUERY RESULT ==========');
             toast.success('Gap resolved & checkout created!');
             await fetchGapAnalysis(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error resolving gap:', error);
             toast.error(error.message || 'Failed to resolve gap');
         }
     };
@@ -1491,7 +1466,7 @@ console.log('========== QUERY RESULT ==========');
             }
             // Fetch detail equipment items
             await fetchDetailEquipments(eq.id);
-        } catch (e) { console.error('Error loading details:', e); }
+        } catch (e) { }
         finally { setLoadingDetailModal(false); }
     };
 
@@ -1501,7 +1476,7 @@ console.log('========== QUERY RESULT ==========');
         try {
             const { data } = await supabase.from('stock').select('attachments').eq('id', stock.id).single();
             if (data) setSelectedStock(prev => (prev?.id === stock.id ? { ...prev, attachments: data.attachments } : prev));
-        } catch (e) { console.error('Error loading attachment:', e); }
+        } catch (e) { }
     };
 
     const handleOpenStockTrackModal = async (stock: Stock) => {
@@ -1522,7 +1497,6 @@ console.log('========== QUERY RESULT ==========');
                 setStockImagePreview(compressed);
                 // Also update form dirty state or preview if needed
             } catch (error) {
-                console.error('Error compressing image:', error);
                 toast.error('Failed to process image');
             }
         }
@@ -1541,7 +1515,6 @@ console.log('========== QUERY RESULT ==========');
                 const compressed = await compressImage(file);
                 setEquipmentImagePreview(compressed);
             } catch (error) {
-                console.error('Error compressing image:', error);
                 toast.error('Failed to process image');
             }
         }
@@ -1578,7 +1551,6 @@ console.log('========== QUERY RESULT ==========');
 
                 toast.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
             } catch (error) {
-                console.error('Error downloading QR:', error);
                 toast.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
             } finally {
                 setIsDownloadingStockQR(false);
@@ -1611,7 +1583,6 @@ console.log('========== QUERY RESULT ==========');
 
                 toast.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
             } catch (error) {
-                console.error('Error downloading QR:', error);
                 toast.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
             } finally {
                 setIsDownloadingEquipmentQR(false);
@@ -1628,7 +1599,7 @@ console.log('========== QUERY RESULT ==========');
             try {
                 const { data } = await supabase.from('stock').select('attachments').eq('id', stock.id).single();
                 if (data?.attachments) setStockImagePreview(data.attachments);
-            } catch (e) { console.error(e); }
+            } catch (e) { }
         } else {
             stockForm.reset({ quantity: 1 });
             setStockImagePreview('');
@@ -1648,12 +1619,6 @@ console.log('========== QUERY RESULT ==========');
     };
 
     const handleOpenEditModal = async (equipmentItem: EquipmentWithDetails) => {
-        console.log('========================================');
-        console.log('=== OPEN EDIT MODAL ===');
-        console.log('========================================');
-        console.log('Equipment item:', equipmentItem.id, equipmentItem.name);
-        console.log('Equipment rooms_id:', equipmentItem.rooms_id);
-        console.log('Equipment rooms:', equipmentItem.rooms);
 
         setEditingEquipment(equipmentItem);
         setSelectedRoomForEdit(equipmentItem.rooms || null);
@@ -1692,7 +1657,7 @@ console.log('========== QUERY RESULT ==========');
 
             setEquipmentImagePreview(finalAttachment);
             setOriginalEquipmentImage(finalAttachment);
-        } catch (e) { console.error(e); }
+        } catch (e) { }
         finally { setLoadingImage(false); }
 
         const foundBox = boxes.find(b => b.id === equipmentItem.box_id);
@@ -1709,7 +1674,6 @@ console.log('========== QUERY RESULT ==========');
 
         // Fallback: jika rooms_id tidak ada langsung, ambil dari relasi rooms.id
         const effectiveRoomsId = equipmentItem.rooms_id || equipmentItem.rooms?.id || '';
-        console.log('Effective rooms_id:', effectiveRoomsId);
 
         const { purchaseYear, procurementType, specs } = parseEquipmentSpec(equipmentItem.Spesification || '');
         const formValues = {
@@ -1721,8 +1685,6 @@ console.log('========== QUERY RESULT ==========');
             quantity: equipmentItem.quantity, unit: equipmentItem.unit, rooms_id: effectiveRoomsId,
             table_id: tableId || '', rack_id: rackId || '', box_id: equipmentItem.box_id || '',
         };
-        console.log('Form values to reset:', formValues);
-        console.log('rooms_id value:', formValues.rooms_id);
 
         editForm.reset(formValues);
         setShowEditModal(true);
@@ -1752,7 +1714,6 @@ console.log('========== QUERY RESULT ==========');
             const { data: newStocks } = await supabase.from('stock').select('id, nama, code, category, quantity, unit, spesification, created_at').order('created_at', { ascending: false });
             setStocks(newStocks || []);
         } catch (error: any) {
-            console.error('Error saving stock:', error);
             toast.error(error.message || 'Failed to save stock');
         } finally {
             setLoadingStocks(false);
@@ -1796,7 +1757,6 @@ console.log('========== QUERY RESULT ==========');
 
             await Promise.all([fetchStocks(), fetchEquipment()]);
         } catch (error: any) {
-            console.error('Error claiming equipment:', error);
             toast.error(error.message || 'Failed to claim equipment');
         } finally {
             setLoadingEquipment(false);
@@ -1864,7 +1824,6 @@ console.log('========== QUERY RESULT ==========');
             editForm.reset();
             await fetchEquipment();
         } catch (error: any) {
-            console.error('Error updating equipment:', error);
             Swal.fire('Error', error.message || 'Failed to update equipment', 'error');
         } finally {
             setLoadingEquipment(false);
@@ -1884,7 +1843,7 @@ console.log('========== QUERY RESULT ==========');
             if (error) throw error;
             toast.success('Stock deleted! 🗑️');
             fetchStocks();
-        } catch (error: any) { console.error('Error deleting stock:', error); toast.error(error.message || 'Failed to delete stock'); }
+        } catch (error: any) {  toast.error(error.message || 'Failed to delete stock'); }
         finally { setLoadingStocks(false); }
     };
 
@@ -1906,7 +1865,6 @@ console.log('========== QUERY RESULT ==========');
             const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
 
             if (error) {
-                console.error('Supabase delete error:', error);
                 throw error;
             }
 
@@ -1917,7 +1875,6 @@ console.log('========== QUERY RESULT ==========');
             );
             fetchEquipment();
         } catch (error: any) {
-            console.error('Error deleting equipment:', error);
             Swal.fire({
                 icon: 'error',
                 title: 'Oops...',
@@ -2028,7 +1985,6 @@ console.log('========== QUERY RESULT ==========');
                     return item;
                 });
             } catch (err) {
-                console.warn('Error applying room overrides to equipment in export PDF:', err);
             }
 
             const doc = new jsPDF('landscape', 'mm', 'a4');
@@ -2040,7 +1996,6 @@ console.log('========== QUERY RESULT ==========');
                 const logoDataUrl = await getImageDataUrl(logoUNY);
                 doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
             } catch (e) {
-                console.warn('Logo could not be loaded for PDF:', e);
             }
 
             // Letterhead
@@ -2164,7 +2119,6 @@ console.log('========== QUERY RESULT ==========');
             toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
         } catch (error) {
             toast.dismiss(toastId);
-            console.error('PDF Export Error:', error);
             toast.error('Gagal mengekspor PDF');
         }
     };
@@ -2294,7 +2248,6 @@ console.log('========== QUERY RESULT ==========');
 
             toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
         } catch (error) {
-            console.error('PDF Export Error:', error);
             toast.error('Gagal mengekspor PDF');
         }
     };
@@ -2969,7 +2922,6 @@ console.log('========== QUERY RESULT ==========');
                         const compressed = await compressImage(file);
                         setEquipmentImagePreview(compressed);
                     } catch (error) {
-                        console.error('Error compressing image:', error);
                         toast.error('Failed to process image');
                     }
                 }
@@ -2999,10 +2951,6 @@ console.log('========== QUERY RESULT ==========');
                     {/* Form Content - Scrollable */}
                     <div className="flex-1 overflow-y-auto p-6">
                         <form id="edit-equipment-form" onSubmit={editForm.handleSubmit(handleEditSubmit, (errors) => {
-                            console.log('========================================');
-                            console.log('=== FORM VALIDATION FAILED ===');
-                            console.log('========================================');
-                            console.log('Validation errors:', JSON.stringify(errors, null, 2));
                             alert('FORM VALIDATION GAGAL! Errors: ' + Object.keys(errors).join(', '));
                         })} className="space-y-4">
                             {/* Room Selection */}
@@ -3692,7 +3640,6 @@ console.log('========== QUERY RESULT ==========');
             setEquipmentImagePreview('');
             await fetchEquipment();
         } catch (error: any) {
-            console.error('Error adding equipment:', error);
             toast.error(error.message || 'Failed to add equipment');
         } finally {
             setLoadingEquipment(false);

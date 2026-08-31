@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
     CheckSquare, Plus, Clock, CheckCircle, AlertCircle, RefreshCw,
     Trash2, X, Search, Calendar, MapPin, ArrowRight,
@@ -119,7 +119,6 @@ const TechnicianTodoList: React.FC = () => {
             if (error) throw error;
             setRooms(data || []);
         } catch (error) {
-            console.error('Error fetching rooms:', error);
         }
     };
 
@@ -134,7 +133,6 @@ const TechnicianTodoList: React.FC = () => {
             if (error) throw error;
             setRoomEquipment(data || []);
         } catch (error) {
-            console.error('Error fetching room equipment:', error);
             setRoomEquipment([]);
         }
     };
@@ -188,7 +186,6 @@ const TechnicianTodoList: React.FC = () => {
 
             setTasks(tasksWithEquipment);
         } catch (error) {
-            console.error('Error fetching tasks:', error);
             toast.error(getText('Failed to load tasks', 'Gagal memuat tugas'));
         } finally {
             setLoading(false);
@@ -226,7 +223,6 @@ const TechnicianTodoList: React.FC = () => {
             });
             fetchTasks();
         } catch (error) {
-            console.error('Error adding task:', error);
             toast.error(getText('Failed to add task', 'Gagal menambah tugas'));
         }
     };
@@ -296,7 +292,6 @@ const TechnicianTodoList: React.FC = () => {
             toast.success(getText('Status updated', 'Status diperbarui'));
             fetchTasks();
         } catch (error) {
-            console.error('Error updating status:', error);
             toast.error(getText('Failed to update status', 'Gagal memperbarui status'));
         }
     };
@@ -326,7 +321,6 @@ const TechnicianTodoList: React.FC = () => {
             toast.success(getText('Task deleted', 'Tugas dihapus'));
             fetchTasks();
         } catch (error) {
-            console.error('Error deleting task:', error);
             toast.error(getText('Failed to delete task', 'Gagal menghapus tugas'));
         }
     };
@@ -356,7 +350,6 @@ const TechnicianTodoList: React.FC = () => {
             setResolvingTaskId(null);
             setResolveComment('');
         } catch (error) {
-            console.error('Error resolving task:', error);
             toast.error(getText('Failed to resolve task', 'Gagal menyelesaikan tugas'));
         }
     };

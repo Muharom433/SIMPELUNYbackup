@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -285,7 +285,6 @@ const PermitLetter: React.FC = () => {
           .range(from, from + BATCH_SIZE - 1);
 
         if (usersError) {
-          console.error('Error fetching users batch:', usersError);
           if (from === 0) {
             return; // Stop on first batch error
           } else {
@@ -305,7 +304,6 @@ const PermitLetter: React.FC = () => {
         }
       }
 
-      console.log(`✅ Fetched ${allUsersData.length} users in ${Math.ceil(allUsersData.length / BATCH_SIZE)} batch(es)`);
 
       const formattedUsers = (allUsersData || []).map((user: any) => ({
         id: user.id,
@@ -318,7 +316,6 @@ const PermitLetter: React.FC = () => {
 
       setAllUsers(formattedUsers);
     } catch (error) {
-      console.error('Error fetching users:', error);
     }
   };
 
@@ -337,7 +334,6 @@ const PermitLetter: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (bookingsError) {
-        console.error('Error fetching pending bookings:', bookingsError);
         throw bookingsError;
       }
 
@@ -349,7 +345,6 @@ const PermitLetter: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (lendingToolsError) {
-        console.error('Error fetching lending tools:', lendingToolsError);
         throw lendingToolsError;
       }
 
@@ -481,7 +476,6 @@ const PermitLetter: React.FC = () => {
       setAllRecords(combinedRecords);
 
     } catch (error) {
-      console.error('Error fetching records:', error);
       alert.error(getText('Failed to load records', 'Gagal memuat data'));
     } finally {
       setLoading(false);
@@ -530,7 +524,6 @@ const PermitLetter: React.FC = () => {
       reader.readAsDataURL(file);
 
     } catch (error) {
-      console.error('Error uploading file:', error);
       alert.error(getText('Failed to upload file', 'Gagal mengunggah file'));
     } finally {
       setUploadingFile(false);
@@ -571,7 +564,6 @@ const PermitLetter: React.FC = () => {
       alert.success(getText('Photo captured successfully', 'Foto berhasil diambil'));
 
     } catch (error) {
-      console.error('Error capturing photo:', error);
       alert.error(getText('Failed to capture photo. Please check camera permissions.', 'Gagal mengambil foto. Silakan periksa izin kamera.'));
     }
   };
@@ -596,7 +588,6 @@ const PermitLetter: React.FC = () => {
         return;
       }
 
-      console.log('Processing permit letter submission...');
 
       // Update selected bookings with attachments
       if (data.selected_bookings && data.selected_bookings.length > 0) {
@@ -610,7 +601,6 @@ const PermitLetter: React.FC = () => {
             .eq('id', bookingId);
 
           if (error) {
-            console.error('Error updating booking:', error);
             throw error;
           }
         }
@@ -629,7 +619,6 @@ const PermitLetter: React.FC = () => {
             .eq('id', lendingId);
 
           if (error) {
-            console.error('Error updating lending tool:', error);
             throw error;
           }
         }
@@ -652,7 +641,6 @@ const PermitLetter: React.FC = () => {
       await fetchAllRecords();
 
     } catch (error: any) {
-      console.error('Error submitting permit letter:', error);
       alert.error(error.message || getText('Failed to submit permit letter', 'Gagal mengirim surat izin'));
     } finally {
       setLoading(false);

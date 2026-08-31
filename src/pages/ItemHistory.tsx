@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X, Download, Filter, Search, ChevronDown, Check, Tag, Building, DoorClosed, Info } from 'lucide-react';
@@ -223,7 +223,6 @@ const ItemHistory = () => {
         localStorage.setItem('local_equipment_mutations', JSON.stringify(updated));
       }
     } catch (e) {
-      console.error('Error updating local storage:', e);
     }
   };
 
@@ -244,13 +243,11 @@ const ItemHistory = () => {
         .eq('id', record.id);
 
       if (error) {
-        console.warn('[ItemHistory] DB note update failed, saved locally:', error);
         toast.success(getText('Note saved locally (DB update pending)', 'Keterangan diperbarui (lokal)'));
       } else {
         toast.success(getText('Note updated successfully', 'Keterangan berhasil diperbarui'));
       }
     } catch (err: any) {
-      console.warn('[ItemHistory] Exception updating note:', err);
       toast.success(getText('Note saved locally', 'Keterangan diperbarui (lokal)'));
     }
   };
@@ -286,7 +283,6 @@ const ItemHistory = () => {
         fetchHistory();
       }
     } catch (err: any) {
-      console.error('Error deleting mutation record:', err);
       toast.error(getText('Failed to delete history record: ' + err.message, 'Gagal menghapus catatan histori: ' + err.message));
     }
   };
@@ -327,14 +323,12 @@ const ItemHistory = () => {
         .eq('id', editingItem.id);
 
       if (error) {
-        console.warn('[ItemHistory] DB update failed, saved locally:', error);
         toast.success(getText('History record updated locally', 'Catatan histori berhasil diperbarui (lokal)'));
       } else {
         toast.success(getText('History record updated successfully', 'Catatan histori berhasil diperbarui'));
       }
       setEditingItem(null);
     } catch (err: any) {
-      console.error('Error updating mutation record:', err);
       toast.success(getText('History record updated locally', 'Catatan histori berhasil diperbarui (lokal)'));
       setEditingItem(null);
     } finally {
@@ -352,7 +346,6 @@ const ItemHistory = () => {
         setHistory([]);
       }
     } catch (e) {
-      console.error('Error loading local history:', e);
       setHistory([]);
     }
   };
@@ -371,7 +364,6 @@ const ItemHistory = () => {
 
       // Strategy 2: If pic_phone column missing, try without it
       if (result.errorType === 'missing_column') {
-        console.warn('[ItemHistory] pic_phone column not found, retrying without it...');
         const result2 = await fetchWithEmbeddedRelations(false);
         if (result2.success) {
           setHistory(result2.data);
@@ -386,13 +378,11 @@ const ItemHistory = () => {
 
       // If table doesn't exist, fallback to local storage
       if (result.errorType === 'table_not_found' || result.errorType === 'rls_denied') {
-        console.warn('[ItemHistory] Falling back to local storage due to:', result.errorType);
         loadLocalHistory();
         return;
       }
 
       // Strategy 3: Manual client-side join (fallback for FK/relationship errors)
-      console.warn('[ItemHistory] Embedded FK query failed, trying manual join...', result.errorMessage);
       const manualResult = await fetchWithManualJoin();
       if (manualResult.success) {
         setHistory(manualResult.data);
@@ -402,7 +392,6 @@ const ItemHistory = () => {
       // All strategies failed
       throw new Error(manualResult.errorMessage || result.errorMessage || 'Unknown error');
     } catch (err: any) {
-      console.error('[ItemHistory] Error fetching history, falling back to local storage:', err);
       loadLocalHistory();
     } finally {
       setLoading(false);
@@ -520,7 +509,6 @@ const ItemHistory = () => {
         new_room: roomMap.get(m.new_room_id) || null,
       }));
 
-      console.info('[ItemHistory] Successfully loaded via manual join:', joined.length, 'records');
       return { success: true, data: joined };
     } catch (err: any) {
       return { success: false, data: [], errorMessage: err?.message || 'Manual join failed' };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -78,7 +78,6 @@ const AuthForm: React.FC = () => {
         navigate('/');
       }
     } catch (error) {
-      console.error('Sign in handler error:', error);
       toast.error(getText('An unexpected error occurred during sign in', 'Terjadi kesalahan tak terduga saat masuk'));
       generateCaptcha();
     } finally {

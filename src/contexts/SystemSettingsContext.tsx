@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 
 // Types for System Settings
@@ -121,7 +121,6 @@ export const SystemSettingsProvider: React.FC<SystemSettingsProviderProps> = ({ 
                 .select('setting_key, setting_value');
 
             if (fetchError) {
-                console.error('Error fetching system settings:', fetchError);
                 setError(fetchError.message);
                 return;
             }
@@ -154,7 +153,6 @@ export const SystemSettingsProvider: React.FC<SystemSettingsProviderProps> = ({ 
                 }
             }
         } catch (err) {
-            console.error('Error in fetchSettings:', err);
             setError('Failed to load system settings');
         } finally {
             setLoading(false);
@@ -175,7 +173,6 @@ export const SystemSettingsProvider: React.FC<SystemSettingsProviderProps> = ({ 
             link.href = iconUrl;
             document.head.appendChild(link);
         } catch (err) {
-            console.error('Error updating favicon:', err);
         }
     };
 

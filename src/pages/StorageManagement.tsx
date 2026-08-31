@@ -1,4 +1,4 @@
-// Debugging backup failure - Investigating status mapping
+﻿// Debugging backup failure - Investigating status mapping
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -76,7 +76,6 @@ export default function StorageManagement() {
 
             // DEBUG: Check total unlabeled checkouts to see if DB connection works
             const { count: totalAll } = await supabase.from('checkouts').select('id', { count: 'exact', head: true });
-            console.log('DEBUG: Total Checkouts in DB (Unfiltered):', totalAll);
             if (totalAll === 0) {
                 // toast('Info: Tabel Checkouts tampak kosong (0 data). Pastikan Anda terhubung ke database yang benar.', { icon: '🔍' });
             } else {
@@ -102,7 +101,6 @@ export default function StorageManagement() {
                     .in('status', ['returned', 'completed', 'lost', 'damaged', 'pending', 'rejected', 'active', 'overdue', 'approved']);
                 checkoutsCount = count || 0;
             }
-            console.log('Analysis range:', startISO, '->', endISO);
 
             if (targets.notifications) {
                 try {
@@ -116,7 +114,6 @@ export default function StorageManagement() {
                         notifsCount = count || 0;
                     }
                 } catch (e) {
-                    console.warn('Tabel notifications tidak ditemukan');
                     notifsCount = 0;
                 }
             }
@@ -135,7 +132,6 @@ export default function StorageManagement() {
                         reportsCount = count || 0;
                     }
                 } catch (e) {
-                    console.warn('Tabel reports tidak ditemukan');
                     reportsCount = 0;
                 }
             }
@@ -155,7 +151,6 @@ export default function StorageManagement() {
                         attendanceCount = count || 0;
                     }
                 } catch (e) {
-                    console.warn('Tabel lecturer_attendance tidak ditemukan');
                     attendanceCount = 0;
                 }
             }
@@ -175,7 +170,6 @@ export default function StorageManagement() {
                         lendingToolsCount = count || 0;
                     }
                 } catch (e) {
-                    console.warn('Tabel lending_tool error', e);
                     lendingToolsCount = 0;
                 }
             }
@@ -194,7 +188,6 @@ export default function StorageManagement() {
                         todosCount = count || 0;
                     }
                 } catch (e) {
-                    console.warn('Tabel technician_tasks tidak ditemukan');
                     todosCount = 0;
                 }
             }
@@ -213,7 +206,6 @@ export default function StorageManagement() {
                         formsCount = count || 0;
                     }
                 } catch (e) {
-                    console.warn('Tabel forms tidak ditemukan');
                     formsCount = 0;
                 }
             }
@@ -230,7 +222,6 @@ export default function StorageManagement() {
             });
 
         } catch (error) {
-            console.error('Error analyzing data:', error);
             toast.error('Gagal menganalisis data');
         } finally {
             setAnalyzing(false);
@@ -340,7 +331,7 @@ export default function StorageManagement() {
                         .from('notifications').select('id, title, message, type, is_read, created_at, user_id')
                         .gte('created_at', startISO).lte('created_at', endISO);
                     if (!error && notifs && notifs.length > 0) addSheet('Notifications', sanitizeForExcel(notifs));
-                } catch (e: any) { console.error('Error exporting notifications:', e); }
+                } catch (e: any) { }
             }
 
             // 4. Export Reports
@@ -350,7 +341,7 @@ export default function StorageManagement() {
                         .from('reports').select('*')
                         .gte('created_at', startISO).lte('created_at', endISO);
                     if (!error && reports && reports.length > 0) addSheet('Reports', sanitizeForExcel(reports));
-                } catch (e: any) { console.error('Error exporting reports:', e); }
+                } catch (e: any) { }
             }
 
             // 5. Export Attendance — Exclude photo/signature (kolom base64 besar)
@@ -375,7 +366,6 @@ export default function StorageManagement() {
                             .range(page * CHUNK, (page + 1) * CHUNK - 1);
 
                         if (chunkErr) {
-                            console.error('Attendance chunk error:', chunkErr.message);
                             toast(`⚠️ Query presensi gagal (hal.${page + 1}): ${chunkErr.message}`, { icon: '⚠️' });
                             break;
                         }
@@ -415,7 +405,6 @@ export default function StorageManagement() {
                         if (allDetails.length > 0) addSheet('Attendance Details', sanitizeForExcel(allDetails));
                     } else {
                         // Coba tanpa filter verification_status sebagai fallback
-                        console.warn('Attendance: no data with status filter, trying without...');
                         const { data: fallback, error: fbErr } = await supabase
                             .from('lecturer_attendance')
                             .select('id, created_at, updated_at, lecturer_user_id, attendance_date, verification_status, notes')
@@ -428,7 +417,6 @@ export default function StorageManagement() {
                     }
 
                 } catch (e: any) {
-                    console.error('Error exporting attendance:', e);
                     toast('⚠️ Backup presensi sebagian gagal: ' + (e.message || ''), { icon: '⚠️' });
                 }
             }
@@ -441,7 +429,7 @@ export default function StorageManagement() {
                         .gte('date', startISO).lte('date', endISO)
                         .in('status', ['returned', 'completed', 'rejected', 'cancelled', 'pending', 'approved', 'active']);
                     if (!error && lendingTools && lendingTools.length > 0) addSheet('Lending Tools', sanitizeForExcel(lendingTools));
-                } catch (e: any) { console.error('Error exporting lending tools:', e); }
+                } catch (e: any) { }
             }
 
             // 7. Export To-Do Lists
@@ -451,7 +439,7 @@ export default function StorageManagement() {
                         .from('technician_tasks').select('*')
                         .gte('created_at', startISO).lte('created_at', endISO);
                     if (!error && todos && todos.length > 0) addSheet('ToDo Lists', sanitizeForExcel(todos));
-                } catch (e: any) { console.error('Error exporting todos:', e); }
+                } catch (e: any) { }
             }
 
             // 8. Export Forms & Responses
@@ -467,7 +455,7 @@ export default function StorageManagement() {
                             .from('form_responses').select('*').in('form_id', formIds);
                         if (responses && responses.length > 0) addSheet('Form Responses', sanitizeForExcel(responses));
                     }
-                } catch (e: any) { console.error('Error exporting forms:', e); }
+                } catch (e: any) { }
             }
 
             if (!hasData) {
@@ -484,7 +472,6 @@ export default function StorageManagement() {
             toast.success('Backup berhasil diunduh!', { id: toastId });
 
         } catch (error: any) {
-            console.error('Download error:', error);
             toast.error(`Gagal mengunduh backup: ${error.message || 'Unknown error'}`, { id: toastId });
         }
     };
@@ -678,7 +665,6 @@ export default function StorageManagement() {
             analyzeData();
 
         } catch (error: any) {
-            console.error('Cleanup error:', error);
             toast.error('Gagal: ' + error.message, { id: toastId });
         } finally {
             setLoading(false);

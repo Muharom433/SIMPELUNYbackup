@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '../types';
 
@@ -18,12 +18,10 @@ export function useAuth() {
             setUser(parsedUser);
             setProfile(parsedUser);
           } catch (error) {
-            console.error('Error parsing cached user:', error);
             localStorage.removeItem('faculty_user');
           }
         }
       } catch (error) {
-        console.error('Auth initialization error:', error);
       } finally {
         setLoading(false);
       }
@@ -47,7 +45,6 @@ export function useAuth() {
       });
 
       if (error) {
-        console.error('Database authentication error:', error);
         return { data: null, error: { message: 'Authentication failed' } };
       }
 
@@ -81,7 +78,6 @@ export function useAuth() {
 
       return { data: { user: authenticatedUser }, error: null };
     } catch (error) {
-      console.error('Sign in error:', error);
       return { data: null, error: { message: 'An error occurred during sign in' } };
     } finally {
       setLoading(false);
@@ -146,7 +142,6 @@ export function useAuth() {
         .single();
 
       if (profileError) {
-        console.error('Profile creation error:', profileError);
 
         if (profileError.code === '23505') {
           if (profileError.message.includes('username')) {
@@ -168,7 +163,6 @@ export function useAuth() {
 
       return { data: { user: userWithoutPassword }, error: null };
     } catch (error) {
-      console.error('Sign up error:', error);
       return { data: null, error: { message: 'An error occurred during sign up' } };
     } finally {
       setLoading(false);
@@ -184,12 +178,10 @@ export function useAuth() {
       try {
         await supabase.rpc('set_current_user', { user_id: null });
       } catch (error) {
-        console.error('Error clearing user context:', error);
       }
 
       return { error: null };
     } catch (error) {
-      console.error('Sign out error:', error);
       return { error: { message: 'An error occurred during sign out' } };
     }
   };

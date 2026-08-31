@@ -305,15 +305,12 @@ const DosenPresensi: React.FC = () => {
                 .not('longitude', 'is', null);
 
             if (error) {
-                console.error('[Campus] Error fetching locations:', error);
                 return [];
             }
 
-            console.log('[Campus] Fetched locations:', data);
             setCampusLocations(data || []);
             return data || [];
         } catch (error) {
-            console.error('[Campus] Error:', error);
             return [];
         }
     };
@@ -329,19 +326,16 @@ const DosenPresensi: React.FC = () => {
                 .maybeSingle();
 
             if (error) {
-                console.error('[SpecialDate] Error:', error);
                 return;
             }
 
             if (data) {
-                console.log('[SpecialDate] Today is a special date:', data.reason);
                 setTodaySpecialDate(data);
                 setShowSpecialDateModal(true); // Show warning modal
             } else {
                 setTodaySpecialDate(null);
             }
         } catch (error) {
-            console.error('[SpecialDate] Error:', error);
         }
     };
 
@@ -362,15 +356,12 @@ const DosenPresensi: React.FC = () => {
                 .eq('is_active', true);
 
             if (error) {
-                console.error('[ActiveWeek] Error:', error);
                 return;
             }
 
-            console.log('[ActiveWeek] Week settings for this month:', data);
 
             // If no week settings configured, allow attendance (default behavior)
             if (!data || data.length === 0) {
-                console.log('[ActiveWeek] No week settings configured, allowing attendance');
                 setIsWithinActiveWeek(true);
                 setActiveWeekInfo(null);
                 return;
@@ -385,7 +376,6 @@ const DosenPresensi: React.FC = () => {
             });
 
             if (activeWeek) {
-                console.log('[ActiveWeek] Today is within active week:', activeWeek.week_number);
                 setIsWithinActiveWeek(true);
                 setActiveWeekInfo({
                     week_number: activeWeek.week_number,
@@ -393,13 +383,11 @@ const DosenPresensi: React.FC = () => {
                     end_date: activeWeek.end_date
                 });
             } else {
-                console.log('[ActiveWeek] Today is NOT within any active week - blocking attendance');
                 setIsWithinActiveWeek(false);
                 setActiveWeekInfo(null);
                 setShowNoActiveWeekModal(true);
             }
         } catch (error) {
-            console.error('[ActiveWeek] Error:', error);
         }
     };
 
@@ -413,7 +401,6 @@ const DosenPresensi: React.FC = () => {
                 .maybeSingle();
 
             if (error) {
-                console.error('[GlobalSettings] Error:', error);
                 return;
             }
 
@@ -445,7 +432,6 @@ const DosenPresensi: React.FC = () => {
                 setIsAttendanceDisabledGlobally(null);
             }
         } catch (error) {
-            console.error('[GlobalSettings] Error:', error);
         }
     };
     const fetchGeolocation = async () => {
@@ -474,11 +460,9 @@ const DosenPresensi: React.FC = () => {
             });
 
             const { latitude, longitude, accuracy } = position.coords;
-            console.log('[Geolocation] Got position:', { latitude, longitude, accuracy });
 
             // Check if there are any campus locations configured
             if (locations.length === 0) {
-                console.warn('[Geolocation] No campus locations configured in database');
                 setGeolocation({
                     latitude,
                     longitude,
@@ -520,7 +504,6 @@ const DosenPresensi: React.FC = () => {
             });
 
         } catch (error: any) {
-            console.error('[Geolocation] Error:', error);
             if (error.code === 1) {
                 setGeolocationError('Izin lokasi ditolak. Aktifkan GPS dan izinkan akses lokasi.');
             } else if (error.code === 2) {
@@ -642,10 +625,8 @@ const DosenPresensi: React.FC = () => {
                 setWeeklyAttendanceCount(weekCount);
                 setHasReachedWeeklyLimit(weekCount >= maxWeekly);
 
-                console.log(`[Attendance] Lecturer: ${lecturer?.full_name}, Homebase: ${isHomebase}, Weekly: ${weekCount}/${maxWeekly}`);
 
             } catch (error) {
-                console.error('Error checking attendance:', error);
             } finally {
                 setCheckingAttendance(false);
             }
@@ -680,7 +661,6 @@ const DosenPresensi: React.FC = () => {
 
                 // Callback saat QR berhasil dibaca
                 const onScanSuccess = (decodedText: string) => {
-                    console.log("Scanned:", decodedText);
                     html5QrCode.stop().then(async () => {
                         const toastId = toast.loading('Memverifikasi QR Code...');
                         try {
@@ -691,7 +671,6 @@ const DosenPresensi: React.FC = () => {
                                 .single();
 
                             if (error || !data) {
-                                console.error("Invalid Room QR:", decodedText, error);
                                 toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
                                 setTimeout(() => {
                                     if (isMounted) setScanRetry(prev => prev + 1);
@@ -704,13 +683,12 @@ const DosenPresensi: React.FC = () => {
                                 toast.success(`Terverifikasi: ${data.name}`, { id: toastId });
                             }
                         } catch (err) {
-                            console.error("Validation error:", err);
                             toast.error('Terjadi kesalahan verifikasi.', { id: toastId });
                             setTimeout(() => {
                                 if (isMounted) setScanRetry(prev => prev + 1);
                             }, 2000);
                         }
-                    }).catch((err: any) => console.error("Failed to stop scanner", err));
+                    }).catch(() => {});
                 };
 
                 const onScanError = (_errorMessage: any) => {
@@ -721,7 +699,6 @@ const DosenPresensi: React.FC = () => {
                 // This avoids long timeouts from requesting facingMode that doesn't exist
                 try {
                     const devices = await Html5Qrcode.getCameras();
-                    console.log('[QR] Available cameras:', devices.map(d => d.label));
 
                     if (devices && devices.length > 0) {
                         // Pick camera: prefer back/environment camera, fallback to any
@@ -733,7 +710,6 @@ const DosenPresensi: React.FC = () => {
                         );
 
                         const selectedCamera = backCamera || devices[0];
-                        console.log(`[QR] Using camera: ${selectedCamera.label || selectedCamera.id}`);
 
                         await html5QrCode.start(
                             selectedCamera.id,
@@ -741,32 +717,26 @@ const DosenPresensi: React.FC = () => {
                             onScanSuccess,
                             onScanError
                         );
-                        console.log('[QR] Camera started successfully');
                         if (isMounted) setCameraError(null);
                         return;
                     }
                 } catch (enumErr) {
-                    console.warn('[QR] Camera enumeration/start by ID failed:', enumErr);
                 }
 
                 // Fallback: if enumeration failed, try facingMode generically
                 try {
-                    console.log('[QR] Fallback: trying facingMode user...');
                     await html5QrCode.start(
                         { facingMode: "user" },
                         config,
                         onScanSuccess,
                         onScanError
                     );
-                    console.log('[QR] Fallback camera started successfully');
                     if (isMounted) setCameraError(null);
                     return;
                 } catch (fallbackErr) {
-                    console.warn('[QR] Fallback facingMode user failed:', fallbackErr);
                 }
 
                 // All failed
-                console.error("[QR] All camera strategies failed");
                 if (isMounted) {
                     setCameraError("Gagal memulai kamera. Pastikan izin kamera diberikan dan tidak ada aplikasi lain yang menggunakan kamera.");
                 }
@@ -782,7 +752,7 @@ const DosenPresensi: React.FC = () => {
                 isMounted = false;
                 clearTimeout(timeoutId);
                 if (html5QrCode && html5QrCode.isScanning) {
-                    html5QrCode.stop().catch((err: any) => console.error("Failed to stop on cleanup", err));
+                    html5QrCode.stop().catch(() => {});
                 }
             };
         }
@@ -807,7 +777,6 @@ const DosenPresensi: React.FC = () => {
             }));
             setLecturers(transformedData);
         } catch (error) {
-            console.error('Error fetching lecturers:', error);
             toast.error('Gagal memuat data dosen');
         } finally {
             setLoading(false);
@@ -825,7 +794,6 @@ const DosenPresensi: React.FC = () => {
                 videoRef.current.srcObject = stream;
             }
         } catch (error: any) {
-            console.error('Camera error:', error);
             setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera sudah diberikan.');
         }
     };
@@ -869,19 +837,16 @@ const DosenPresensi: React.FC = () => {
                 .order('verified_at', { ascending: false });
 
             if (error) {
-                console.error('[Rejection] Error fetching rejection history:', error);
                 return;
             }
 
             if (data && data.length > 0) {
-                console.log(`[Rejection] Found ${data.length} rejection(s) for lecturer ${lecturerId}`);
                 setRejectionRecords(data as RejectionRecord[]);
                 setShowRejectionModal(true);
             } else {
                 setRejectionRecords([]);
             }
         } catch (error) {
-            console.error('[Rejection] Error:', error);
         } finally {
             setCheckingRejections(false);
         }
@@ -909,7 +874,6 @@ const DosenPresensi: React.FC = () => {
         const today = new Date();
         const todayStr = format(today, 'yyyy-MM-dd');
 
-        console.log('[detectAllSchedules] Checking for:', lecturerName, '(ID:', lecturerId, ') on day:', day);
 
         const allSchedules: ScheduleItem[] = [];
 
@@ -921,14 +885,11 @@ const DosenPresensi: React.FC = () => {
                 .eq('lecturer_user_id', lecturerId)  // Use exact ID match, not name
                 .ilike('day', day); // Use SELECTED DAY
 
-            console.log('[detectAllSchedules] Lecture query (by ID) result:', { lectureData, lectureError });
 
             // If query by ID fails OR returns empty, fallback to name-based search
             if (lectureError || !lectureData || lectureData.length === 0) {
                 if (lectureError) {
-                    console.error('Error fetching lecture schedules by ID:', lectureError);
                 } else {
-                    console.log('[detectAllSchedules] No results by ID, trying name-based search...');
                 }
 
                 // Fallback to name-based search
@@ -938,7 +899,6 @@ const DosenPresensi: React.FC = () => {
                     .ilike('lecturer', `%${lecturerName}%`)
                     .ilike('day', day); // Use SELECTED DAY
 
-                console.log('[detectAllSchedules] Lecture query (by name fallback) result:', { lectureDataByName, lectureErrorByName });
 
                 if (lectureDataByName && lectureDataByName.length > 0) {
                     lectureDataByName.forEach(schedule => {
@@ -956,7 +916,6 @@ const DosenPresensi: React.FC = () => {
                             scheduled_date: todayStr
                         });
                     });
-                    console.log('[detectAllSchedules] Added', lectureDataByName.length, 'lecture schedules (by name)');
                 }
             } else {
                 // Query by ID succeeded with results
@@ -975,10 +934,8 @@ const DosenPresensi: React.FC = () => {
                         scheduled_date: todayStr
                     });
                 });
-                console.log('[detectAllSchedules] Added', lectureData.length, 'lecture schedules (by ID)');
             }
         } catch (error) {
-            console.error('[detectAllSchedules] Error in lecture query:', error);
         }
 
         // 2. DISABLED: Final sessions (sidang) are no longer displayed in the schedule list
@@ -1002,10 +959,8 @@ const DosenPresensi: React.FC = () => {
                 .eq('date', todayStr)
                 .or(`supervisor.ilike."%${lecturerName}%",examiner.ilike."%${lecturerName}%",secretary.ilike."%${lecturerName}%"`);
 
-            console.log('[detectAllSchedules] Final sessions query result:', { sessionData, sessionError });
 
             if (sessionError) {
-                console.warn('[detectAllSchedules] Final sessions query error:', sessionError.message);
             } else if (sessionData && sessionData.length > 0) {
                 sessionData.forEach((session: any) => {
                     let role = 'Dosen';
@@ -1030,14 +985,11 @@ const DosenPresensi: React.FC = () => {
                         scheduled_date: todayStr
                     });
                 });
-                console.log('[detectAllSchedules] Added', sessionData.length, 'final sessions');
             }
         } catch (error) {
-            console.warn('[detectAllSchedules] Session schedules query failed (table may not exist):', error);
         }
         */
 
-        console.log('[detectAllSchedules] Total schedules found:', allSchedules.length);
         setAvailableSchedules(allSchedules);
 
         // Track if TODAY'S schedule is empty (for persistent notification)
@@ -1287,7 +1239,6 @@ const DosenPresensi: React.FC = () => {
                     .insert(detailsToInsert);
 
                 if (detailsError) {
-                    console.error('Error inserting attendance details:', detailsError);
                     // Don't fail the whole operation, just log
                 }
             }
@@ -1338,7 +1289,6 @@ const DosenPresensi: React.FC = () => {
             setHasSignatureContent(false);
 
         } catch (error: any) {
-            console.error('Error submitting attendance:', error);
             toast.error(error.message || 'Gagal menyimpan presensi');
         } finally {
             setSubmitting(false);

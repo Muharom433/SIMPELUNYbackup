@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -175,7 +175,6 @@ const SystemSettings: React.FC = () => {
         .select('setting_key, setting_value, updated_at, updated_by');
 
       if (error) {
-        console.error('Error fetching settings from DB:', error);
       }
 
       if (data && data.length > 0) {
@@ -275,7 +274,6 @@ const SystemSettings: React.FC = () => {
         form.reset(defaultSettings);
       }
     } catch (error) {
-      console.error('Error fetching settings:', error);
       toast.error('Failed to load system settings');
     } finally {
       setLoading(false);
@@ -333,7 +331,6 @@ const SystemSettings: React.FC = () => {
       toast.success('System settings saved to database');
       fetchSettings();
     } catch (error: any) {
-      console.error('Error saving settings:', error);
       toast.error(error.message || 'Failed to save system settings');
     } finally {
       setSaving(false);
@@ -347,7 +344,6 @@ const SystemSettings: React.FC = () => {
       await new Promise(resolve => setTimeout(resolve, 3000));
       toast.success('System backup completed successfully');
     } catch (error) {
-      console.error('Error creating backup:', error);
       toast.error('Failed to create system backup');
     } finally {
       setBackupInProgress(false);

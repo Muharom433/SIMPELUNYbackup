@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, ChevronDown, X, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { FieldDataSource } from '../types/form';
@@ -82,7 +82,6 @@ const DynamicDropdown: React.FC<DynamicDropdownProps> = ({
 
             setDynamicOptions(options);
         } catch (err) {
-            console.error('Failed to fetch dropdown options:', err);
             setDynamicOptions([]);
         } finally {
             setLoading(false);

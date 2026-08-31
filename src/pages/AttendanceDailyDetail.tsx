@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
@@ -113,7 +113,6 @@ const AttendanceDailyDetail: React.FC = () => {
 
             setRecords(enrichedData);
         } catch (err: any) {
-            console.error('Error fetching attendance records:', err);
             setError('Gagal memuat data presensi');
         } finally {
             setLoading(false);

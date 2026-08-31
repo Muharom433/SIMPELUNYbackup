@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { X, FileSpreadsheet, AlertCircle, CheckCircle, Loader2, Download, ChevronLeft, ChevronRight, Building2, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -127,7 +127,6 @@ const RoomExcelUploadModal: React.FC<RoomExcelUploadModalProps> = ({
                 toast.error("Tidak ada data yang dapat dibaca. Pastikan header kolom sudah benar.");
             }
         } catch (error) {
-            console.error('Error processing Excel file:', error);
             toast.error('Gagal memproses file Excel.');
         } finally {
             setUploading(false);
@@ -172,7 +171,6 @@ const RoomExcelUploadModal: React.FC<RoomExcelUploadModalProps> = ({
             setExistingRoomCodes(codes);
 
         } catch (error) {
-            console.error('Error checking existing data:', error);
         }
     };
 
@@ -230,7 +228,6 @@ const RoomExcelUploadModal: React.FC<RoomExcelUploadModalProps> = ({
                         .single();
 
                     if (error) {
-                        console.error('Error creating building:', error);
                         // If duplicate error, try to find the existing one
                         if (error.code === '23505') {
                             const { data: existingBuilding } = await supabase
@@ -306,7 +303,6 @@ const RoomExcelUploadModal: React.FC<RoomExcelUploadModalProps> = ({
                     .select();
 
                 if (insertError) {
-                    console.error('Insert error:', insertError);
                     // Continue with next batch instead of failing completely
                     continue;
                 }
@@ -331,7 +327,6 @@ const RoomExcelUploadModal: React.FC<RoomExcelUploadModalProps> = ({
 
         } catch (error: any) {
             toast.dismiss(loadingToast);
-            console.error('Error uploading rooms:', error);
             toast.error(error.message || 'Gagal mengunggah data');
         } finally {
             setUploading(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Bell, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
     Timer, Eye, Check, X, RefreshCw, Filter, Search, FileText, Package,
@@ -333,7 +333,6 @@ const ValidationQueue: React.FC = () => {
             if (error) throw error;
             setAllEquipment(data || []);
         } catch (error) {
-            console.error('Error fetching equipment:', error);
         }
     };
 
@@ -352,7 +351,6 @@ const ValidationQueue: React.FC = () => {
             if (error) throw error;
             return data;
         } catch (error) {
-            console.error('Error fetching room:', error);
             return null;
         }
     };
@@ -363,7 +361,6 @@ const ValidationQueue: React.FC = () => {
 
         // ⭐⭐ WAJIB DARI CHECKOUT_ITEMS
         if (!checkout.checkout_items || checkout.checkout_items.length === 0) {
-            console.warn('No checkout_items found for checkout:', checkout.id);
             return [];
         }
 
@@ -371,7 +368,6 @@ const ValidationQueue: React.FC = () => {
         const checkoutItem = checkout.checkout_items[0];
 
         if (!checkoutItem.equipment_requested || !checkoutItem.equipment_quantities) {
-            console.warn('No equipment_requested in checkout_items');
             return [];
         }
 
@@ -468,7 +464,6 @@ const ValidationQueue: React.FC = () => {
 
                 const { data, error } = await query;
                 if (error) {
-                    console.error('❌ Error fetching room checkouts:', error);
                     throw error;
                 }
 
@@ -557,7 +552,6 @@ const ValidationQueue: React.FC = () => {
 
                 const { data, error } = await query;
                 if (error) {
-                    console.error('❌ Error fetching equipment checkouts:', error);
                     throw error;
                 }
 
@@ -646,7 +640,6 @@ const ValidationQueue: React.FC = () => {
             setCheckouts(enhancedData);
 
         } catch (error: any) {
-            console.error('❌ Error fetching checkouts:', error);
             toast.error(`Gagal memuat data: ${error.message}`);
         } finally {
             setLoading(false);
@@ -710,7 +703,6 @@ const ValidationQueue: React.FC = () => {
                             .single();
 
                         if (fetchError) {
-                            console.error(`Error fetching equipment ${item.equipment_name}:`, fetchError);
                             continue;
                         }
 
@@ -726,7 +718,6 @@ const ValidationQueue: React.FC = () => {
                             .eq('id', item.equipment_id);
 
                         if (updateError) {
-                            console.error(`Error updating equipment ${item.equipment_name}:`, updateError);
                             continue;
                         }
 
@@ -779,11 +770,6 @@ const ValidationQueue: React.FC = () => {
                     quantitiesBack.push(qty);
                 });
 
-                console.log('📝 Updating checkout_items with equipment_back:', {
-                    checkout_item_id: checkoutItem.id,
-                    equipment_back: equipmentBack,
-                    quantities_back: quantitiesBack
-                });
 
                 const { error: checkoutItemUpdateError } = await supabase
                     .from('checkout_items')
@@ -796,7 +782,6 @@ const ValidationQueue: React.FC = () => {
                     .eq('id', checkoutItem.id);
 
                 if (checkoutItemUpdateError) {
-                    console.error('Error updating checkout_items:', checkoutItemUpdateError);
                     throw checkoutItemUpdateError;
                 }
             }
@@ -839,7 +824,6 @@ const ValidationQueue: React.FC = () => {
                     });
 
                 if (violationError) {
-                    console.error('Error creating violation report:', violationError);
                 }
             }
 
@@ -855,7 +839,6 @@ const ValidationQueue: React.FC = () => {
                         .eq('id', checkout.booking_id);
 
                     if (bookingError) {
-                        console.error('Error updating booking status:', bookingError);
                     }
                 } else if (checkout.type === 'things' && checkout.lendingTool_id) {
                     const { error: lendingError } = await supabase
@@ -867,7 +850,6 @@ const ValidationQueue: React.FC = () => {
                         .eq('id', checkout.lendingTool_id);
 
                     if (lendingError) {
-                        console.error('Error updating lending tool status:', lendingError);
                     }
                 }
             }
@@ -889,7 +871,6 @@ const ValidationQueue: React.FC = () => {
             await fetchCheckouts();
 
         } catch (error: any) {
-            console.error('❌ Error approving return:', error);
             toast.error(`Gagal memverifikasi: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -940,7 +921,6 @@ const ValidationQueue: React.FC = () => {
             await fetchCheckouts();
 
         } catch (error: any) {
-            console.error('❌ Error rejecting return:', error);
             toast.error(`Gagal menolak: ${error.message}`);
         } finally {
             setProcessingIds(prev => {
@@ -988,7 +968,6 @@ const ValidationQueue: React.FC = () => {
             await fetchCheckouts();
 
         } catch (error: any) {
-            console.error('Error adding report:', error);
             toast.error(`Gagal menambahkan laporan: ${error.message}`);
         }
     };

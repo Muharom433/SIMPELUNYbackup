@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -251,7 +251,6 @@ const SessionScheduleProgressive = () => {
         return existingSession;
       }
     } catch (error) {
-      console.error('Error checking duplicate student:', error);
       return null;
     }
   };
@@ -308,7 +307,6 @@ const SessionScheduleProgressive = () => {
     }
 
     try {
-      console.log(`🔍 Checking room availability for ${date} ${startTime}-${endTime}`);
 
       // Get day name for lecture schedule check
       const dateObj = new Date(date);
@@ -339,7 +337,6 @@ const SessionScheduleProgressive = () => {
         .in('status', ['approved', 'borrowed']);
 
       if (bookingError) {
-        console.error('Error checking booking conflicts:', bookingError);
       }
 
       const bookingConflictRoomIds = (bookingConflicts || [])
@@ -360,7 +357,6 @@ const SessionScheduleProgressive = () => {
         .eq('day', dayName);
 
       if (lectureError) {
-        console.error('Error checking lecture conflicts:', lectureError);
       }
 
       const lectureConflictRoomIds = [];
@@ -385,7 +381,6 @@ const SessionScheduleProgressive = () => {
         .eq('date', date);
 
       if (examError) {
-        console.error('Error checking exam conflicts:', examError);
       }
 
       const examConflictRoomIds = (examSchedules || [])
@@ -408,17 +403,10 @@ const SessionScheduleProgressive = () => {
         room.is_available && !allConflictingRoomIds.includes(room.id)
       );
 
-      console.log(`✅ Available rooms: ${available.length}/${rooms.length}`, {
-        finalSessionConflicts: finalSessionConflicts.length,
-        bookingConflicts: bookingConflictRoomIds.length,
-        lectureConflicts: lectureConflictRoomIds.length,
-        examConflicts: examConflictRoomIds.length
-      });
 
       setAvailableRooms(available);
 
     } catch (error) {
-      console.error('Error checking room availability:', error);
       setAvailableRooms(rooms);
     }
   }, [rooms, allSessions, editingSession]);
@@ -1081,7 +1069,6 @@ const SessionScheduleProgressive = () => {
         setSessions(data || []);
       }
     } catch (error) {
-      console.error('Error fetching sessions:', error);
       alert.error(getText('Failed to load sessions.', 'Gagal memuat jadwal sidang.'));
     } finally {
       setLoading(false);
@@ -1106,7 +1093,6 @@ const SessionScheduleProgressive = () => {
       }
       setStudents(filtered);
     } catch (error) {
-      console.error('Error fetching students:', error);
       alert.error(getText('Failed to load students.', 'Gagal memuat mahasiswa.'));
     }
   };
@@ -1129,7 +1115,6 @@ const SessionScheduleProgressive = () => {
       }
       setLecturers(filtered);
     } catch (error) {
-      console.error('Error fetching lecturers:', error);
       alert.error(getText('Failed to load lecturers.', 'Gagal memuat dosen.'));
     }
   };
@@ -1148,7 +1133,6 @@ const SessionScheduleProgressive = () => {
       setRooms(sortedData);
       setAvailableRooms(sortedData);
     } catch (error) {
-      console.error('Error fetching rooms (timeout fix):', error);
       alert.error(getText('Failed to load rooms.', 'Gagal memuat ruangan.'));
     }
   };
@@ -1158,7 +1142,6 @@ const SessionScheduleProgressive = () => {
       const { data } = await supabase.from('study_programs').select('*, department:departments(name)').eq('status', 'show').order('name');
       setStudyPrograms(data || []);
     } catch (error) {
-      console.error('Error fetching study programs:', error);
       alert.error(getText('Failed to load study programs.', 'Gagal memuat program studi.'));
     }
   };
@@ -1173,7 +1156,6 @@ const SessionScheduleProgressive = () => {
       if (error) throw error;
       setDepartments(data || []);
     } catch (error) {
-      console.error('Error fetching departments:', error);
       alert.error(getText('Failed to load departments.', 'Gagal memuat departemen.'));
     }
   };
@@ -1193,7 +1175,6 @@ const SessionScheduleProgressive = () => {
       if (error) throw error;
       setDepartmentHeads(data || []);
     } catch (error) {
-      console.error('Error fetching department heads:', error);
       alert.error(getText('Failed to load department heads.', 'Gagal memuat kepala departemen.'));
     }
   };
@@ -1461,7 +1442,6 @@ const SessionScheduleProgressive = () => {
     const startTime = form.getValues('start_time');
     const endTime = form.getValues('end_time');
 
-    console.log(`🔍 Final cross-check for Room ID: ${roomId}, Date: ${date}, Time: ${startTime}-${endTime}`);
 
     // Panggil fungsi checkRoomAvailability untuk mendapatkan ruangan yang tersedia
     await checkRoomAvailability(date, startTime, endTime);
@@ -1535,7 +1515,6 @@ const SessionScheduleProgressive = () => {
           });
         }
       } catch (error) {
-        console.error('Error checking lecture schedules:', error);
       }
 
       // 3. Cek bentrok dengan booking yang disetujui
@@ -1574,7 +1553,6 @@ const SessionScheduleProgressive = () => {
           });
         }
       } catch (error) {
-        console.error('Error checking booking conflicts:', error);
       }
 
       // 4. Cek bentrok dengan jadwal ujian
@@ -1597,7 +1575,6 @@ const SessionScheduleProgressive = () => {
           });
         }
       } catch (error) {
-        console.error('Error checking exam schedules:', error);
       }
 
       // Tampilkan pesan error dengan detail konflik
@@ -1611,7 +1588,6 @@ const SessionScheduleProgressive = () => {
       return;
     }
 
-    console.log('✅ Room is available, proceeding with submission...');
 
     // Jika tidak ada konflik, lanjutkan dengan submit normal
     form.handleSubmit(handleSubmit)();
@@ -1629,7 +1605,6 @@ const SessionScheduleProgressive = () => {
     const overlap = hasTimeOverlap(sessionStart, sessionEnd, existingStart, existingEnd);
 
     if (overlap) {
-      console.log(`⚠️ Time overlap detected: ${sessionStart}-${sessionEnd} conflicts with ${existingStart}-${existingEnd}`);
     }
 
     return overlap;
@@ -2552,7 +2527,6 @@ const SessionScheduleProgressive = () => {
           .maybeSingle();
 
         if (findError) {
-          console.error('Error finding user:', findError);
           throw new Error(`Failed to check existing user: ${findError.message}`);
         }
 
@@ -2585,7 +2559,6 @@ const SessionScheduleProgressive = () => {
             .single();
 
           if (createError) {
-            console.error('Error creating user:', createError);
             throw new Error(`Failed to create user: ${createError.message}`);
           }
 
@@ -2616,7 +2589,6 @@ const SessionScheduleProgressive = () => {
           .eq('id', editingSession.id);
 
         if (error) {
-          console.error('Error updating session:', error);
           throw new Error(`Failed to update session: ${error.message}`);
         }
         alert.success(getText('Session updated successfully', 'Jadwal sidang berhasil diperbarui'));
@@ -2628,7 +2600,6 @@ const SessionScheduleProgressive = () => {
           .single();
 
         if (error) {
-          console.error('Error creating session:', error);
           throw new Error(`Failed to create session: ${error.message}`);
         }
 
@@ -2649,7 +2620,6 @@ const SessionScheduleProgressive = () => {
       resetForm();
       fetchSessions();
     } catch (error) {
-      console.error('Error saving session:', error);
 
       let errorMessage = getText('Failed to save session', 'Gagal menyimpan jadwal sidang');
 
@@ -2726,7 +2696,6 @@ const SessionScheduleProgressive = () => {
       setSessionToDelete(null);
       fetchSessions();
     } catch (error) {
-      console.error('Error deleting session:', error);
       alert.error(error.message || getText('Failed to delete session', 'Gagal menghapus jadwal sidang'));
     } finally {
       setSubmitting(false);
@@ -2903,7 +2872,6 @@ const SessionScheduleProgressive = () => {
       doc.save(fileName);
       setShowPrintModal(false);
     } catch (e: any) {
-      console.error("PDF Generation Error:", e);
       alert.error(getText("An unexpected error occurred while generating the PDF.", "Terjadi kesalahan tak terduga saat membuat PDF."));
     }
   };

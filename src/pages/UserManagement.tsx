@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -574,7 +574,6 @@ const UserManagement: React.FC = () => {
       setTotalUsers(count || 0);
 
     } catch (error: any) {
-      console.error('Error fetching users:', error);
       toast.error(getText('Failed to load users', 'Gagal memuat pengguna'));
     } finally {
       setLoading(false);
@@ -593,7 +592,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setDepartments(data || []);
     } catch (error: any) {
-      console.error('Error fetching departments:', error);
       toast.error(getText('Failed to load departments', 'Gagal memuat departemen'));
     }
   }, [profile, getText]);
@@ -610,7 +608,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setStudyPrograms(data || []);
     } catch (error: any) {
-      console.error('Error fetching study programs:', error);
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [profile, getText]);
@@ -631,7 +628,6 @@ const UserManagement: React.FC = () => {
         form.setValue('study_program_id', '');
       }
     } catch (error: any) {
-      console.error('Error fetching study programs by department:', error);
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [form, getText]);
@@ -658,7 +654,6 @@ const UserManagement: React.FC = () => {
         form.setValue('study_program_id', '');
       }
     } catch (error: any) {
-      console.error('Error fetching all study programs:', error);
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [profile, form, getText]);
@@ -718,7 +713,6 @@ const UserManagement: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Error fetching user details:', error);
     } finally {
       setLoadingUserDetails(false);
     }
@@ -746,7 +740,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setAllRooms((data as unknown as Room[]) || []);
     } catch (error) {
-      console.error('Error fetching all rooms:', error);
     }
   }, []);
 
@@ -780,7 +773,6 @@ const UserManagement: React.FC = () => {
       })) || [];
       setEditingUserRooms(rooms as Room[]);
     } catch (error) {
-      console.error('Error fetching user rooms:', error);
     }
   }, []);
 
@@ -820,7 +812,6 @@ const UserManagement: React.FC = () => {
       setRoomSearchTerm('');
       fetchEditingUserRooms(editingUser.id);
     } catch (error: any) {
-      console.error('Error assigning room:', error);
       toast.error(error.message || getText('Failed to assign room', 'Gagal menugaskan ruangan'));
     } finally {
       setAssigningRoom(false);
@@ -843,7 +834,6 @@ const UserManagement: React.FC = () => {
       toast.success(getText(`Removed from ${roomName}`, `Dihapus dari ${roomName}`));
       fetchEditingUserRooms(editingUser.id);
     } catch (error: any) {
-      console.error('Error unassigning room:', error);
       toast.error(getText('Failed to remove from room', 'Gagal menghapus dari ruangan'));
     }
   };
@@ -870,7 +860,6 @@ const UserManagement: React.FC = () => {
 
         toast.success(getText('Nametag downloaded successfully', 'Nametag berhasil diunduh'));
       } catch (error) {
-        console.error('Error downloading nametag:', error);
         toast.error(getText('Failed to download nametag', 'Gagal mengunduh nametag'));
       } finally {
         setIsDownloadingLecturers(false);
@@ -898,7 +887,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setCleanupPreviewCount(count || 0);
     } catch (error) {
-      console.error('Error checking cleanup count:', error);
       toast.error(getText('Failed to check student count', 'Gagal memeriksa jumlah mahasiswa'));
     } finally {
       setIsCleaning(false);
@@ -945,7 +933,6 @@ const UserManagement: React.FC = () => {
         }
 
         const userIds = usersToDelete.map(u => u.id);
-        console.log(`Processing batch cleanup for ${userIds.length} users...`);
 
         // 2. DELETE RELATED DATA (MANUAL CASCADE)
 
@@ -989,7 +976,6 @@ const UserManagement: React.FC = () => {
       setCleanupPreviewCount(0);
 
     } catch (error: any) {
-      console.error('Error executing cleanup:', error);
       toast.dismiss('cleanup-toast');
       toast.error(error.message || getText('Failed to delete students', 'Gagal menghapus data mahasiswa'));
     } finally {
@@ -1177,7 +1163,6 @@ const UserManagement: React.FC = () => {
       toast.dismiss(toastId);
       toast.success(getText(`Exported ${exportData.length} users successfully`, `Berhasil mengekspor ${exportData.length} pengguna`));
     } catch (err: any) {
-      console.error('Export error:', err);
       toast.error(getText('Failed to export users', 'Gagal mengekspor pengguna'));
     } finally {
       setIsExportingUsers(false);
@@ -1322,7 +1307,6 @@ const UserManagement: React.FC = () => {
       setPhotoPreview(null);
       fetchUsers();
     } catch (error: any) {
-      console.error('Error saving user:', error);
       if (error.code === '23505') {
         if (error.message.includes('username')) {
           toast.error(getText('Username already exists', 'Username sudah ada'));
@@ -1390,13 +1374,11 @@ const UserManagement: React.FC = () => {
       setProcessingIds(prev => new Set(prev).add(userId));
 
       // Try cascade delete via RPC first
-      console.log('🗑️ Attempting cascade delete for user:', userId);
 
       const { data: rpcResult, error: rpcError } = await supabase
         .rpc('delete_user_with_cascade', { target_user_id: userId });
 
       if (rpcError) {
-        console.warn('⚠️ RPC cascade delete failed, trying fallback:', rpcError.message);
 
         // Fallback: manually delete related records then user
         // 1. Delete checkout_items (via checkouts)
@@ -1437,16 +1419,13 @@ const UserManagement: React.FC = () => {
 
         if (deleteError) throw deleteError;
 
-        console.log('✅ Fallback delete completed');
       } else {
-        console.log('✅ RPC cascade delete completed:', rpcResult);
       }
 
       toast.success(getText('User and all related data deleted successfully', 'Pengguna dan semua data terkait berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchUsers();
     } catch (error: any) {
-      console.error('Error deleting user:', error);
       toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
     } finally {
       setProcessingIds(prev => {
@@ -2908,12 +2887,6 @@ const UserManagement: React.FC = () => {
               <button
                 type="submit"
                 onClick={() => {
-                  console.log('🔵 Submit button clicked');
-                  console.log('   submitting:', submitting);
-                  console.log('   processingIds.has(form):', processingIds.has('form'));
-                  console.log('   form.formState:', form.formState);
-                  console.log('   form.formState.isValid:', form.formState.isValid);
-                  console.log('   form.formState.errors:', form.formState.errors);
                   form.handleSubmit(handleSubmit)();
                 }}
                 disabled={submitting || processingIds.has('form')}

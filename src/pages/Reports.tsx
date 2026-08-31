@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   BarChart3,
   Download,
@@ -223,7 +223,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setRooms(data || []);
     } catch (error) {
-      console.error('Error fetching rooms:', error);
     }
   };
 
@@ -238,7 +237,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setTechnicians(data || []);
     } catch (error) {
-      console.error('Error fetching technicians:', error);
     }
   };
 
@@ -257,7 +255,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setEquipmentByRoom(data || []);
     } catch (error) {
-      console.error('Error fetching equipment:', error);
     }
   };
 
@@ -412,7 +409,6 @@ const Reports: React.FC = () => {
 
       setReportData(mockData);
     } catch (error) {
-      console.error('Error fetching report data:', error);
       toast.error('Failed to load report data');
     } finally {
       setLoading(false);
@@ -450,7 +446,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setIssueReports(data || []);
     } catch (error) {
-      console.error('Error fetching issue reports:', error);
       toast.error('Failed to load issue reports');
     }
   };
@@ -469,7 +464,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setReportComments(data || []);
     } catch (error) {
-      console.error('Error fetching report comments:', error);
       toast.error('Failed to load report comments');
     }
   };
@@ -502,7 +496,6 @@ const Reports: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Error adding comment:', error);
       toast.error('Failed to add comment');
     } finally {
       setProcessingAction(false);
@@ -564,7 +557,6 @@ const Reports: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Error updating report status:', error);
       toast.error('Failed to update report status');
     } finally {
       setProcessingAction(false);
@@ -604,7 +596,6 @@ const Reports: React.FC = () => {
       fetchReportData();
 
     } catch (error) {
-      console.error('Error deleting report:', error);
       toast.error('Failed to delete report');
     } finally {
       setProcessingAction(false);
@@ -660,7 +651,6 @@ const Reports: React.FC = () => {
       fetchReportData();
 
     } catch (error) {
-      console.error('Error adding task:', error);
       toast.error(getText('Failed to add report', 'Gagal menambah laporan'));
     } finally {
       setProcessingAction(false);
@@ -716,7 +706,6 @@ const Reports: React.FC = () => {
           .in('id', equipmentIds);
 
         if (equipmentError) {
-          console.error('Error updating equipment status:', equipmentError);
         }
       }
 
@@ -724,7 +713,6 @@ const Reports: React.FC = () => {
       fetchIssueReports();
       fetchReportData();
     } catch (error) {
-      console.error('Error assigning to technician:', error);
       toast.error(getText('Failed to assign report', 'Gagal menugaskan laporan'));
     } finally {
       setProcessingAction(false);
