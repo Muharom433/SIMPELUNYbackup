@@ -34,6 +34,7 @@ import { useDebouncedCallback } from 'use-debounce';
 import logoUNY from '../assets/logouny.png';
 import QRCode from 'react-qr-code';
 import html2canvas from 'html2canvas';
+import Select from 'react-select';
 
 export const parseEquipmentSpec = (spec: string | null) => {
     if (!spec) return { purchaseYear: '', procurementType: '', specs: '' };
@@ -1954,22 +1955,93 @@ console.log('========== QUERY RESULT ==========');
     }, [hasAccess, isSuperAdmin, isDepartmentAdmin, isLaboratory, availableStocks, availableRooms]);
 
     // ==================== EXPORT PDF FUNCTION ====================
-    // ==================== EXPORT PDF FUNCTION (ENHANCED) ====================
+    // ==================== EXPORT PDF FUNCTION (ENHANCED - ALL MATCHING ITEMS) ====================
     const handleExportEquipmentPDF = async () => {
+        const toastId = toast.loading(getText('Preparing PDF export...', 'Menyiapkan ekspor PDF...'));
         try {
-            if (filteredEquipment.length === 0) {
+            // Fetch ALL matching equipment without pagination limit
+            let query = supabase
+                .from('equipment')
+                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, department_id, study_program_id, rooms:rooms_id(id, name, code, department_id, study_program_ids, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`);
+
+            // Apply search filter
+            if (debouncedEquipmentSearch) {
+                query = query.or(`name.ilike.%${debouncedEquipmentSearch}%,code.ilike.%${debouncedEquipmentSearch}%`);
+            }
+
+            // Apply category filter
+            if (equipmentCategoryFilter !== 'all') {
+                query = query.eq('category', equipmentCategoryFilter);
+            }
+
+            // Apply room filter
+            if (roomFilter !== 'all') {
+                query = query.eq('rooms_id', roomFilter);
+            }
+
+            // Role-based filtering:
+            if (isLaboratory) {
+                const laborDeptId = profile?.department_id;
+                const laborStudyProgramId = profile?.study_program_id;
+                if (laborDeptId) {
+                    query = query.eq('department_id', laborDeptId);
+                    if (laborStudyProgramId) {
+                        query = query.or(`study_program_id.is.null,study_program_id.eq.${laborStudyProgramId}`);
+                    }
+                } else {
+                    toast.dismiss(toastId);
+                    toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
+                    return;
+                }
+            } else if (isDepartmentAdmin && profile?.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+
+            query = query.order('created_at', { ascending: false });
+
+            const { data, error } = await query;
+
+            if (error) {
+                toast.dismiss(toastId);
+                throw error;
+            }
+
+            let allEquipment = data || [];
+            if (allEquipment.length === 0) {
+                toast.dismiss(toastId);
                 toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
                 return;
+            }
+
+            // Apply mutation map / room overrides
+            try {
+                const mutationMap = await fetchLatestMutationsMap();
+                allEquipment = allEquipment.map((item: any) => {
+                    const ov = mutationMap[item.id] || (item.code ? mutationMap[item.code] : null) || (item.name ? mutationMap[item.name] : null);
+                    if (ov) {
+                        return {
+                            ...item,
+                            rooms_id: ov.rooms_id || item.rooms_id,
+                            rooms: ov.rooms || (ov.room_name ? { id: ov.rooms_id, name: ov.room_name, code: ov.room_code } : item.rooms)
+                        };
+                    }
+                    return item;
+                });
+            } catch (err) {
+                console.warn('Error applying room overrides to equipment in export PDF:', err);
             }
 
             const doc = new jsPDF('landscape', 'mm', 'a4');
             const pageWidth = doc.internal.pageSize.getWidth();
             const today = format(new Date(), 'dd MMM yyyy');
-            const currentYear = new Date().getFullYear();
 
             // Load Logo
-            const logoDataUrl = await getImageDataUrl(logoUNY);
-            doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
+            try {
+                const logoDataUrl = await getImageDataUrl(logoUNY);
+                doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
+            } catch (e) {
+                console.warn('Logo could not be loaded for PDF:', e);
+            }
 
             // Letterhead
             let currentY = 20;
@@ -2001,7 +2073,7 @@ console.log('========== QUERY RESULT ==========');
 
             // Title
             const title = `DAFTAR PERALATAN / EQUIPMENT LIST`;
-            const subtitle = `Generated: ${today}`;
+            const subtitle = `Generated: ${today} | Total: ${allEquipment.length} item`;
 
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
@@ -2039,15 +2111,15 @@ console.log('========== QUERY RESULT ==========');
                 getText('Unit', 'Satuan')
             ];
 
-            const tableRows = filteredEquipment.map((eq, index) => [
+            const tableRows = allEquipment.map((eq: any, index: number) => [
                 index + 1,
-                eq.name,
-                eq.code,
-                eq.category,
+                eq.name || '-',
+                eq.code || '-',
+                eq.category || '-',
                 eq.rooms?.name || '-',
-                eq.condition || '-',
-                eq.quantity || 0,
-                eq.unit || '-'
+                (eq.condition || 'Good').toUpperCase(),
+                eq.quantity || 1,
+                (eq.unit || 'Unit').toUpperCase()
             ]);
 
             // Generate Table
@@ -2056,9 +2128,11 @@ console.log('========== QUERY RESULT ==========');
                 head: [tableColumn],
                 body: tableRows,
                 theme: 'grid',
+                tableWidth: 269,
+                margin: { left: 14, right: 14 },
                 styles: {
                     fontSize: 8,
-                    cellPadding: 2,
+                    cellPadding: 2.5,
                     valign: 'middle',
                     lineColor: [0, 0, 0],
                     lineWidth: 0.1
@@ -2071,24 +2145,25 @@ console.log('========== QUERY RESULT ==========');
                     fontSize: 9
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 10 },
-                    1: { halign: 'left', cellWidth: 'auto' },
-                    2: { halign: 'left', cellWidth: 35 },
-                    3: { halign: 'left', cellWidth: 30 },
-                    4: { halign: 'left', cellWidth: 40 },
-                    5: { halign: 'center', cellWidth: 25 },
-                    6: { halign: 'center', cellWidth: 15 },
-                    7: { halign: 'center', cellWidth: 20 }
-                },
-                margin: { left: 14, right: 14 }
+                    0: { halign: 'center', cellWidth: 12 },
+                    1: { halign: 'left', cellWidth: 55 },
+                    2: { halign: 'left', cellWidth: 42 },
+                    3: { halign: 'left', cellWidth: 38 },
+                    4: { halign: 'left', cellWidth: 54 },
+                    5: { halign: 'center', cellWidth: 28 },
+                    6: { halign: 'center', cellWidth: 18 },
+                    7: { halign: 'center', cellWidth: 22 }
+                }
             });
 
             // Save
             const filenameDate = format(new Date(), 'yyyy-MM-dd');
             doc.save(`equipment_list_${filenameDate}.pdf`);
 
+            toast.dismiss(toastId);
             toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
         } catch (error) {
+            toast.dismiss(toastId);
             console.error('PDF Export Error:', error);
             toast.error('Gagal mengekspor PDF');
         }
@@ -2187,9 +2262,11 @@ console.log('========== QUERY RESULT ==========');
                 head: [tableColumn],
                 body: tableRows,
                 theme: 'grid',
+                tableWidth: 269,
+                margin: { left: 14, right: 14 },
                 styles: {
                     fontSize: 8,
-                    cellPadding: 2,
+                    cellPadding: 2.5,
                     valign: 'middle',
                     lineColor: [0, 0, 0],
                     lineWidth: 0.1
@@ -2202,14 +2279,13 @@ console.log('========== QUERY RESULT ==========');
                     fontSize: 9
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 10 },
-                    1: { halign: 'left', cellWidth: 'auto' },
-                    2: { halign: 'left', cellWidth: 35 },
-                    3: { halign: 'left', cellWidth: 40 },
-                    4: { halign: 'center', cellWidth: 25 },
-                    5: { halign: 'center', cellWidth: 15 }
-                },
-                margin: { left: 14, right: 14 }
+                    0: { halign: 'center', cellWidth: 14 },
+                    1: { halign: 'left', cellWidth: 85 },
+                    2: { halign: 'left', cellWidth: 55 },
+                    3: { halign: 'left', cellWidth: 55 },
+                    4: { halign: 'center', cellWidth: 35 },
+                    5: { halign: 'center', cellWidth: 25 }
+                }
             });
 
             // Save
@@ -3974,45 +4050,116 @@ console.log('========== QUERY RESULT ==========');
                                 </div>
                             </div>
 
-                            {/* Dropdown Filters for Rooms / Facilities and Categories */}
-                            <div className="flex flex-wrap gap-4 items-center bg-gray-55 p-4 rounded-xl border border-gray-200 shadow-sm">
+                            {/* Dropdown Filters for Rooms / Facilities and Categories (Searchable / Typeable) */}
+                            <div className="flex flex-wrap gap-4 items-center bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm">
                                 <div className="flex items-center gap-2">
-                                    <Filter className="h-4 w-4 text-gray-500" />
+                                    <Filter className="h-4 w-4 text-purple-600" />
                                     <span className="text-sm font-semibold text-gray-700">{getText('Filters:', 'Filter:')}</span>
                                 </div>
                                 
-                                {/* Room/Facility Filter Dropdown */}
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={roomFilter}
-                                        onChange={(e) => {
-                                            setRoomFilter(e.target.value);
-                                            setEquipmentPage(1); // reset page
+                                {/* Room/Facility Searchable Filter Dropdown */}
+                                <div className="min-w-[240px] sm:w-72">
+                                    <Select
+                                        value={roomFilter === 'all' 
+                                            ? { value: 'all', label: getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas') } 
+                                            : { 
+                                                value: roomFilter, 
+                                                label: `${rooms.find(r => r.id === roomFilter)?.name || ''} (${rooms.find(r => r.id === roomFilter)?.code || ''})` 
+                                              }
+                                        }
+                                        onChange={(selectedOption: any) => {
+                                            setRoomFilter(selectedOption ? selectedOption.value : 'all');
+                                            setEquipmentPage(1);
                                         }}
-                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-500 text-gray-700 font-medium cursor-pointer hover:border-gray-300 transition-colors"
-                                    >
-                                        <option value="all">{getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas')}</option>
-                                        {rooms.map(r => (
-                                            <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                                        ))}
-                                    </select>
+                                        options={[
+                                            { value: 'all', label: getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas') },
+                                            ...rooms.map(r => ({
+                                                value: r.id,
+                                                label: `${r.name} (${r.code})`
+                                            }))
+                                        ]}
+                                        placeholder={getText('Search or select room...', 'Cari / pilih ruangan...')}
+                                        isSearchable
+                                        isClearable={false}
+                                        className="text-sm"
+                                        styles={{
+                                            control: (base, state) => ({
+                                                ...base,
+                                                borderColor: state.isFocused ? '#a855f7' : '#e5e7eb',
+                                                borderRadius: '0.75rem',
+                                                minHeight: '42px',
+                                                boxShadow: state.isFocused ? '0 0 0 2px rgba(168, 85, 247, 0.2)' : 'none',
+                                                '&:hover': {
+                                                    borderColor: '#a855f7'
+                                                },
+                                                backgroundColor: 'white'
+                                            }),
+                                            menu: (base) => ({
+                                                ...base,
+                                                zIndex: 50,
+                                                borderRadius: '0.75rem',
+                                                overflow: 'hidden',
+                                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                                            }),
+                                            option: (base, state) => ({
+                                                ...base,
+                                                backgroundColor: state.isSelected ? '#a855f7' : state.isFocused ? '#f3e8ff' : 'white',
+                                                color: state.isSelected ? 'white' : '#374151',
+                                                cursor: 'pointer'
+                                            })
+                                        }}
+                                    />
                                 </div>
 
-                                {/* Category Filter Dropdown */}
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={equipmentCategoryFilter}
-                                        onChange={(e) => {
-                                            setEquipmentCategoryFilter(e.target.value);
-                                            setEquipmentPage(1); // reset page
+                                {/* Category Searchable Filter Dropdown */}
+                                <div className="min-w-[200px] sm:w-60">
+                                    <Select
+                                        value={equipmentCategoryFilter === 'all'
+                                            ? { value: 'all', label: getText('All Categories', 'Semua Kategori') }
+                                            : { value: equipmentCategoryFilter, label: equipmentCategoryFilter }
+                                        }
+                                        onChange={(selectedOption: any) => {
+                                            setEquipmentCategoryFilter(selectedOption ? selectedOption.value : 'all');
+                                            setEquipmentPage(1);
                                         }}
-                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-500 text-gray-700 font-medium cursor-pointer hover:border-gray-300 transition-colors"
-                                    >
-                                        <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
-                                        {categories.map(cat => (
-                                            <option key={cat.name} value={cat.name}>{cat.name}</option>
-                                        ))}
-                                    </select>
+                                        options={[
+                                            { value: 'all', label: getText('All Categories', 'Semua Kategori') },
+                                            ...categories.map(cat => ({
+                                                value: cat.name,
+                                                label: cat.name
+                                            }))
+                                        ]}
+                                        placeholder={getText('Search or select category...', 'Cari / pilih kategori...')}
+                                        isSearchable
+                                        isClearable={false}
+                                        className="text-sm"
+                                        styles={{
+                                            control: (base, state) => ({
+                                                ...base,
+                                                borderColor: state.isFocused ? '#a855f7' : '#e5e7eb',
+                                                borderRadius: '0.75rem',
+                                                minHeight: '42px',
+                                                boxShadow: state.isFocused ? '0 0 0 2px rgba(168, 85, 247, 0.2)' : 'none',
+                                                '&:hover': {
+                                                    borderColor: '#a855f7'
+                                                },
+                                                backgroundColor: 'white'
+                                            }),
+                                            menu: (base) => ({
+                                                ...base,
+                                                zIndex: 50,
+                                                borderRadius: '0.75rem',
+                                                overflow: 'hidden',
+                                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                                            }),
+                                            option: (base, state) => ({
+                                                ...base,
+                                                backgroundColor: state.isSelected ? '#a855f7' : state.isFocused ? '#f3e8ff' : 'white',
+                                                color: state.isSelected ? 'white' : '#374151',
+                                                cursor: 'pointer'
+                                            })
+                                        }}
+                                    />
                                 </div>
 
                                 {/* Reset Filters Button */}
@@ -4023,7 +4170,7 @@ console.log('========== QUERY RESULT ==========');
                                             setEquipmentCategoryFilter('all');
                                             setEquipmentPage(1);
                                         }}
-                                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-100"
+                                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-xl border border-purple-200"
                                     >
                                         {getText('Reset Filters', 'Atur Ulang Filter')}
                                     </button>

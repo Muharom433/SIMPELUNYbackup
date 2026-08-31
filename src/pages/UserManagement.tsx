@@ -533,8 +533,8 @@ const UserManagement: React.FC = () => {
       // Apply Search Filter (Server-side)
       if (debouncedSearchTerm) {
         const term = debouncedSearchTerm.toLowerCase();
-        // search fields: username, full_name, email, identity_number, phone_number, jabatan
-        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%,jabatan.ilike.%${term}%`);
+        // search fields: username, full_name, email, identity_number, phone_number
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%`);
       }
 
       // Apply Role Filter
@@ -1012,7 +1012,7 @@ const UserManagement: React.FC = () => {
 
       if (debouncedSearchTerm) {
         const term = debouncedSearchTerm.toLowerCase();
-        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%,jabatan.ilike.%${term}%`);
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%`);
       }
       if (roleFilter !== 'all') {
         query = query.eq('role', roleFilter);
@@ -1248,14 +1248,18 @@ const UserManagement: React.FC = () => {
         full_name: data.full_name.trim(),
         identity_number: data.identity_number.trim(),
         phone_number: data.phone_number?.trim() || null,
-        jabatan: data.jabatan?.trim() || null, // Position/Title
-        pangkat_golongan: data.role === 'lecturer' ? (data.pangkat_golongan?.trim() || null) : null,
-        address: data.role === 'lecturer' ? (data.address?.trim() || null) : null,
         role: data.role,
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
-        is_homebase: data.is_homebase,
       };
+
+      // Only include pangkat_golongan and address if provided with a non-empty value
+      if (data.role === 'lecturer' && data.pangkat_golongan?.trim()) {
+        userData.pangkat_golongan = data.pangkat_golongan.trim();
+      }
+      if (data.role === 'lecturer' && data.address?.trim()) {
+        userData.address = data.address.trim();
+      }
 
       // Add photo if provided
       if (photoPreview) {
@@ -1268,10 +1272,22 @@ const UserManagement: React.FC = () => {
           updateData.password = data.password.trim();
         }
 
-        const { error } = await supabase
+        let { error } = await supabase
           .from('users')
           .update(updateData)
           .eq('id', editingUser.id);
+
+        // Fallback: If DB schema cache error for optional columns, remove them & retry
+        if (error && (error.message?.includes('pangkat_golongan') || error.message?.includes('address') || error.message?.includes('schema cache'))) {
+          const safeData = { ...updateData };
+          delete safeData.pangkat_golongan;
+          delete safeData.address;
+          const retry = await supabase
+            .from('users')
+            .update(safeData)
+            .eq('id', editingUser.id);
+          error = retry.error;
+        }
 
         if (error) throw error;
         toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
@@ -1281,9 +1297,20 @@ const UserManagement: React.FC = () => {
           return;
         }
 
-        const { error } = await supabase
+        let { error } = await supabase
           .from('users')
           .insert({ ...userData, password: data.password.trim() });
+
+        // Fallback: If DB schema cache error for optional columns, remove them & retry
+        if (error && (error.message?.includes('pangkat_golongan') || error.message?.includes('address') || error.message?.includes('schema cache'))) {
+          const safeData = { ...userData, password: data.password.trim() };
+          delete safeData.pangkat_golongan;
+          delete safeData.address;
+          const retry = await supabase
+            .from('users')
+            .insert(safeData);
+          error = retry.error;
+        }
 
         if (error) throw error;
         toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
