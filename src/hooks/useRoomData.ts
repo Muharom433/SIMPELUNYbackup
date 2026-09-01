@@ -1,4 +1,4 @@
-// src/hooks/useRoomData.ts - UPDATED untuk approved dan booked
+﻿// src/hooks/useRoomData.ts - UPDATED untuk approved dan booked
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRoomStore, EnhancedRoomStatus } from '../stores/roomStore';
@@ -45,7 +45,6 @@ export const useRoomData = (targetDate: string) => {
     setError(null);
 
     try {
-      console.log(`🏢 Fetching room data for ${date} (local timezone)...`);
 
       // 1. FETCH ROOMS dengan relasi department
       const { data: roomsData, error: roomsError } = await supabase
@@ -253,7 +252,7 @@ export const useRoomData = (targetDate: string) => {
         .order('start_time', { ascending: true })
         .limit(200);
 
-      if (futureError) console.warn('Future bookings fetch error:', futureError);
+      
 
       // 8. PROCESS DATA dengan timezone handling yang benar
       const enhancedRooms: EnhancedRoomStatus[] = (roomsData || []).map(room => {
@@ -439,13 +438,10 @@ export const useRoomData = (targetDate: string) => {
       setRooms(enhancedRooms, date);
 
       const stats = getCacheStats();
-      console.log(`✅ Room data fetched successfully for ${date} (local). Cache hit rate: ${stats.hitRate.toFixed(1)}%`);
-      console.log(`📊 Bookings status filter: approved & booked only`);
 
       return enhancedRooms;
 
     } catch (error: any) {
-      console.error('❌ Error fetching room data:', error);
       setError(error.message || 'Failed to fetch room data');
       throw error;
     } finally {

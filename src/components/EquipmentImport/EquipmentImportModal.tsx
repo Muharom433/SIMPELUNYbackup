@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+﻿import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { X, FileSpreadsheet, AlertCircle, CheckCircle, Loader2, Download, Upload, AlertTriangle } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -172,7 +172,6 @@ const EquipmentImportModal: React.FC<EquipmentImportModalProps> = ({ isOpen, onC
             setParsedData(parsed);
             setShowPreview(true);
         } catch (error) {
-            console.error('Error parsing Excel:', error);
             toast.error('Gagal membaca file Excel');
         }
     };
@@ -249,7 +248,6 @@ const EquipmentImportModal: React.FC<EquipmentImportModalProps> = ({ isOpen, onC
                         .insert(detailsToInsert);
 
                     if (detailError) {
-                        console.error('Error inserting details:', detailError);
                         // We don't throw here to avoid failing the whole row import if just details fail, 
                         // but ideally we should probably warn. For now let's just log.
                         toast.error(`Gagal menyimpan detail untuk ${row.name}`);
@@ -258,7 +256,6 @@ const EquipmentImportModal: React.FC<EquipmentImportModalProps> = ({ isOpen, onC
 
                 successCount++;
             } catch (error) {
-                console.error(`Error importing row ${row.rowIndex}:`, error);
                 errorCount++;
             }
             setUploadProgress({ current: i + 1, total: validRows.length });

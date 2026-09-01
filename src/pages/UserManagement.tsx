@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -69,6 +69,8 @@ const userSchema = z.object({
   role: z.enum(['super_admin', 'department_admin', 'lecturer', 'student', 'laboratory', 'staffing', 'purchasing', 'technician', 'frontdesk', 'staff', 'finance', 'pool staff']),
   department_id: z.string().optional().nullable(),
   study_program_id: z.string().optional().nullable(),
+  pangkat_golongan: z.string().optional().or(z.literal('')),
+  address: z.string().optional().or(z.literal('')),
   // Password: optional, but if provided must be at least 6 characters
   password: z.string().optional().or(z.literal('')).refine(
     (val) => !val || val.length === 0 || val.length >= 6,
@@ -90,6 +92,8 @@ interface User {
   role: string;
   department_id?: string;
   study_program_id?: string;
+  pangkat_golongan?: string;
+  address?: string;
   is_homebase?: boolean;
   attachments?: string | null;
   created_at: string;
@@ -444,6 +448,8 @@ const UserManagement: React.FC = () => {
       department_id: '',
       study_program_id: '',
       password: '',
+      pangkat_golongan: '',
+      address: '',
     },
   });
 
@@ -519,9 +525,7 @@ const UserManagement: React.FC = () => {
 
       // Start building the query
       let query = supabase.from('users').select(`
-        id, username, email, full_name, identity_number, phone_number,
-        role, jabatan, department_id, study_program_id, is_homebase,
-        created_at, attachments,
+        *,
         department:departments(id, name, code),
         study_program:study_programs(id, name, code)
       `, { count: 'exact' });
@@ -529,8 +533,8 @@ const UserManagement: React.FC = () => {
       // Apply Search Filter (Server-side)
       if (debouncedSearchTerm) {
         const term = debouncedSearchTerm.toLowerCase();
-        // search fields: username, full_name, email, identity_number, phone_number, jabatan
-        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%,jabatan.ilike.%${term}%`);
+        // search fields: username, full_name, email, identity_number, phone_number
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%`);
       }
 
       // Apply Role Filter
@@ -570,7 +574,6 @@ const UserManagement: React.FC = () => {
       setTotalUsers(count || 0);
 
     } catch (error: any) {
-      console.error('Error fetching users:', error);
       toast.error(getText('Failed to load users', 'Gagal memuat pengguna'));
     } finally {
       setLoading(false);
@@ -589,7 +592,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setDepartments(data || []);
     } catch (error: any) {
-      console.error('Error fetching departments:', error);
       toast.error(getText('Failed to load departments', 'Gagal memuat departemen'));
     }
   }, [profile, getText]);
@@ -606,7 +608,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setStudyPrograms(data || []);
     } catch (error: any) {
-      console.error('Error fetching study programs:', error);
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [profile, getText]);
@@ -627,7 +628,6 @@ const UserManagement: React.FC = () => {
         form.setValue('study_program_id', '');
       }
     } catch (error: any) {
-      console.error('Error fetching study programs by department:', error);
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [form, getText]);
@@ -654,7 +654,6 @@ const UserManagement: React.FC = () => {
         form.setValue('study_program_id', '');
       }
     } catch (error: any) {
-      console.error('Error fetching all study programs:', error);
       toast.error(getText('Failed to load study programs', 'Gagal memuat program studi'));
     }
   }, [profile, form, getText]);
@@ -714,7 +713,6 @@ const UserManagement: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Error fetching user details:', error);
     } finally {
       setLoadingUserDetails(false);
     }
@@ -742,7 +740,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setAllRooms((data as unknown as Room[]) || []);
     } catch (error) {
-      console.error('Error fetching all rooms:', error);
     }
   }, []);
 
@@ -776,7 +773,6 @@ const UserManagement: React.FC = () => {
       })) || [];
       setEditingUserRooms(rooms as Room[]);
     } catch (error) {
-      console.error('Error fetching user rooms:', error);
     }
   }, []);
 
@@ -816,7 +812,6 @@ const UserManagement: React.FC = () => {
       setRoomSearchTerm('');
       fetchEditingUserRooms(editingUser.id);
     } catch (error: any) {
-      console.error('Error assigning room:', error);
       toast.error(error.message || getText('Failed to assign room', 'Gagal menugaskan ruangan'));
     } finally {
       setAssigningRoom(false);
@@ -839,7 +834,6 @@ const UserManagement: React.FC = () => {
       toast.success(getText(`Removed from ${roomName}`, `Dihapus dari ${roomName}`));
       fetchEditingUserRooms(editingUser.id);
     } catch (error: any) {
-      console.error('Error unassigning room:', error);
       toast.error(getText('Failed to remove from room', 'Gagal menghapus dari ruangan'));
     }
   };
@@ -866,7 +860,6 @@ const UserManagement: React.FC = () => {
 
         toast.success(getText('Nametag downloaded successfully', 'Nametag berhasil diunduh'));
       } catch (error) {
-        console.error('Error downloading nametag:', error);
         toast.error(getText('Failed to download nametag', 'Gagal mengunduh nametag'));
       } finally {
         setIsDownloadingLecturers(false);
@@ -894,7 +887,6 @@ const UserManagement: React.FC = () => {
       if (error) throw error;
       setCleanupPreviewCount(count || 0);
     } catch (error) {
-      console.error('Error checking cleanup count:', error);
       toast.error(getText('Failed to check student count', 'Gagal memeriksa jumlah mahasiswa'));
     } finally {
       setIsCleaning(false);
@@ -941,7 +933,6 @@ const UserManagement: React.FC = () => {
         }
 
         const userIds = usersToDelete.map(u => u.id);
-        console.log(`Processing batch cleanup for ${userIds.length} users...`);
 
         // 2. DELETE RELATED DATA (MANUAL CASCADE)
 
@@ -985,7 +976,6 @@ const UserManagement: React.FC = () => {
       setCleanupPreviewCount(0);
 
     } catch (error: any) {
-      console.error('Error executing cleanup:', error);
       toast.dismiss('cleanup-toast');
       toast.error(error.message || getText('Failed to delete students', 'Gagal menghapus data mahasiswa'));
     } finally {
@@ -1008,7 +998,7 @@ const UserManagement: React.FC = () => {
 
       if (debouncedSearchTerm) {
         const term = debouncedSearchTerm.toLowerCase();
-        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%,jabatan.ilike.%${term}%`);
+        query = query.or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%,identity_number.ilike.%${term}%,phone_number.ilike.%${term}%`);
       }
       if (roleFilter !== 'all') {
         query = query.eq('role', roleFilter);
@@ -1173,7 +1163,6 @@ const UserManagement: React.FC = () => {
       toast.dismiss(toastId);
       toast.success(getText(`Exported ${exportData.length} users successfully`, `Berhasil mengekspor ${exportData.length} pengguna`));
     } catch (err: any) {
-      console.error('Export error:', err);
       toast.error(getText('Failed to export users', 'Gagal mengekspor pengguna'));
     } finally {
       setIsExportingUsers(false);
@@ -1244,12 +1233,18 @@ const UserManagement: React.FC = () => {
         full_name: data.full_name.trim(),
         identity_number: data.identity_number.trim(),
         phone_number: data.phone_number?.trim() || null,
-        jabatan: data.jabatan?.trim() || null, // Position/Title
         role: data.role,
         department_id: data.department_id || null,
         study_program_id: data.study_program_id || null,
-        is_homebase: data.is_homebase,
       };
+
+      // Only include pangkat_golongan and address if provided with a non-empty value
+      if (data.role === 'lecturer' && data.pangkat_golongan?.trim()) {
+        userData.pangkat_golongan = data.pangkat_golongan.trim();
+      }
+      if (data.role === 'lecturer' && data.address?.trim()) {
+        userData.address = data.address.trim();
+      }
 
       // Add photo if provided
       if (photoPreview) {
@@ -1262,10 +1257,22 @@ const UserManagement: React.FC = () => {
           updateData.password = data.password.trim();
         }
 
-        const { error } = await supabase
+        let { error } = await supabase
           .from('users')
           .update(updateData)
           .eq('id', editingUser.id);
+
+        // Fallback: If DB schema cache error for optional columns, remove them & retry
+        if (error && (error.message?.includes('pangkat_golongan') || error.message?.includes('address') || error.message?.includes('schema cache'))) {
+          const safeData = { ...updateData };
+          delete safeData.pangkat_golongan;
+          delete safeData.address;
+          const retry = await supabase
+            .from('users')
+            .update(safeData)
+            .eq('id', editingUser.id);
+          error = retry.error;
+        }
 
         if (error) throw error;
         toast.success(getText('User updated successfully', 'Pengguna berhasil diperbarui'));
@@ -1275,9 +1282,20 @@ const UserManagement: React.FC = () => {
           return;
         }
 
-        const { error } = await supabase
+        let { error } = await supabase
           .from('users')
           .insert({ ...userData, password: data.password.trim() });
+
+        // Fallback: If DB schema cache error for optional columns, remove them & retry
+        if (error && (error.message?.includes('pangkat_golongan') || error.message?.includes('address') || error.message?.includes('schema cache'))) {
+          const safeData = { ...userData, password: data.password.trim() };
+          delete safeData.pangkat_golongan;
+          delete safeData.address;
+          const retry = await supabase
+            .from('users')
+            .insert(safeData);
+          error = retry.error;
+        }
 
         if (error) throw error;
         toast.success(getText('User created successfully', 'Pengguna berhasil dibuat'));
@@ -1289,7 +1307,6 @@ const UserManagement: React.FC = () => {
       setPhotoPreview(null);
       fetchUsers();
     } catch (error: any) {
-      console.error('Error saving user:', error);
       if (error.code === '23505') {
         if (error.message.includes('username')) {
           toast.error(getText('Username already exists', 'Username sudah ada'));
@@ -1325,6 +1342,8 @@ const UserManagement: React.FC = () => {
       role: user.role as any,
       department_id: user.department_id || '',
       study_program_id: user.study_program_id || '',
+      pangkat_golongan: user.pangkat_golongan || '',
+      address: user.address || '',
       password: '',
       is_homebase: user.is_homebase ?? true,
     });
@@ -1355,13 +1374,11 @@ const UserManagement: React.FC = () => {
       setProcessingIds(prev => new Set(prev).add(userId));
 
       // Try cascade delete via RPC first
-      console.log('🗑️ Attempting cascade delete for user:', userId);
 
       const { data: rpcResult, error: rpcError } = await supabase
         .rpc('delete_user_with_cascade', { target_user_id: userId });
 
       if (rpcError) {
-        console.warn('⚠️ RPC cascade delete failed, trying fallback:', rpcError.message);
 
         // Fallback: manually delete related records then user
         // 1. Delete checkout_items (via checkouts)
@@ -1402,16 +1419,13 @@ const UserManagement: React.FC = () => {
 
         if (deleteError) throw deleteError;
 
-        console.log('✅ Fallback delete completed');
       } else {
-        console.log('✅ RPC cascade delete completed:', rpcResult);
       }
 
       toast.success(getText('User and all related data deleted successfully', 'Pengguna dan semua data terkait berhasil dihapus'));
       setShowDeleteConfirm(null);
       fetchUsers();
     } catch (error: any) {
-      console.error('Error deleting user:', error);
       toast.error(error.message || getText('Failed to delete user', 'Gagal menghapus pengguna'));
     } finally {
       setProcessingIds(prev => {
@@ -2393,23 +2407,85 @@ const UserManagement: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Jabatan (Position/Title) */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {getText('Position/Title', 'Jabatan')}
-                      </label>
-                      <input
-                        {...form.register('jabatan')}
-                        type="text"
-                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                        placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
-                        disabled={submitting}
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
-                      </p>
-                    </div>
+                    {watchRole === 'lecturer' ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {/* Pangkat/Golongan */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Rank/Category', 'Pangkat/Golongan')}
+                            </label>
+                            <select
+                              {...form.register('pangkat_golongan')}
+                              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.pangkat_golongan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'}`}
+                              disabled={submitting}
+                            >
+                              <option value="">{getText('Select Rank', 'Pilih Pangkat')}</option>
+                              <option value="Pembina (IV/a)">Pembina (IV/a)</option>
+                              <option value="Pembina Tingkat I (IV/b)">Pembina Tingkat I (IV/b)</option>
+                              <option value="Pembina Utama Muda (IV/c)">Pembina Utama Muda (IV/c)</option>
+                              <option value="Pembina Utama Madya (IV/d)">Pembina Utama Madya (IV/d)</option>
+                              <option value="Pembina Utama (IV/e)">Pembina Utama (IV/e)</option>
+                              <option value="Penata Muda (III/a)">Penata Muda (III/a)</option>
+                              <option value="Penata Muda Tingkat I (III/b)">Penata Muda Tingkat I (III/b)</option>
+                              <option value="Penata (III/c)">Penata (III/c)</option>
+                              <option value="Penata Tingkat I (III/d)">Penata Tingkat I (III/d)</option>
+                              <option value="Pengatur (II/c)">Pengatur (II/c)</option>
+                              <option value="Pengatur Tingkat I (II/d)">Pengatur Tingkat I (II/d)</option>
+                            </select>
+                          </div>
+
+                          {/* Jabatan (Position/Title) */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {getText('Position/Title', 'Jabatan')}
+                            </label>
+                            <input
+                              {...form.register('jabatan')}
+                              type="text"
+                              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'}`}
+                              placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
+                              disabled={submitting}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Address */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {getText('Address', 'Alamat')}
+                          </label>
+                          <textarea
+                            {...form.register('address')}
+                            rows={3}
+                            className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.address ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'}`}
+                            placeholder={getText('Complete address', 'Alamat lengkap')}
+                            disabled={submitting}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      /* Jabatan for non-lecturers */
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getText('Position/Title', 'Jabatan')}
+                        </label>
+                        <input
+                          {...form.register('jabatan')}
+                          type="text"
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${form.formState.errors.jabatan ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 hover:border-gray-400'
+                            }`}
+                          placeholder={getText('e.g. Assistant Professor, Lab Assistant', 'cth. Asisten Ahli, Laboran')}
+                          disabled={submitting}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          {getText('Enter the user\'s job title or position', 'Masukkan jabatan atau posisi pengguna')}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2811,12 +2887,6 @@ const UserManagement: React.FC = () => {
               <button
                 type="submit"
                 onClick={() => {
-                  console.log('🔵 Submit button clicked');
-                  console.log('   submitting:', submitting);
-                  console.log('   processingIds.has(form):', processingIds.has('form'));
-                  console.log('   form.formState:', form.formState);
-                  console.log('   form.formState.isValid:', form.formState.isValid);
-                  console.log('   form.formState.errors:', form.formState.errors);
                   form.handleSubmit(handleSubmit)();
                 }}
                 disabled={submitting || processingIds.has('form')}

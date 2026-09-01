@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   Menu,
   Bell,
@@ -94,7 +94,6 @@ const Header: React.FC<HeaderProps> = ({ user, onMenuClick, onSignOut, onSignIn 
       setPendingToolLendingCount(tools.count || 0);
 
     } catch (error) {
-      console.error('Error fetching notification counts:', error);
     }
   }, [user]);
 

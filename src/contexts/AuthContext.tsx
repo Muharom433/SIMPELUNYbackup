@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '../types';
 
@@ -53,7 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
             }
         } catch (error) {
-            console.error('Error refreshing user data:', error);
         }
     };
 
@@ -99,11 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                             }
                         }
                     } catch (error) {
-                        console.error('Error parsing/refreshing cached user:', error);
                     }
                 }
             } catch (error) {
-                console.error('Auth initialization error:', error);
             } finally {
                 setLoading(false);
             }
@@ -131,7 +128,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
 
             if (error) {
-                console.error('Database authentication error:', error);
                 return { data: null, error: { message: 'Authentication failed' } };
             }
 
@@ -153,7 +149,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (profileError || !fullUserProfile) {
-                console.error('Error fetching full user profile:', profileError);
                 return { data: null, error: { message: 'Failed to fetch user profile' } };
             }
 
@@ -181,7 +176,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             return { data: { user: authenticatedUser }, error: null };
         } catch (error) {
-            console.error('Sign in error:', error);
             return { data: null, error: { message: 'An error occurred during sign in' } };
         } finally {
             setLoading(false);
@@ -250,7 +244,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .single();
 
             if (profileError) {
-                console.error('Profile creation error:', profileError);
 
                 if (profileError.code === '23505') {
                     if (profileError.message.includes('username')) {
@@ -272,7 +265,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             return { data: { user: userWithoutPassword }, error: null };
         } catch (error) {
-            console.error('Sign up error:', error);
             return { data: null, error: { message: 'An error occurred during sign up' } };
         } finally {
             setLoading(false);
@@ -289,13 +281,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 try {
                     await supabase.rpc('set_current_user', { user_id: null });
                 } catch (error) {
-                    console.error('Error clearing user context:', error);
                 }
             }
 
             return { error: null };
         } catch (error) {
-            console.error('Sign out error:', error);
             return { error: { message: 'An error occurred during sign out' } };
         }
     };

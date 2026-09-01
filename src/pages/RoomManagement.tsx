@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -260,7 +260,6 @@ const RoomManagement: React.FC = () => {
         setIsSearchMode(true);
 
         try {
-            console.log(`🗓️ Search for ${targetDate} from ${searchStartTime} to ${searchEndTime}`);
 
             // Force refresh data for the target date
             await fetchRoomData(targetDate, true);
@@ -273,7 +272,6 @@ const RoomManagement: React.FC = () => {
             );
 
         } catch (error) {
-            console.error('Error searching for available rooms:', error);
             alert.error(getText('Failed to perform search.', 'Gagal melakukan pencarian.'));
         } finally {
             setIsRefreshing(false);
@@ -318,7 +316,6 @@ const RoomManagement: React.FC = () => {
                     return false;
                 });
 
-                console.log(`🔬 Laboran rooms filter: ${roomsToDisplay.length} rooms from ${optimizedRooms.length}`);
             }
 
             setAllRooms(roomsToDisplay);
@@ -408,7 +405,6 @@ const RoomManagement: React.FC = () => {
             const dayNamesIndonesian = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
             const dayNameIndonesian = dayNamesIndonesian[targetDateObj.getDay()];
 
-            console.log(`📅 Fetching schedule for ${roomName} on ${targetDate} (${dayNameIndonesian})`);
 
             // 1. Fetch lecture schedules
             const { data: lectureData, error: lectureError } = await supabase
@@ -439,7 +435,7 @@ const RoomManagement: React.FC = () => {
             // 2. Fetch exam schedules
             const { data: examData, error: examError } = await supabase
                 .from('exams')
-                .select('id, start_time, end_time, course_name, class, student_amount, course_code')
+                .select('id, start_time, end_time, course_name, class, student_amount, course_code, is_take_home, semester, inspector')
                 .eq('room_id', roomId)
                 .eq('date', targetDate)
                 .order('start_time');
@@ -566,7 +562,6 @@ const RoomManagement: React.FC = () => {
             setCombinedSchedules(combined);
 
         } catch (error: any) {
-            console.error('Error fetching schedules:', error);
             alert.error(getText("Failed to load schedule for this room.", "Gagal memuat jadwal untuk ruangan ini."));
         } finally {
             setLoadingSchedules(false);
@@ -585,7 +580,6 @@ const RoomManagement: React.FC = () => {
             const uniqueRooms = [...new Set(data.map(item => item.room).filter(Boolean))].sort();
             setRoomNameSuggestions(uniqueRooms);
         } catch (error) {
-            console.error('Error fetching room suggestions:', error);
         }
     };
 
@@ -631,7 +625,6 @@ const RoomManagement: React.FC = () => {
             if (error) throw error;
             setCampuses(data || []);
         } catch (error: any) {
-            console.error('Error fetching campuses:', error);
         }
     };
 
@@ -655,7 +648,6 @@ const RoomManagement: React.FC = () => {
             if (error) throw error;
             setStudyPrograms(data as any || []);
         } catch (error: any) {
-            console.error('Error fetching study programs:', error);
         }
     };
 
@@ -675,10 +667,9 @@ const RoomManagement: React.FC = () => {
                 .range(0, 10000); // Explicitly set large range to get all users
 
             if (error) throw error;
-            console.log('Fetched users count:', data?.length); // Debug log
+// Debug log
             setAllUsers(data || []);
         } catch (error) {
-            console.error('Error fetching users:', error);
         }
     };
 
@@ -843,7 +834,6 @@ const RoomManagement: React.FC = () => {
 
                 alert.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
             } catch (error) {
-                console.error('Error downloading QR:', error);
                 alert.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
             } finally {
                 setIsDownloadingQR(false);
@@ -892,7 +882,6 @@ const RoomManagement: React.FC = () => {
 
                 alert.success(getText('User list downloaded successfully', 'Daftar pengguna berhasil diunduh'));
             } catch (error) {
-                console.error('Error downloading user list:', error);
                 alert.error(getText('Failed to download user list', 'Gagal mengunduh daftar pengguna'));
             } finally {
                 setIsDownloadingUsers(false);
@@ -1195,7 +1184,6 @@ const RoomManagement: React.FC = () => {
             setSelectedRoomEquipment(data || []);
         } catch (error: any) {
             alert.error(getText("Failed to load room's equipment.", "Gagal memuat peralatan ruangan."));
-            console.error("Error fetching equipment for room:", error);
         } finally {
             setLoadingEquipment(false);
         }
@@ -1224,7 +1212,6 @@ const RoomManagement: React.FC = () => {
             if (error) throw error;
             setRoomUsers(data || []);
         } catch (error) {
-            console.error('Error fetching room users:', error);
             alert.error(getText("Failed to load assigned users.", "Gagal memuat pengguna yang ditugaskan."));
         } finally {
             setLoadingRoomUsers(false);
@@ -1272,7 +1259,6 @@ const RoomManagement: React.FC = () => {
             setShowAssignUserModal(false);
             fetchRoomUsers(showRoomDetail.id);
         } catch (error) {
-            console.error('Error assigning user:', error);
             alert.error(getText('Failed to assign user to room', 'Gagal menugaskan pengguna ke ruangan'));
         }
     };
@@ -1300,7 +1286,6 @@ const RoomManagement: React.FC = () => {
                 `Ruangan berhasil ${newStatus ? 'diaktifkan' : 'dinonaktifkan'}!`
             ));
         } catch (error) {
-            console.error('Error updating room availability:', error);
             alert.error(getText('Failed to update room status', 'Gagal memperbarui status ruangan'));
         }
     };
@@ -1342,7 +1327,6 @@ const RoomManagement: React.FC = () => {
             alert.success(getText('Room deleted successfully!', 'Ruangan berhasil dihapus!'));
             await fetchRoomData(targetDate, true);
         } catch (error: any) {
-            console.error('Error deleting room:', error);
             alert.error(error.message || getText('Failed to delete room', 'Gagal menghapus ruangan'));
         }
     };
@@ -1375,7 +1359,6 @@ const RoomManagement: React.FC = () => {
                 fetchRoomUsers(showRoomDetail.id);
             }
         } catch (error) {
-            console.error('Error unassigning user:', error);
             alert.error(getText('Failed to remove user from room', 'Gagal menghapus pengguna dari ruangan'));
         }
     };
@@ -1401,7 +1384,6 @@ const RoomManagement: React.FC = () => {
                         setRoomPhoto(null);
                     }
                 } catch (err) {
-                    console.error('Error fetching room photo:', err);
                     setRoomPhoto(null);
                 }
             };
@@ -1436,7 +1418,6 @@ const RoomManagement: React.FC = () => {
             setRoomNameInput('');
             await fetchRoomData(targetDate, true);
         } catch (error: any) {
-            console.error('Error saving room:', error);
             alert.error(error.message || getText('Failed to save room', 'Gagal menyimpan ruangan'));
         } finally {
             setLoading(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -52,7 +52,6 @@ const AttendanceVerification: React.FC = () => {
             if (error) throw error;
             setCampuses(data || []);
         } catch (error) {
-            console.error('Error fetching campuses:', error);
         }
     };
 
@@ -66,7 +65,6 @@ const AttendanceVerification: React.FC = () => {
                 .maybeSingle();
 
             if (error) {
-                console.error('Error fetching attendance limits:', error);
                 return;
             }
 
@@ -77,7 +75,6 @@ const AttendanceVerification: React.FC = () => {
                 });
             }
         } catch (error) {
-            console.error('Error fetching attendance limits:', error);
         }
     };
 
@@ -130,7 +127,6 @@ const AttendanceVerification: React.FC = () => {
                 }
             }
 
-            console.log(`📋 AttendanceVerification: Fetched ${allRecords.length} records (${page} page(s))`);
 
             // Filter by campus if selected
             let filteredRecords = allRecords;
@@ -198,11 +194,9 @@ const AttendanceVerification: React.FC = () => {
 
             const beforeDedup = filteredRecords.length;
             filteredRecords = Array.from(uniqueRecordsMap.values());
-            console.log(`🔍 Dedup: ${beforeDedup} → ${filteredRecords.length} records (${beforeDedup - filteredRecords.length} duplikat dihapus)`);
 
             setData(filteredRecords);
         } catch (error) {
-            console.error('Error fetching data:', error);
             toast.error('Gagal memuat data laporan');
         } finally {
             setLoading(false);

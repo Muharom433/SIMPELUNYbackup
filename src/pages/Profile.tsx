@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   User as UserIcon,
   Edit,
@@ -181,7 +181,6 @@ const Profile: React.FC = () => {
       setIsCropModalOpen(false);
       setImageSrc(null);
     } catch (e) {
-      console.error(e);
       setMessage({
         type: 'error',
         text: getText('Failed to save cropped image', 'Gagal menyimpan foto')
@@ -255,7 +254,6 @@ const Profile: React.FC = () => {
         });
       }
     } catch (error) {
-      console.error('Error fetching user details:', error);
     }
   };
 
@@ -296,7 +294,6 @@ const Profile: React.FC = () => {
       await refreshUser();
       await fetchUserDetails();
     } catch (error) {
-      console.error('Error updating profile:', error);
       setMessage({
         type: 'error',
         text: getText('Failed to update profile', 'Gagal memperbarui profil')
@@ -359,7 +356,6 @@ const Profile: React.FC = () => {
         confirmPassword: ''
       });
     } catch (error) {
-      console.error('Error updating password:', error);
       setMessage({
         type: 'error',
         text: getText('Failed to update password', 'Gagal memperbarui password')

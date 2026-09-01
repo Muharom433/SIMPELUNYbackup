@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
@@ -914,7 +914,6 @@ const ReportsSection: React.FC = () => {
       setTotalPages(Math.ceil((count || 0) / itemsPerPage));
 
     } catch (error) {
-      console.error('Error fetching reports:', error);
     } finally {
       setLoading(false);
     }
@@ -931,7 +930,6 @@ const ReportsSection: React.FC = () => {
       if (error) throw error;
       setComments(data || []);
     } catch (error) {
-      console.error('Error fetching comments:', error);
     }
   };
 
@@ -954,7 +952,6 @@ const ReportsSection: React.FC = () => {
       setCommenterInfo({ name: '', email: '' });
       fetchComments(selectedReport.id);
     } catch (error) {
-      console.error('Error adding comment:', error);
     }
   };
 

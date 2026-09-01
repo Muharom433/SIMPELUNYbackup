@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     FileText,
@@ -112,7 +112,6 @@ const FormResponses: React.FC = () => {
             setStudyPrograms(prodiData || []);
 
         } catch (error: any) {
-            console.error('Error loading data:', error);
             toast.error(getText('Failed to load responses', 'Gagal memuat respons'));
         } finally {
             setLoading(false);
@@ -170,7 +169,6 @@ const FormResponses: React.FC = () => {
             setShowDeleteConfirm(null);
             toast.success(getText('Response deleted', 'Respons dihapus'));
         } catch (error: any) {
-            console.error('Error deleting response:', error);
             toast.error(getText('Failed to delete response', 'Gagal menghapus respons'));
         }
     };
@@ -257,7 +255,6 @@ const FormResponses: React.FC = () => {
 
             toast.success(getText('PDF export ready', 'Export PDF siap'));
         } catch (error: any) {
-            console.error('Error exporting PDF:', error);
             toast.error(getText('Failed to export PDF', 'Gagal export PDF'));
         } finally {
             setExporting(false);
@@ -299,7 +296,6 @@ const FormResponses: React.FC = () => {
 
             toast.success(getText('CSV exported', 'CSV diexport'));
         } catch (error: any) {
-            console.error('Error exporting CSV:', error);
             toast.error(getText('Failed to export CSV', 'Gagal export CSV'));
         }
     };

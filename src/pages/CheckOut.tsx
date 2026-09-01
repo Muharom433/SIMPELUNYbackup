@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -190,7 +190,6 @@ const CheckOut: React.FC = () => {
       setAllEquipment(data || []);
 
     } catch (error) {
-      console.error('❌ Error fetching equipment:', error);
     }
   };
 
@@ -206,7 +205,6 @@ const CheckOut: React.FC = () => {
       setAllRooms(data || []);
 
     } catch (error) {
-      console.error('❌ Error fetching rooms:', error);
     }
   };
 
@@ -260,7 +258,6 @@ const CheckOut: React.FC = () => {
               .single();
 
             if (userError) {
-              console.error(`   ❌ User fetch error:`, userError);
             } else {
 
               userData = user;
@@ -279,10 +276,6 @@ const CheckOut: React.FC = () => {
               .single();
 
             if (roomError) {
-              console.error(`   ❌ Room fetch error:`, roomError);
-              console.error(`   ❌ Room ID was: ${booking.room_id}`);
-              console.error(`   ❌ Error code: ${roomError.code}`);
-              console.error(`   ❌ Error details:`, roomError.details);
             } else {
 
               roomData = room;
@@ -302,7 +295,6 @@ const CheckOut: React.FC = () => {
               .in('id', booking.equipment_requested);
 
             if (equipmentError) {
-              console.error(`   ❌ Equipment fetch error:`, equipmentError);
             } else {
 
               equipment_details = equipmentData || [];
@@ -384,7 +376,6 @@ const CheckOut: React.FC = () => {
 
 
     } catch (error: any) {
-      console.error('❌ Error fetching records:', error);
       toast.error('Gagal memuat data peminjaman');
       setAllRecords([]);
     } finally {
@@ -483,7 +474,6 @@ const CheckOut: React.FC = () => {
       if (error) throw error;
       setAllRoomEquipment(data || []);
     } catch (error) {
-      console.error('Error fetching room equipment:', error);
       setAllRoomEquipment([]);
     }
   };
@@ -529,7 +519,6 @@ const CheckOut: React.FC = () => {
       toast.success(`${newAttachments.length} gambar berhasil diunggah`);
 
     } catch (error) {
-      console.error('Error uploading images:', error);
       toast.error('Gagal mengunggah gambar');
     } finally {
       setUploadingImage(false);
@@ -608,7 +597,6 @@ const CheckOut: React.FC = () => {
 
       return true;
     } catch (error) {
-      console.error('Error updating source record:', error);
       throw error;
     }
   };
@@ -638,7 +626,6 @@ const CheckOut: React.FC = () => {
             .insert(checkoutItemData);
 
           if (itemsError) {
-            console.error('❌ Error creating checkout_items:', itemsError);
             throw itemsError;
           }
 
@@ -668,7 +655,6 @@ const CheckOut: React.FC = () => {
             .insert(checkoutItemData);
 
           if (itemsError) {
-            console.error('❌ Error creating checkout_items:', itemsError);
             throw itemsError;
           }
 
@@ -680,7 +666,6 @@ const CheckOut: React.FC = () => {
 
       return true;
     } catch (error) {
-      console.error('Error creating checkout items:', error);
       throw error;
     }
   };
@@ -731,7 +716,6 @@ const CheckOut: React.FC = () => {
 
       return true;
     } catch (error) {
-      console.error('Error creating issue report:', error);
       throw error;
     }
   };
@@ -764,7 +748,6 @@ const CheckOut: React.FC = () => {
         .single();
 
       if (checkoutError) {
-        console.error('❌ Error creating checkout:', checkoutError);
         throw checkoutError;
       }
 
@@ -802,7 +785,6 @@ const CheckOut: React.FC = () => {
       await fetchAllRecords();
 
     } catch (error: any) {
-      console.error('❌ Error processing checkout:', error);
 
       // Rollback
       if (selectedRecord && checkoutId) {
@@ -824,7 +806,6 @@ const CheckOut: React.FC = () => {
           await supabase.from('checkouts').delete().eq('id', checkoutId);
 
         } catch (rollbackError) {
-          console.error('❌ Error rolling back:', rollbackError);
         }
       }
 

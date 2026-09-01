@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -34,6 +34,7 @@ import { useDebouncedCallback } from 'use-debounce';
 import logoUNY from '../assets/logouny.png';
 import QRCode from 'react-qr-code';
 import html2canvas from 'html2canvas';
+import Select from 'react-select';
 
 export const parseEquipmentSpec = (spec: string | null) => {
     if (!spec) return { purchaseYear: '', procurementType: '', specs: '' };
@@ -90,7 +91,6 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
             });
         }
     } catch (e) {
-        console.warn('[MutationMap] Error fetching DB mutations:', e);
     }
 
     // 2. Merge local_equipment_mutations
@@ -126,7 +126,6 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
             });
         }
     } catch (e) {
-        console.warn('[MutationMap] Error parsing local mutations:', e);
     }
 
     // 3. Merge local_equipment_room_overrides
@@ -141,7 +140,6 @@ export const fetchLatestMutationsMap = async (): Promise<Record<string, any>> =>
             });
         }
     } catch (e) {
-        console.warn('[MutationMap] Error parsing room overrides:', e);
     }
 
     return mutationMap;
@@ -195,7 +193,6 @@ export const getLatestEquipmentRoomOverride = (
             }
         }
     } catch (e) {
-        console.warn('Error computing equipment room override:', e);
     }
     return null;
 };
@@ -556,7 +553,6 @@ const compressImage = (file: File): Promise<string> => {
 
                 // Reduce quality to 0.5
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-                console.log('📸 Compressed image size:', dataUrl.length, 'chars (~', Math.round(dataUrl.length / 1024), 'KB)');
                 resolve(dataUrl);
             };
             img.onerror = (err) => reject(err);
@@ -804,7 +800,6 @@ const ToolAdministration: React.FC = () => {
                 // Actually, the specific fetchers will set loading to true/false.
 
             } catch (error) {
-                console.error('Error loading initial data:', error);
                 toast.error('Failed to load data');
             } finally {
                 // We don't turn off loading here because fetchStocks/fetchEquipment will handle their own loading states
@@ -850,7 +845,6 @@ const ToolAdministration: React.FC = () => {
             setStocks(data || []);
             setTotalStocks(count || 0);
         } catch (error) {
-            console.error('Error fetching stocks:', error);
             toast.error('Failed to load stocks');
         } finally {
             setLoadingStocks(false);
@@ -886,7 +880,6 @@ const ToolAdministration: React.FC = () => {
             }));
             setStockTrackRecords(trackRecords);
         } catch (error) {
-            console.error('Error fetching stock track record:', error);
             toast.error('Failed to load stock track record');
             setStockTrackRecords([]);
         } finally {
@@ -926,11 +919,6 @@ const ToolAdministration: React.FC = () => {
                 const laborDeptId = profile?.department_id;
                 const laborStudyProgramId = profile?.study_program_id;
 
-                console.log('========== LABORAN EQUIPMENT FILTER DEBUG ==========');
-                console.log('User Profile:', profile);
-                console.log('User Role:', profile?.role);
-                console.log('User Dept ID:', laborDeptId);
-                console.log('User Prodi ID:', laborStudyProgramId);
 
                 if (laborDeptId) {
                     query = query.eq('department_id', laborDeptId);
@@ -939,7 +927,6 @@ const ToolAdministration: React.FC = () => {
                         query = query.or(`study_program_id.is.null,study_program_id.eq.${laborStudyProgramId}`);
                     }
                 } else {
-                    console.log('WARNING: User has no department_id!');
                     setEquipment([]);
                     setTotalEquipment(0);
                     setLoadingEquipment(false);
@@ -960,8 +947,6 @@ const ToolAdministration: React.FC = () => {
 
             const { data, count, error } = await query;
 
-console.log('========== QUERY RESULT ==========');
-            console.log('Count (from DB):', count);
 
             if (error) throw error;
 
@@ -980,7 +965,6 @@ console.log('========== QUERY RESULT ==========');
                     return item;
                 });
             } catch (err) {
-                console.warn('Error applying room overrides to equipment in ToolAdministration:', err);
             }
 
             // No more in-memory filter and pagination needed!
@@ -989,7 +973,6 @@ console.log('========== QUERY RESULT ==========');
             setEquipment(finalData);
 
         } catch (error) {
-            console.error('Error fetching equipment:', error);
             toast.error('Failed to load equipment');
         } finally {
             setLoadingEquipment(false);
@@ -1046,7 +1029,6 @@ console.log('========== QUERY RESULT ==========');
             if (error) throw error;
             setDetailEquipments(data || []);
         } catch (error) {
-            console.error('Error fetching detail equipment:', error);
             toast.error(getText('Failed to load detail equipment', 'Gagal memuat detail peralatan'));
             setDetailEquipments([]);
         } finally {
@@ -1080,7 +1062,6 @@ console.log('========== QUERY RESULT ==========');
             setDetailImagePreview('');
             await fetchDetailEquipments(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error adding detail equipment:', error);
             toast.error(error.message || getText('Failed to add detail equipment', 'Gagal menambah detail peralatan'));
         } finally {
             setLoadingDetailEquipments(false);
@@ -1114,7 +1095,6 @@ console.log('========== QUERY RESULT ==========');
             setDetailImagePreview('');
             await fetchDetailEquipments(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error editing detail equipment:', error);
             toast.error(error.message || getText('Failed to update detail equipment', 'Gagal memperbarui detail peralatan'));
         } finally {
             setLoadingDetailEquipments(false);
@@ -1142,7 +1122,6 @@ console.log('========== QUERY RESULT ==========');
             toast.success(getText('Detail equipment deleted successfully', 'Detail peralatan berhasil dihapus'));
             await fetchDetailEquipments(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error deleting detail equipment:', error);
             toast.error(error.message || getText('Failed to delete detail equipment', 'Gagal menghapus detail peralatan'));
         } finally {
             setLoadingDetailEquipments(false);
@@ -1186,7 +1165,6 @@ console.log('========== QUERY RESULT ==========');
                 const compressed = await compressImage(file);
                 setDetailImagePreview(compressed);
             } catch (error) {
-                console.error('Error compressing image:', error);
                 toast.error(getText('Failed to process image', 'Gagal memproses gambar'));
             } finally {
                 setLoadingDetailImage(false);
@@ -1213,7 +1191,7 @@ console.log('========== QUERY RESULT ==========');
                 `)
                 .contains('equipment_requested', [equipmentId]);
 
-            if (checkoutsError) console.error('Error fetching checkouts:', checkoutsError);
+            
 
             if (checkoutItemsData && checkoutItemsData.length > 0) {
                 const checkoutRecords = await Promise.all(
@@ -1272,7 +1250,7 @@ console.log('========== QUERY RESULT ==========');
                 .contains('equipment_requested', [equipmentId])
                 .order('created_at', { ascending: false });
 
-            if (borrowedBookingsError) console.error('Error fetching borrowed bookings:', borrowedBookingsError);
+            
 
             if (borrowedBookings && borrowedBookings.length > 0) {
                 for (const booking of borrowedBookings) {
@@ -1298,7 +1276,7 @@ console.log('========== QUERY RESULT ==========');
                 .contains('id_equipment', [equipmentId])
                 .order('created_at', { ascending: false });
 
-            if (borrowedLendingsError) console.error('Error fetching borrowed lendings:', borrowedLendingsError);
+            
 
             if (borrowedLendings && borrowedLendings.length > 0) {
                 for (const lending of borrowedLendings) {
@@ -1333,7 +1311,6 @@ console.log('========== QUERY RESULT ==========');
             filteredRecords.sort((a, b) => new Date(b.date || b.created_at).getTime() - new Date(a.date || a.created_at).getTime());
             setLendingDetails(filteredRecords);
         } catch (error) {
-            console.error('Error in track record analysis:', error);
             toast.error('Failed to load track record');
             setLendingDetails([]);
         } finally {
@@ -1439,7 +1416,6 @@ console.log('========== QUERY RESULT ==========');
             toast.success('Gap resolved & checkout created!');
             await fetchGapAnalysis(selectedEquipment.id);
         } catch (error: any) {
-            console.error('Error resolving gap:', error);
             toast.error(error.message || 'Failed to resolve gap');
         }
     };
@@ -1490,7 +1466,7 @@ console.log('========== QUERY RESULT ==========');
             }
             // Fetch detail equipment items
             await fetchDetailEquipments(eq.id);
-        } catch (e) { console.error('Error loading details:', e); }
+        } catch (e) { }
         finally { setLoadingDetailModal(false); }
     };
 
@@ -1500,7 +1476,7 @@ console.log('========== QUERY RESULT ==========');
         try {
             const { data } = await supabase.from('stock').select('attachments').eq('id', stock.id).single();
             if (data) setSelectedStock(prev => (prev?.id === stock.id ? { ...prev, attachments: data.attachments } : prev));
-        } catch (e) { console.error('Error loading attachment:', e); }
+        } catch (e) { }
     };
 
     const handleOpenStockTrackModal = async (stock: Stock) => {
@@ -1521,7 +1497,6 @@ console.log('========== QUERY RESULT ==========');
                 setStockImagePreview(compressed);
                 // Also update form dirty state or preview if needed
             } catch (error) {
-                console.error('Error compressing image:', error);
                 toast.error('Failed to process image');
             }
         }
@@ -1540,7 +1515,6 @@ console.log('========== QUERY RESULT ==========');
                 const compressed = await compressImage(file);
                 setEquipmentImagePreview(compressed);
             } catch (error) {
-                console.error('Error compressing image:', error);
                 toast.error('Failed to process image');
             }
         }
@@ -1577,7 +1551,6 @@ console.log('========== QUERY RESULT ==========');
 
                 toast.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
             } catch (error) {
-                console.error('Error downloading QR:', error);
                 toast.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
             } finally {
                 setIsDownloadingStockQR(false);
@@ -1610,7 +1583,6 @@ console.log('========== QUERY RESULT ==========');
 
                 toast.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
             } catch (error) {
-                console.error('Error downloading QR:', error);
                 toast.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
             } finally {
                 setIsDownloadingEquipmentQR(false);
@@ -1627,7 +1599,7 @@ console.log('========== QUERY RESULT ==========');
             try {
                 const { data } = await supabase.from('stock').select('attachments').eq('id', stock.id).single();
                 if (data?.attachments) setStockImagePreview(data.attachments);
-            } catch (e) { console.error(e); }
+            } catch (e) { }
         } else {
             stockForm.reset({ quantity: 1 });
             setStockImagePreview('');
@@ -1647,12 +1619,6 @@ console.log('========== QUERY RESULT ==========');
     };
 
     const handleOpenEditModal = async (equipmentItem: EquipmentWithDetails) => {
-        console.log('========================================');
-        console.log('=== OPEN EDIT MODAL ===');
-        console.log('========================================');
-        console.log('Equipment item:', equipmentItem.id, equipmentItem.name);
-        console.log('Equipment rooms_id:', equipmentItem.rooms_id);
-        console.log('Equipment rooms:', equipmentItem.rooms);
 
         setEditingEquipment(equipmentItem);
         setSelectedRoomForEdit(equipmentItem.rooms || null);
@@ -1691,7 +1657,7 @@ console.log('========== QUERY RESULT ==========');
 
             setEquipmentImagePreview(finalAttachment);
             setOriginalEquipmentImage(finalAttachment);
-        } catch (e) { console.error(e); }
+        } catch (e) { }
         finally { setLoadingImage(false); }
 
         const foundBox = boxes.find(b => b.id === equipmentItem.box_id);
@@ -1708,7 +1674,6 @@ console.log('========== QUERY RESULT ==========');
 
         // Fallback: jika rooms_id tidak ada langsung, ambil dari relasi rooms.id
         const effectiveRoomsId = equipmentItem.rooms_id || equipmentItem.rooms?.id || '';
-        console.log('Effective rooms_id:', effectiveRoomsId);
 
         const { purchaseYear, procurementType, specs } = parseEquipmentSpec(equipmentItem.Spesification || '');
         const formValues = {
@@ -1720,8 +1685,6 @@ console.log('========== QUERY RESULT ==========');
             quantity: equipmentItem.quantity, unit: equipmentItem.unit, rooms_id: effectiveRoomsId,
             table_id: tableId || '', rack_id: rackId || '', box_id: equipmentItem.box_id || '',
         };
-        console.log('Form values to reset:', formValues);
-        console.log('rooms_id value:', formValues.rooms_id);
 
         editForm.reset(formValues);
         setShowEditModal(true);
@@ -1751,7 +1714,6 @@ console.log('========== QUERY RESULT ==========');
             const { data: newStocks } = await supabase.from('stock').select('id, nama, code, category, quantity, unit, spesification, created_at').order('created_at', { ascending: false });
             setStocks(newStocks || []);
         } catch (error: any) {
-            console.error('Error saving stock:', error);
             toast.error(error.message || 'Failed to save stock');
         } finally {
             setLoadingStocks(false);
@@ -1795,7 +1757,6 @@ console.log('========== QUERY RESULT ==========');
 
             await Promise.all([fetchStocks(), fetchEquipment()]);
         } catch (error: any) {
-            console.error('Error claiming equipment:', error);
             toast.error(error.message || 'Failed to claim equipment');
         } finally {
             setLoadingEquipment(false);
@@ -1863,7 +1824,6 @@ console.log('========== QUERY RESULT ==========');
             editForm.reset();
             await fetchEquipment();
         } catch (error: any) {
-            console.error('Error updating equipment:', error);
             Swal.fire('Error', error.message || 'Failed to update equipment', 'error');
         } finally {
             setLoadingEquipment(false);
@@ -1883,7 +1843,7 @@ console.log('========== QUERY RESULT ==========');
             if (error) throw error;
             toast.success('Stock deleted! 🗑️');
             fetchStocks();
-        } catch (error: any) { console.error('Error deleting stock:', error); toast.error(error.message || 'Failed to delete stock'); }
+        } catch (error: any) {  toast.error(error.message || 'Failed to delete stock'); }
         finally { setLoadingStocks(false); }
     };
 
@@ -1905,7 +1865,6 @@ console.log('========== QUERY RESULT ==========');
             const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
 
             if (error) {
-                console.error('Supabase delete error:', error);
                 throw error;
             }
 
@@ -1916,7 +1875,6 @@ console.log('========== QUERY RESULT ==========');
             );
             fetchEquipment();
         } catch (error: any) {
-            console.error('Error deleting equipment:', error);
             Swal.fire({
                 icon: 'error',
                 title: 'Oops...',
@@ -1954,22 +1912,91 @@ console.log('========== QUERY RESULT ==========');
     }, [hasAccess, isSuperAdmin, isDepartmentAdmin, isLaboratory, availableStocks, availableRooms]);
 
     // ==================== EXPORT PDF FUNCTION ====================
-    // ==================== EXPORT PDF FUNCTION (ENHANCED) ====================
+    // ==================== EXPORT PDF FUNCTION (ENHANCED - ALL MATCHING ITEMS) ====================
     const handleExportEquipmentPDF = async () => {
+        const toastId = toast.loading(getText('Preparing PDF export...', 'Menyiapkan ekspor PDF...'));
         try {
-            if (filteredEquipment.length === 0) {
+            // Fetch ALL matching equipment without pagination limit
+            let query = supabase
+                .from('equipment')
+                .select(`id, name, code, category, quantity, unit, condition, created_at, table_id, rack_id, box_id, is_mandatory, is_available, Spesification, rooms_id, department_id, study_program_id, rooms:rooms_id(id, name, code, department_id, study_program_ids, floor, department:departments(id, name, code)), stock:stock_id(id, nama, code, category, quantity, unit)`);
+
+            // Apply search filter
+            if (debouncedEquipmentSearch) {
+                query = query.or(`name.ilike.%${debouncedEquipmentSearch}%,code.ilike.%${debouncedEquipmentSearch}%`);
+            }
+
+            // Apply category filter
+            if (equipmentCategoryFilter !== 'all') {
+                query = query.eq('category', equipmentCategoryFilter);
+            }
+
+            // Apply room filter
+            if (roomFilter !== 'all') {
+                query = query.eq('rooms_id', roomFilter);
+            }
+
+            // Role-based filtering:
+            if (isLaboratory) {
+                const laborDeptId = profile?.department_id;
+                const laborStudyProgramId = profile?.study_program_id;
+                if (laborDeptId) {
+                    query = query.eq('department_id', laborDeptId);
+                    if (laborStudyProgramId) {
+                        query = query.or(`study_program_id.is.null,study_program_id.eq.${laborStudyProgramId}`);
+                    }
+                } else {
+                    toast.dismiss(toastId);
+                    toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
+                    return;
+                }
+            } else if (isDepartmentAdmin && profile?.department_id) {
+                query = query.eq('department_id', profile.department_id);
+            }
+
+            query = query.order('created_at', { ascending: false });
+
+            const { data, error } = await query;
+
+            if (error) {
+                toast.dismiss(toastId);
+                throw error;
+            }
+
+            let allEquipment = data || [];
+            if (allEquipment.length === 0) {
+                toast.dismiss(toastId);
                 toast.error(getText('No equipment to export', 'Tidak ada peralatan untuk diekspor'));
                 return;
+            }
+
+            // Apply mutation map / room overrides
+            try {
+                const mutationMap = await fetchLatestMutationsMap();
+                allEquipment = allEquipment.map((item: any) => {
+                    const ov = mutationMap[item.id] || (item.code ? mutationMap[item.code] : null) || (item.name ? mutationMap[item.name] : null);
+                    if (ov) {
+                        return {
+                            ...item,
+                            rooms_id: ov.rooms_id || item.rooms_id,
+                            rooms: ov.rooms || (ov.room_name ? { id: ov.rooms_id, name: ov.room_name, code: ov.room_code } : item.rooms)
+                        };
+                    }
+                    return item;
+                });
+            } catch (err) {
             }
 
             const doc = new jsPDF('landscape', 'mm', 'a4');
             const pageWidth = doc.internal.pageSize.getWidth();
             const today = format(new Date(), 'dd MMM yyyy');
-            const currentYear = new Date().getFullYear();
 
             // Load Logo
-            const logoDataUrl = await getImageDataUrl(logoUNY);
-            doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
+            try {
+                const logoDataUrl = await getImageDataUrl(logoUNY);
+                doc.addImage(logoDataUrl, 'PNG', 15, 15, 30, 30);
+            } catch (e) {
+            }
 
             // Letterhead
             let currentY = 20;
@@ -2001,7 +2028,7 @@ console.log('========== QUERY RESULT ==========');
 
             // Title
             const title = `DAFTAR PERALATAN / EQUIPMENT LIST`;
-            const subtitle = `Generated: ${today}`;
+            const subtitle = `Generated: ${today} | Total: ${allEquipment.length} item`;
 
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
@@ -2039,15 +2066,15 @@ console.log('========== QUERY RESULT ==========');
                 getText('Unit', 'Satuan')
             ];
 
-            const tableRows = filteredEquipment.map((eq, index) => [
+            const tableRows = allEquipment.map((eq: any, index: number) => [
                 index + 1,
-                eq.name,
-                eq.code,
-                eq.category,
+                eq.name || '-',
+                eq.code || '-',
+                eq.category || '-',
                 eq.rooms?.name || '-',
-                eq.condition || '-',
-                eq.quantity || 0,
-                eq.unit || '-'
+                (eq.condition || 'Good').toUpperCase(),
+                eq.quantity || 1,
+                (eq.unit || 'Unit').toUpperCase()
             ]);
 
             // Generate Table
@@ -2056,9 +2083,11 @@ console.log('========== QUERY RESULT ==========');
                 head: [tableColumn],
                 body: tableRows,
                 theme: 'grid',
+                tableWidth: 269,
+                margin: { left: 14, right: 14 },
                 styles: {
                     fontSize: 8,
-                    cellPadding: 2,
+                    cellPadding: 2.5,
                     valign: 'middle',
                     lineColor: [0, 0, 0],
                     lineWidth: 0.1
@@ -2071,25 +2100,25 @@ console.log('========== QUERY RESULT ==========');
                     fontSize: 9
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 10 },
-                    1: { halign: 'left', cellWidth: 'auto' },
-                    2: { halign: 'left', cellWidth: 35 },
-                    3: { halign: 'left', cellWidth: 30 },
-                    4: { halign: 'left', cellWidth: 40 },
-                    5: { halign: 'center', cellWidth: 25 },
-                    6: { halign: 'center', cellWidth: 15 },
-                    7: { halign: 'center', cellWidth: 20 }
-                },
-                margin: { left: 14, right: 14 }
+                    0: { halign: 'center', cellWidth: 12 },
+                    1: { halign: 'left', cellWidth: 55 },
+                    2: { halign: 'left', cellWidth: 42 },
+                    3: { halign: 'left', cellWidth: 38 },
+                    4: { halign: 'left', cellWidth: 54 },
+                    5: { halign: 'center', cellWidth: 28 },
+                    6: { halign: 'center', cellWidth: 18 },
+                    7: { halign: 'center', cellWidth: 22 }
+                }
             });
 
             // Save
             const filenameDate = format(new Date(), 'yyyy-MM-dd');
             doc.save(`equipment_list_${filenameDate}.pdf`);
 
+            toast.dismiss(toastId);
             toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
         } catch (error) {
-            console.error('PDF Export Error:', error);
+            toast.dismiss(toastId);
             toast.error('Gagal mengekspor PDF');
         }
     };
@@ -2187,9 +2216,11 @@ console.log('========== QUERY RESULT ==========');
                 head: [tableColumn],
                 body: tableRows,
                 theme: 'grid',
+                tableWidth: 269,
+                margin: { left: 14, right: 14 },
                 styles: {
                     fontSize: 8,
-                    cellPadding: 2,
+                    cellPadding: 2.5,
                     valign: 'middle',
                     lineColor: [0, 0, 0],
                     lineWidth: 0.1
@@ -2202,14 +2233,13 @@ console.log('========== QUERY RESULT ==========');
                     fontSize: 9
                 },
                 columnStyles: {
-                    0: { halign: 'center', cellWidth: 10 },
-                    1: { halign: 'left', cellWidth: 'auto' },
-                    2: { halign: 'left', cellWidth: 35 },
-                    3: { halign: 'left', cellWidth: 40 },
-                    4: { halign: 'center', cellWidth: 25 },
-                    5: { halign: 'center', cellWidth: 15 }
-                },
-                margin: { left: 14, right: 14 }
+                    0: { halign: 'center', cellWidth: 14 },
+                    1: { halign: 'left', cellWidth: 85 },
+                    2: { halign: 'left', cellWidth: 55 },
+                    3: { halign: 'left', cellWidth: 55 },
+                    4: { halign: 'center', cellWidth: 35 },
+                    5: { halign: 'center', cellWidth: 25 }
+                }
             });
 
             // Save
@@ -2218,7 +2248,6 @@ console.log('========== QUERY RESULT ==========');
 
             toast.success(getText('PDF exported successfully', 'PDF berhasil diekspor'));
         } catch (error) {
-            console.error('PDF Export Error:', error);
             toast.error('Gagal mengekspor PDF');
         }
     };
@@ -2893,7 +2922,6 @@ console.log('========== QUERY RESULT ==========');
                         const compressed = await compressImage(file);
                         setEquipmentImagePreview(compressed);
                     } catch (error) {
-                        console.error('Error compressing image:', error);
                         toast.error('Failed to process image');
                     }
                 }
@@ -2923,10 +2951,6 @@ console.log('========== QUERY RESULT ==========');
                     {/* Form Content - Scrollable */}
                     <div className="flex-1 overflow-y-auto p-6">
                         <form id="edit-equipment-form" onSubmit={editForm.handleSubmit(handleEditSubmit, (errors) => {
-                            console.log('========================================');
-                            console.log('=== FORM VALIDATION FAILED ===');
-                            console.log('========================================');
-                            console.log('Validation errors:', JSON.stringify(errors, null, 2));
                             alert('FORM VALIDATION GAGAL! Errors: ' + Object.keys(errors).join(', '));
                         })} className="space-y-4">
                             {/* Room Selection */}
@@ -3616,7 +3640,6 @@ console.log('========== QUERY RESULT ==========');
             setEquipmentImagePreview('');
             await fetchEquipment();
         } catch (error: any) {
-            console.error('Error adding equipment:', error);
             toast.error(error.message || 'Failed to add equipment');
         } finally {
             setLoadingEquipment(false);
@@ -3974,45 +3997,116 @@ console.log('========== QUERY RESULT ==========');
                                 </div>
                             </div>
 
-                            {/* Dropdown Filters for Rooms / Facilities and Categories */}
-                            <div className="flex flex-wrap gap-4 items-center bg-gray-55 p-4 rounded-xl border border-gray-200 shadow-sm">
+                            {/* Dropdown Filters for Rooms / Facilities and Categories (Searchable / Typeable) */}
+                            <div className="flex flex-wrap gap-4 items-center bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm">
                                 <div className="flex items-center gap-2">
-                                    <Filter className="h-4 w-4 text-gray-500" />
+                                    <Filter className="h-4 w-4 text-purple-600" />
                                     <span className="text-sm font-semibold text-gray-700">{getText('Filters:', 'Filter:')}</span>
                                 </div>
                                 
-                                {/* Room/Facility Filter Dropdown */}
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={roomFilter}
-                                        onChange={(e) => {
-                                            setRoomFilter(e.target.value);
-                                            setEquipmentPage(1); // reset page
+                                {/* Room/Facility Searchable Filter Dropdown */}
+                                <div className="min-w-[240px] sm:w-72">
+                                    <Select
+                                        value={roomFilter === 'all' 
+                                            ? { value: 'all', label: getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas') } 
+                                            : { 
+                                                value: roomFilter, 
+                                                label: `${rooms.find(r => r.id === roomFilter)?.name || ''} (${rooms.find(r => r.id === roomFilter)?.code || ''})` 
+                                              }
+                                        }
+                                        onChange={(selectedOption: any) => {
+                                            setRoomFilter(selectedOption ? selectedOption.value : 'all');
+                                            setEquipmentPage(1);
                                         }}
-                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-500 text-gray-700 font-medium cursor-pointer hover:border-gray-300 transition-colors"
-                                    >
-                                        <option value="all">{getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas')}</option>
-                                        {rooms.map(r => (
-                                            <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                                        ))}
-                                    </select>
+                                        options={[
+                                            { value: 'all', label: getText('All Rooms / Facilities', 'Semua Ruangan / Fasilitas') },
+                                            ...rooms.map(r => ({
+                                                value: r.id,
+                                                label: `${r.name} (${r.code})`
+                                            }))
+                                        ]}
+                                        placeholder={getText('Search or select room...', 'Cari / pilih ruangan...')}
+                                        isSearchable
+                                        isClearable={false}
+                                        className="text-sm"
+                                        styles={{
+                                            control: (base, state) => ({
+                                                ...base,
+                                                borderColor: state.isFocused ? '#a855f7' : '#e5e7eb',
+                                                borderRadius: '0.75rem',
+                                                minHeight: '42px',
+                                                boxShadow: state.isFocused ? '0 0 0 2px rgba(168, 85, 247, 0.2)' : 'none',
+                                                '&:hover': {
+                                                    borderColor: '#a855f7'
+                                                },
+                                                backgroundColor: 'white'
+                                            }),
+                                            menu: (base) => ({
+                                                ...base,
+                                                zIndex: 50,
+                                                borderRadius: '0.75rem',
+                                                overflow: 'hidden',
+                                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                                            }),
+                                            option: (base, state) => ({
+                                                ...base,
+                                                backgroundColor: state.isSelected ? '#a855f7' : state.isFocused ? '#f3e8ff' : 'white',
+                                                color: state.isSelected ? 'white' : '#374151',
+                                                cursor: 'pointer'
+                                            })
+                                        }}
+                                    />
                                 </div>
 
-                                {/* Category Filter Dropdown */}
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={equipmentCategoryFilter}
-                                        onChange={(e) => {
-                                            setEquipmentCategoryFilter(e.target.value);
-                                            setEquipmentPage(1); // reset page
+                                {/* Category Searchable Filter Dropdown */}
+                                <div className="min-w-[200px] sm:w-60">
+                                    <Select
+                                        value={equipmentCategoryFilter === 'all'
+                                            ? { value: 'all', label: getText('All Categories', 'Semua Kategori') }
+                                            : { value: equipmentCategoryFilter, label: equipmentCategoryFilter }
+                                        }
+                                        onChange={(selectedOption: any) => {
+                                            setEquipmentCategoryFilter(selectedOption ? selectedOption.value : 'all');
+                                            setEquipmentPage(1);
                                         }}
-                                        className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-500 text-gray-700 font-medium cursor-pointer hover:border-gray-300 transition-colors"
-                                    >
-                                        <option value="all">{getText('All Categories', 'Semua Kategori')}</option>
-                                        {categories.map(cat => (
-                                            <option key={cat.name} value={cat.name}>{cat.name}</option>
-                                        ))}
-                                    </select>
+                                        options={[
+                                            { value: 'all', label: getText('All Categories', 'Semua Kategori') },
+                                            ...categories.map(cat => ({
+                                                value: cat.name,
+                                                label: cat.name
+                                            }))
+                                        ]}
+                                        placeholder={getText('Search or select category...', 'Cari / pilih kategori...')}
+                                        isSearchable
+                                        isClearable={false}
+                                        className="text-sm"
+                                        styles={{
+                                            control: (base, state) => ({
+                                                ...base,
+                                                borderColor: state.isFocused ? '#a855f7' : '#e5e7eb',
+                                                borderRadius: '0.75rem',
+                                                minHeight: '42px',
+                                                boxShadow: state.isFocused ? '0 0 0 2px rgba(168, 85, 247, 0.2)' : 'none',
+                                                '&:hover': {
+                                                    borderColor: '#a855f7'
+                                                },
+                                                backgroundColor: 'white'
+                                            }),
+                                            menu: (base) => ({
+                                                ...base,
+                                                zIndex: 50,
+                                                borderRadius: '0.75rem',
+                                                overflow: 'hidden',
+                                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                                            }),
+                                            option: (base, state) => ({
+                                                ...base,
+                                                backgroundColor: state.isSelected ? '#a855f7' : state.isFocused ? '#f3e8ff' : 'white',
+                                                color: state.isSelected ? 'white' : '#374151',
+                                                cursor: 'pointer'
+                                            })
+                                        }}
+                                    />
                                 </div>
 
                                 {/* Reset Filters Button */}
@@ -4023,7 +4117,7 @@ console.log('========== QUERY RESULT ==========');
                                             setEquipmentCategoryFilter('all');
                                             setEquipmentPage(1);
                                         }}
-                                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-100"
+                                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-xl border border-purple-200"
                                     >
                                         {getText('Reset Filters', 'Atur Ulang Filter')}
                                     </button>

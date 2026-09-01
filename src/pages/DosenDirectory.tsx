@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, User, Users, GraduationCap, ChevronDown, X, Building2, SlidersHorizontal, MapPin, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -393,7 +393,6 @@ const DosenDirectory: React.FC = () => {
         setSelectedRoomModal(prev => prev?.id === room.id ? { ...prev, attachments: data.attachments } : prev);
       }
     } catch (err) {
-      console.error('Error fetching room attachments:', err);
     }
   };
 
@@ -444,7 +443,6 @@ const DosenDirectory: React.FC = () => {
 
         setLecturerList(filtered);
       } catch (err) {
-        console.error('Error fetching lecturers:', err);
       } finally {
         setLoading(false);
       }

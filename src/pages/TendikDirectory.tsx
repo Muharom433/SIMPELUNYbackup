@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, User, Users, ChevronDown, X, Building2, SlidersHorizontal, Briefcase } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -373,7 +373,6 @@ const TendikDirectory: React.FC = () => {
         if (error) throw error;
         setStaffList(data || []);
       } catch (error) {
-        console.error('Error fetching staff:', error);
       } finally {
         setLoading(false);
       }

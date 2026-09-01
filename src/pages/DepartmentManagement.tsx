@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -109,7 +109,6 @@ const DepartmentManagement: React.FC = () => {
 
       setDepartments(departmentsWithStats);
     } catch (error) {
-      console.error('Error fetching departments:', error);
       toast.error('Failed to load departments');
     } finally {
       setLoading(false);
@@ -152,7 +151,6 @@ const DepartmentManagement: React.FC = () => {
       form.reset();
       fetchDepartments();
     } catch (error: any) {
-      console.error('Error saving department:', error);
       if (error.code === '23505') {
         if (error.message.includes('departments_name_key')) {
           toast.error('Department name already exists');
@@ -200,7 +198,6 @@ const DepartmentManagement: React.FC = () => {
       setShowDeleteConfirm(null);
       fetchDepartments();
     } catch (error: any) {
-      console.error('Error deleting department:', error);
       toast.error(error.message || 'Failed to delete department');
     } finally {
       setLoading(false);

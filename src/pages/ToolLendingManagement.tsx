@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Wrench, Search, Eye, Trash2, RefreshCw, Download, User, Package,
     AlertCircle, Clock, X, CheckCircle, XCircle, Loader2,
@@ -209,7 +209,6 @@ const ToolLendingManagement: React.FC = () => {
                 setLendingRecords(recordsWithDetails);
 
                 const endTime = performance.now();
-                console.log(`✅ Super Admin fetch: ${recordsWithDetails.length} records in ${Math.round(endTime - startTime)}ms`);
 
                 setLoading(false);
                 fetchingRef.current = false;
@@ -323,7 +322,6 @@ const ToolLendingManagement: React.FC = () => {
                 setLendingRecords(recordsWithDetails);
 
                 const endTime = performance.now();
-                console.log(`✅ Laboran fetch: ${recordsWithDetails.length} records in ${Math.round(endTime - startTime)}ms`);
 
                 setLoading(false);
                 fetchingRef.current = false;
@@ -337,7 +335,6 @@ const ToolLendingManagement: React.FC = () => {
             fetchingRef.current = false;
 
         } catch (error) {
-            console.error('Error fetching lending records:', error);
             toast.error(getText('Failed to load lending records', 'Gagal memuat data peminjaman'));
             setLoading(false);
             fetchingRef.current = false;
@@ -359,13 +356,6 @@ const ToolLendingManagement: React.FC = () => {
             const record = lendingRecords.find(r => r.id === recordId);
             if (!record) throw new Error("Lending record not found");
 
-            console.log('🔧 FIXED: Updating lending status with equipment management:', {
-                recordId: record.id,
-                currentStatus: record.status,
-                newStatus,
-                id_equipment: record.id_equipment,
-                qty: record.qty
-            });
 
             // ✅ ADD: Equipment quantity management
             if (record.id_equipment && record.id_equipment.length > 0) {
@@ -376,11 +366,6 @@ const ToolLendingManagement: React.FC = () => {
                     const equipmentId = record.id_equipment[i];
                     const quantity = record.qty?.[i] || 1;
 
-                    console.log(`🔍 Validating equipment ${i + 1}/${record.id_equipment.length}:`, {
-                        equipmentId,
-                        quantity,
-                        index: i
-                    });
 
                     // ✅ CHECK: Does equipment exist and has sufficient quantity?
                     const { data: equipment, error: checkError } = await supabase
@@ -390,14 +375,12 @@ const ToolLendingManagement: React.FC = () => {
                         .single();
 
                     if (checkError || !equipment) {
-                        console.warn(`⚠️ Equipment ${equipmentId} not found - will be skipped`);
                         invalidEquipment.push({ equipmentId, index: i, reason: 'not_found' });
                         continue;
                     }
 
                     // For approval, check sufficient quantity
                     if (newStatus === 'approved' && equipment.quantity < quantity) {
-                        console.warn(`⚠️ Equipment ${equipmentId} insufficient quantity: need ${quantity}, available ${equipment.quantity}`);
                         invalidEquipment.push({
                             equipmentId,
                             index: i,
@@ -408,12 +391,6 @@ const ToolLendingManagement: React.FC = () => {
                         continue;
                     }
 
-                    console.log(`✅ Equipment validated:`, {
-                        id: equipment.id,
-                        name: equipment.name,
-                        availableQuantity: equipment.quantity,
-                        requestedQuantity: quantity
-                    });
 
                     validEquipmentList.push({
                         id: equipmentId,
@@ -425,7 +402,6 @@ const ToolLendingManagement: React.FC = () => {
 
                 // ✅ REPORT: Invalid equipment found
                 if (invalidEquipment.length > 0) {
-                    console.warn('⚠️ Invalid equipment found:', invalidEquipment);
 
                     const notFoundCount = invalidEquipment.filter(eq => eq.reason === 'not_found').length;
                     const insufficientCount = invalidEquipment.filter(eq => eq.reason === 'insufficient').length;
@@ -444,18 +420,15 @@ const ToolLendingManagement: React.FC = () => {
                     } else {
                         warningMessage += 'No valid equipment to process.';
                         toast.error(warningMessage);
-                        console.log('ℹ️ Proceeding with status update only (no equipment changes)');
                     }
                 }
 
                 // ✅ PROCESS: Only valid equipment
                 if (validEquipmentList.length > 0) {
-                    console.log('✅ Processing valid equipment list:', validEquipmentList);
 
                     for (const equipmentItem of validEquipmentList) {
                         if (newStatus === 'approved') {
                             // ✅ APPROVED: Decrease quantity
-                            console.log(`📉 Decreasing ${equipmentItem.id} by ${equipmentItem.quantity}`);
 
                             const newQuantity = equipmentItem.currentQuantity - equipmentItem.quantity;
                             const { error: updateError } = await supabase
@@ -467,14 +440,11 @@ const ToolLendingManagement: React.FC = () => {
                                 .eq('id', equipmentItem.id);
 
                             if (updateError) {
-                                console.error(`❌ Failed to update ${equipmentItem.id}:`, updateError);
                             } else {
-                                console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
                             }
 
                         } else if (newStatus === 'rejected' && (record.status === 'approved' || record.status === 'borrow')) {
                             // ✅ REJECTED: Restore quantity
-                            console.log(`📈 Restoring ${equipmentItem.id} by ${equipmentItem.quantity}`);
 
                             const newQuantity = equipmentItem.currentQuantity + equipmentItem.quantity;
                             const { error: updateError } = await supabase
@@ -486,9 +456,7 @@ const ToolLendingManagement: React.FC = () => {
                                 .eq('id', equipmentItem.id);
 
                             if (updateError) {
-                                console.error(`❌ Failed to restore ${equipmentItem.id}:`, updateError);
                             } else {
-                                console.log(`✅ ${equipmentItem.name}: ${equipmentItem.currentQuantity} → ${newQuantity}`);
                             }
                         }
                     }
@@ -511,7 +479,6 @@ const ToolLendingManagement: React.FC = () => {
 
             if (recordError) throw recordError;
 
-            console.log('✅ FIXED: Lending status updated successfully');
 
             // Success notification
             const statusText = newStatus === 'approved'
@@ -529,7 +496,6 @@ const ToolLendingManagement: React.FC = () => {
             }
 
         } catch (error: any) {
-            console.error('❌ Error updating lending status:', error);
             toast.error(error.message || getText('Failed to update lending status', 'Gagal memperbarui status peminjaman'));
         } finally {
             setProcessingIds(prev => {
@@ -547,12 +513,6 @@ const ToolLendingManagement: React.FC = () => {
             const recordToDelete = lendingRecords.find(r => r.id === recordId);
             if (!recordToDelete) throw new Error("Record not found");
 
-            console.log('🗑️ Deleting lending record:', {
-                id: recordToDelete.id,
-                status: recordToDelete.status,
-                id_equipment: recordToDelete.id_equipment,
-                qty: recordToDelete.qty
-            });
 
             // ✅ RESTORE EQUIPMENT QUANTITIES if the record was approved/borrow
             if (recordToDelete.status === 'approved' || recordToDelete.status === 'borrow') {
@@ -561,7 +521,6 @@ const ToolLendingManagement: React.FC = () => {
                     const equipmentId = recordToDelete.id_equipment[i];
                     const quantity = recordToDelete.qty?.[i] || 1;
 
-                    console.log(`📈 Restoring ${equipmentId} by ${quantity} (lending deleted)`);
 
                     try {
                         // Get current equipment data
@@ -572,7 +531,6 @@ const ToolLendingManagement: React.FC = () => {
                             .single();
 
                         if (equipmentError || !equipment) {
-                            console.warn(`⚠️ Equipment ${equipmentId} not found for restoration`);
                             continue;
                         }
 
@@ -587,16 +545,12 @@ const ToolLendingManagement: React.FC = () => {
                             .eq('id', equipmentId);
 
                         if (updateError) {
-                            console.warn(`⚠️ Failed to restore equipment ${equipmentId}:`, updateError);
                         } else {
-                            console.log(`✅ Restored ${equipment.name}: ${equipment.quantity} → ${newQuantity}`);
                         }
                     } catch (error) {
-                        console.warn(`⚠️ Error restoring equipment ${equipmentId}:`, error);
                     }
                 }
 
-                console.log(`✅ Equipment quantities restored after lending deletion`);
             }
 
             // ✅ DELETE THE LENDING RECORD
@@ -612,7 +566,6 @@ const ToolLendingManagement: React.FC = () => {
             await fetchLendingRecords();
 
         } catch (error: any) {
-            console.error('❌ Error deleting lending record:', error);
             toast.error(error.message || getText('Failed to delete lending record', 'Gagal menghapus data peminjaman'));
         } finally {
             setProcessingIds(prev => {
@@ -1006,7 +959,6 @@ const ToolLendingManagement: React.FC = () => {
                                                                         });
                                                                     }
                                                                 } catch (err) {
-                                                                    console.error('Error loading attachments lazy:', err);
                                                                 }
                                                             }
                                                         }}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   BarChart3,
   Download,
@@ -176,6 +176,7 @@ const Reports: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [roomFilter, setRoomFilter] = useState<string>('all');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [resolutionNotes, setResolutionNotes] = useState('');
@@ -222,7 +223,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setRooms(data || []);
     } catch (error) {
-      console.error('Error fetching rooms:', error);
     }
   };
 
@@ -237,7 +237,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setTechnicians(data || []);
     } catch (error) {
-      console.error('Error fetching technicians:', error);
     }
   };
 
@@ -256,7 +255,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setEquipmentByRoom(data || []);
     } catch (error) {
-      console.error('Error fetching equipment:', error);
     }
   };
 
@@ -411,7 +409,6 @@ const Reports: React.FC = () => {
 
       setReportData(mockData);
     } catch (error) {
-      console.error('Error fetching report data:', error);
       toast.error('Failed to load report data');
     } finally {
       setLoading(false);
@@ -449,7 +446,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setIssueReports(data || []);
     } catch (error) {
-      console.error('Error fetching issue reports:', error);
       toast.error('Failed to load issue reports');
     }
   };
@@ -468,7 +464,6 @@ const Reports: React.FC = () => {
       if (error) throw error;
       setReportComments(data || []);
     } catch (error) {
-      console.error('Error fetching report comments:', error);
       toast.error('Failed to load report comments');
     }
   };
@@ -501,7 +496,6 @@ const Reports: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Error adding comment:', error);
       toast.error('Failed to add comment');
     } finally {
       setProcessingAction(false);
@@ -563,7 +557,6 @@ const Reports: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Error updating report status:', error);
       toast.error('Failed to update report status');
     } finally {
       setProcessingAction(false);
@@ -603,7 +596,6 @@ const Reports: React.FC = () => {
       fetchReportData();
 
     } catch (error) {
-      console.error('Error deleting report:', error);
       toast.error('Failed to delete report');
     } finally {
       setProcessingAction(false);
@@ -659,7 +651,6 @@ const Reports: React.FC = () => {
       fetchReportData();
 
     } catch (error) {
-      console.error('Error adding task:', error);
       toast.error(getText('Failed to add report', 'Gagal menambah laporan'));
     } finally {
       setProcessingAction(false);
@@ -715,7 +706,6 @@ const Reports: React.FC = () => {
           .in('id', equipmentIds);
 
         if (equipmentError) {
-          console.error('Error updating equipment status:', equipmentError);
         }
       }
 
@@ -723,7 +713,6 @@ const Reports: React.FC = () => {
       fetchIssueReports();
       fetchReportData();
     } catch (error) {
-      console.error('Error assigning to technician:', error);
       toast.error(getText('Failed to assign report', 'Gagal menugaskan laporan'));
     } finally {
       setProcessingAction(false);
@@ -791,8 +780,9 @@ const Reports: React.FC = () => {
 
     const matchesStatus = statusFilter === 'all' || report.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || report.priority === priorityFilter;
+    const matchesRoom = roomFilter === 'all' || report.room_id === roomFilter || (report.location && rooms.find(r => r.id === roomFilter)?.name === report.location);
 
-    return matchesSearch && matchesStatus && matchesPriority;
+    return matchesSearch && matchesStatus && matchesPriority && matchesRoom;
   });
 
   if (profile?.role !== 'super_admin' && profile?.role !== 'department_admin') {
@@ -877,32 +867,146 @@ const Reports: React.FC = () => {
               />
             </div>
 
-            {/* Filters */}
-            <div className="flex gap-2">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">{getText("All Status", "Semua Status")}</option>
-                <option value="new">New</option>
-                <option value="under_review">Under Review</option>
-                <option value="in_progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-                <option value="closed">Closed</option>
-              </select>
+            {/* Searchable Filters */}
+            <div className="flex flex-wrap gap-2 items-center">
+              {/* Status Filter */}
+              <div className="min-w-[140px] w-40">
+                <Select
+                  value={{
+                    value: statusFilter,
+                    label: statusFilter === 'all' ? getText("All Status", "Semua Status") :
+                           statusFilter === 'new' ? 'New' :
+                           statusFilter === 'under_review' ? 'Under Review' :
+                           statusFilter === 'in_progress' ? 'In Progress' :
+                           statusFilter === 'resolved' ? 'Resolved' : 'Closed'
+                  }}
+                  onChange={(selectedOption: any) => setStatusFilter(selectedOption ? selectedOption.value : 'all')}
+                  options={[
+                    { value: 'all', label: getText("All Status", "Semua Status") },
+                    { value: 'new', label: 'New' },
+                    { value: 'under_review', label: 'Under Review' },
+                    { value: 'in_progress', label: 'In Progress' },
+                    { value: 'resolved', label: 'Resolved' },
+                    { value: 'closed', label: 'Closed' }
+                  ]}
+                  placeholder={getText("Status...", "Status...")}
+                  isSearchable
+                  isClearable={false}
+                  className="text-sm"
+                  styles={{
+                    control: (base, state) => ({
+                      ...base,
+                      borderColor: state.isFocused ? '#2563eb' : '#d1d5db',
+                      borderRadius: '0.5rem',
+                      minHeight: '38px',
+                      boxShadow: state.isFocused ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none',
+                      '&:hover': { borderColor: '#2563eb' }
+                    }),
+                    menu: (base) => ({ ...base, zIndex: 50 }),
+                    option: (base, state) => ({
+                      ...base,
+                      backgroundColor: state.isSelected ? '#2563eb' : state.isFocused ? '#eff6ff' : 'white',
+                      color: state.isSelected ? 'white' : '#374151',
+                      cursor: 'pointer'
+                    })
+                  }}
+                />
+              </div>
 
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">{getText("All Priority", "Semua Prioritas")}</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
+              {/* Priority Filter */}
+              <div className="min-w-[140px] w-40">
+                <Select
+                  value={{
+                    value: priorityFilter,
+                    label: priorityFilter === 'all' ? getText("All Priority", "Semua Prioritas") :
+                           priorityFilter === 'low' ? 'Low' :
+                           priorityFilter === 'medium' ? 'Medium' :
+                           priorityFilter === 'high' ? 'High' : 'Critical'
+                  }}
+                  onChange={(selectedOption: any) => setPriorityFilter(selectedOption ? selectedOption.value : 'all')}
+                  options={[
+                    { value: 'all', label: getText("All Priority", "Semua Prioritas") },
+                    { value: 'low', label: 'Low' },
+                    { value: 'medium', label: 'Medium' },
+                    { value: 'high', label: 'High' },
+                    { value: 'critical', label: 'Critical' }
+                  ]}
+                  placeholder={getText("Priority...", "Prioritas...")}
+                  isSearchable
+                  isClearable={false}
+                  className="text-sm"
+                  styles={{
+                    control: (base, state) => ({
+                      ...base,
+                      borderColor: state.isFocused ? '#2563eb' : '#d1d5db',
+                      borderRadius: '0.5rem',
+                      minHeight: '38px',
+                      boxShadow: state.isFocused ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none',
+                      '&:hover': { borderColor: '#2563eb' }
+                    }),
+                    menu: (base) => ({ ...base, zIndex: 50 }),
+                    option: (base, state) => ({
+                      ...base,
+                      backgroundColor: state.isSelected ? '#2563eb' : state.isFocused ? '#eff6ff' : 'white',
+                      color: state.isSelected ? 'white' : '#374151',
+                      cursor: 'pointer'
+                    })
+                  }}
+                />
+              </div>
+
+              {/* Room Filter */}
+              <div className="min-w-[180px] w-56">
+                <Select
+                  value={roomFilter === 'all' ? { value: 'all', label: getText('All Rooms', 'Semua Ruangan') } : {
+                    value: roomFilter,
+                    label: `${rooms.find(r => r.id === roomFilter)?.name || ''} (${rooms.find(r => r.id === roomFilter)?.code || ''})`
+                  }}
+                  onChange={(selectedOption: any) => setRoomFilter(selectedOption ? selectedOption.value : 'all')}
+                  options={[
+                    { value: 'all', label: getText('All Rooms', 'Semua Ruangan') },
+                    ...rooms.map(r => ({
+                      value: r.id,
+                      label: `${r.name} (${r.code})`
+                    }))
+                  ]}
+                  placeholder={getText('Filter room...', 'Filter ruangan...')}
+                  isSearchable
+                  isClearable={false}
+                  className="text-sm"
+                  styles={{
+                    control: (base, state) => ({
+                      ...base,
+                      borderColor: state.isFocused ? '#2563eb' : '#d1d5db',
+                      borderRadius: '0.5rem',
+                      minHeight: '38px',
+                      boxShadow: state.isFocused ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none',
+                      '&:hover': { borderColor: '#2563eb' }
+                    }),
+                    menu: (base) => ({ ...base, zIndex: 50 }),
+                    option: (base, state) => ({
+                      ...base,
+                      backgroundColor: state.isSelected ? '#2563eb' : state.isFocused ? '#eff6ff' : 'white',
+                      color: state.isSelected ? 'white' : '#374151',
+                      cursor: 'pointer'
+                    })
+                  }}
+                />
+              </div>
+
+              {/* Reset filter button if any filter is active */}
+              {(statusFilter !== 'all' || priorityFilter !== 'all' || roomFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setPriorityFilter('all');
+                    setRoomFilter('all');
+                  }}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg border border-blue-200 transition-colors"
+                >
+                  {getText('Reset', 'Atur Ulang')}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1860,18 +1964,44 @@ const Reports: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {getText('Select Technician', 'Pilih Teknisi')}
                   </label>
-                  <select
-                    value={selectedTechnicianId}
-                    onChange={(e) => setSelectedTechnicianId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value="">{getText('Choose technician...', 'Pilih teknisi...')}</option>
-                    {technicians.map((tech) => (
-                      <option key={tech.id} value={tech.id}>
-                        {tech.full_name}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={selectedTechnicianId ? {
+                      value: selectedTechnicianId,
+                      label: technicians.find(t => t.id === selectedTechnicianId)?.full_name || ''
+                    } : null}
+                    onChange={(selectedOption: any) => setSelectedTechnicianId(selectedOption ? selectedOption.value : '')}
+                    options={technicians.map((tech) => ({
+                      value: tech.id,
+                      label: tech.full_name
+                    }))}
+                    placeholder={getText('Search or choose technician...', 'Cari / pilih teknisi...')}
+                    isSearchable
+                    isClearable
+                    className="text-sm"
+                    styles={{
+                      control: (base, state) => ({
+                        ...base,
+                        borderColor: state.isFocused ? '#9333ea' : '#d1d5db',
+                        borderRadius: '0.5rem',
+                        boxShadow: state.isFocused ? '0 0 0 2px rgba(147, 51, 234, 0.2)' : 'none',
+                        '&:hover': {
+                          borderColor: '#9333ea'
+                        }
+                      }),
+                      menu: (base) => ({
+                        ...base,
+                        zIndex: 50,
+                        borderRadius: '0.5rem',
+                        overflow: 'hidden'
+                      }),
+                      option: (base, state) => ({
+                        ...base,
+                        backgroundColor: state.isSelected ? '#9333ea' : state.isFocused ? '#f3e8ff' : 'white',
+                        color: state.isSelected ? 'white' : '#374151',
+                        cursor: 'pointer'
+                      })
+                    }}
+                  />
                 </div>
 
                 <div className="pt-4 flex space-x-3">

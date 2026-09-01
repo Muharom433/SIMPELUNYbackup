@@ -26,14 +26,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function run() {
-  const sqlPath = path.join(__dirname, 'supabase', 'migrations', '20260707_fix_equipment_mutations_complete.sql');
+  const sqlPath = path.join(__dirname, 'supabase', 'migrations', '20260813_add_pangkat_alamat_to_users.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
 
   console.log('Executing migration on:', supabaseUrl);
   console.log('Query length:', sql.length, 'chars');
 
   // Try using RPC if it exists
-  const { data, error } = await supabase.rpc('exec_sql', { query: sql });
+  const { data, error } = await supabase.rpc('exec_sql', { sql_query: sql });
 
   if (error) {
     console.error('Migration failed via exec_sql RPC:', error);

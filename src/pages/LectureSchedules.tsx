@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -459,7 +459,6 @@ const LectureSchedules: React.FC = () => {
         if (error) throw error;
         setLecturers(data || []);
       } catch (err) {
-        console.error('Error fetching lecturers:', err);
       }
     };
 
@@ -473,7 +472,6 @@ const LectureSchedules: React.FC = () => {
         if (error) throw error;
         setDepartments(data || []);
       } catch (err) {
-        console.error('Error fetching departments:', err);
       }
     };
 
@@ -487,7 +485,6 @@ const LectureSchedules: React.FC = () => {
         if (error) throw error;
         setStudyPrograms(data || []);
       } catch (err) {
-        console.error('Error fetching study programs:', err);
       }
     };
 
@@ -609,7 +606,6 @@ const LectureSchedules: React.FC = () => {
   // Fetch schedule stats when profile is loaded (for super_admin only)
   useEffect(() => {
     if (profile?.role === 'super_admin') {
-      console.log('Fetching schedule stats for super_admin...');
       fetchScheduleStats();
     }
   }, [profile?.role]);
@@ -635,7 +631,6 @@ const LectureSchedules: React.FC = () => {
       if (error) throw error;
       setRooms(data || []);
     } catch (error: any) {
-      console.error('Error fetching rooms:', error);
       alert.error(error.message || 'Failed to load rooms');
     }
   };
@@ -649,8 +644,6 @@ const LectureSchedules: React.FC = () => {
 
       if (error) throw error;
 
-      console.log('Raw schedule data for stats:', data);
-      console.log('Total rows:', data?.length);
 
       const counts: Record<string, number> = {};
       data?.forEach((row: { day: string | null }) => {
@@ -660,11 +653,9 @@ const LectureSchedules: React.FC = () => {
         }
       });
 
-      console.log('Day counts:', counts);
       setStatsMap(counts);
 
     } catch (error) {
-      console.error("Error fetching stats:", error);
     }
   };
 
@@ -720,7 +711,6 @@ const LectureSchedules: React.FC = () => {
       setTotalSchedules(count || 0);
 
     } catch (error: any) {
-      console.error('Error fetching schedules:', error);
       alert.error(error.message || 'Failed to load lecture schedules');
     } finally {
       setLoading(false);
@@ -736,7 +726,6 @@ const LectureSchedules: React.FC = () => {
       if (error) throw error;
       setRescheduleRequests(data || []);
     } catch (error: any) {
-      console.error('Error fetching reschedule requests:', error);
     }
   };
 
@@ -794,7 +783,6 @@ const LectureSchedules: React.FC = () => {
       form.reset();
       fetchSchedules();
     } catch (error: any) {
-      console.error('Error saving schedule:', error);
       alert.error(error.message || 'Failed to save schedule');
     } finally {
       setLoading(false);
@@ -825,7 +813,6 @@ const LectureSchedules: React.FC = () => {
       rescheduleForm.reset();
       fetchRescheduleRequests();
     } catch (error: any) {
-      console.error('Error submitting reschedule request:', error);
       alert.error(error.message || 'Failed to submit reschedule request');
     } finally {
       setLoading(false);
@@ -870,7 +857,6 @@ const LectureSchedules: React.FC = () => {
       setShowDeleteConfirm(null);
       fetchSchedules();
     } catch (error: any) {
-      console.error('Error deleting schedule:', error);
       alert.error(error.message || 'Failed to delete schedule');
     } finally {
       setLoading(false);
@@ -896,7 +882,6 @@ const LectureSchedules: React.FC = () => {
       setShowDeleteAllConfirm(false);
       fetchSchedules();
     } catch (error: any) {
-      console.error('Error deleting all schedules:', error);
       alert.error(error.message || getText('Failed to delete all schedules', 'Gagal menghapus semua jadwal'));
     } finally {
       setLoading(false);
@@ -924,7 +909,6 @@ const LectureSchedules: React.FC = () => {
       ));
       fetchRescheduleRequests();
     } catch (error: any) {
-      console.error('Error processing reschedule request:', error);
       alert.error(error.message || 'Failed to process reschedule request');
     } finally {
       setLoading(false);
@@ -988,7 +972,6 @@ const LectureSchedules: React.FC = () => {
       setLecturerMappings({});
 
     } catch (error: any) {
-      console.error('Error analyzing unmatched data:', error);
       alert.error(getText('Failed to analyze data', 'Gagal menganalisis data'));
     } finally {
       setMatchingLoading(false);
@@ -1016,7 +999,6 @@ const LectureSchedules: React.FC = () => {
       fetchSchedules();
 
     } catch (error: any) {
-      console.error('Error updating rooms:', error);
       alert.error(error.message || getText('Failed to update rooms', 'Gagal memperbarui ruangan'));
     } finally {
       setMatchingLoading(false);
@@ -1071,7 +1053,6 @@ const LectureSchedules: React.FC = () => {
       await analyzeUnmatchedData();
 
     } catch (error: any) {
-      console.error('Error updating lecturer:', error);
       alert.error(error.message || getText('Failed to update lecturer', 'Gagal memperbarui dosen'));
     } finally {
       setMatchingLoading(false);
@@ -1112,7 +1093,6 @@ const LectureSchedules: React.FC = () => {
       fetchSchedules();
 
     } catch (error: any) {
-      console.error('Error batch updating rooms:', error);
       alert.error(error.message || getText('Failed to update rooms', 'Gagal memperbarui ruangan'));
     } finally {
       setMatchingLoading(false);
@@ -1178,7 +1158,6 @@ const LectureSchedules: React.FC = () => {
       await analyzeUnmatchedData();
 
     } catch (error: any) {
-      console.error('Error batch updating lecturers:', error);
       alert.error(error.message || getText('Failed to update lecturers', 'Gagal memperbarui dosen'));
     } finally {
       setMatchingLoading(false);
@@ -1232,7 +1211,6 @@ const LectureSchedules: React.FC = () => {
       setNewScheduleIds(new Set());
 
     } catch (error: any) {
-      console.error('Error confirming edits:', error);
       alert.error(error.message || getText('Failed to confirm edits', 'Gagal mengkonfirmasi perubahan'));
     } finally {
       setMatchingLoading(false);
@@ -1250,7 +1228,7 @@ const LectureSchedules: React.FC = () => {
       setLoadingLecturerSchedules(true);
       const { data, error } = await supabase
         .from('lecture_schedules')
-        .select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, lecturer_user_id, status')
+        .select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, lecturer_user_id')
         .eq('lecturer', lecturerName)
         .order('day', { ascending: true })
         .order('start_time', { ascending: true });
@@ -1258,7 +1236,6 @@ const LectureSchedules: React.FC = () => {
       if (error) throw error;
       setLecturerSchedules(data || []);
     } catch (error: any) {
-      console.error('Error fetching lecturer schedules:', error);
       setLecturerSchedules([]);
     } finally {
       setLoadingLecturerSchedules(false);
@@ -1323,7 +1300,6 @@ const LectureSchedules: React.FC = () => {
       await analyzeUnmatchedData();
 
     } catch (error: any) {
-      console.error('Error adding new user:', error);
       alert.error(error.message || getText('Failed to add user', 'Gagal menambahkan user'));
     } finally {
       setMatchingLoading(false);
@@ -1383,7 +1359,6 @@ const LectureSchedules: React.FC = () => {
       setScheduleToDuplicate(null);
       fetchSchedules();
     } catch (error: any) {
-      console.error('Error duplicating schedule:', error);
       alert.error(error.message || getText('Failed to duplicate schedule', 'Gagal menduplikat jadwal'));
     } finally {
       setLoading(false);
@@ -1500,7 +1475,6 @@ const LectureSchedules: React.FC = () => {
       ));
 
     } catch (error) {
-      console.error('Error generating PDF:', error);
       alert.error(getText('Failed to generate PDF', 'Gagal membuat PDF'));
     }
   };
@@ -1510,7 +1484,7 @@ const LectureSchedules: React.FC = () => {
     const toastId = toast.loading('Menyiapkan PDF jadwal kuliah...');
     try {
       // Fetch ALL schedules for the current filter (no pagination)
-      let query = supabase.from('lecture_schedules').select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study, status');
+      let query = supabase.from('lecture_schedules').select('id, day, start_time, end_time, course_name, course_code, class, room, lecturer, semester, academics_year, type, subject_study');
 
       if (debouncedSearchTerm) {
         const escapedTerm = debouncedSearchTerm
@@ -1657,7 +1631,6 @@ const LectureSchedules: React.FC = () => {
       doc.save(`JadwalKuliah${roomLabel}${dayLabel}_${new Date().toISOString().split('T')[0]}.pdf`);
       toast.success(`PDF berhasil dibuat! (${allSchedules.length} jadwal)`, { id: toastId });
     } catch (error: any) {
-      console.error('Error generating schedule PDF:', error);
       toast.error('Gagal membuat PDF: ' + (error.message || 'Unknown error'), { id: toastId });
     }
   };

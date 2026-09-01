@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Calendar,
     Clock,
@@ -190,7 +190,6 @@ const ScheduleCalendar: React.FC = () => {
             setRooms(roomsData || []);
 
         } catch (error) {
-            console.error('Error fetching data:', error);
         } finally {
             setLoading(false);
         }

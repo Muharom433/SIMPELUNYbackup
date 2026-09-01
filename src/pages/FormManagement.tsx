@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     FileText,
     Plus,
@@ -94,7 +94,6 @@ const FormManagement: React.FC = () => {
 
             setForms(formsWithCounts);
         } catch (error: any) {
-            console.error('Error fetching forms:', error);
             toast.error(getText('Failed to load forms', 'Gagal memuat formulir'));
         } finally {
             setLoading(false);
@@ -145,7 +144,6 @@ const FormManagement: React.FC = () => {
                     : getText('Form deactivated', 'Formulir dinonaktifkan')
             );
         } catch (error: any) {
-            console.error('Error toggling form status:', error);
             toast.error(getText('Failed to update form', 'Gagal memperbarui formulir'));
         } finally {
             setProcessingId(null);
@@ -165,7 +163,6 @@ const FormManagement: React.FC = () => {
             setShowDeleteConfirm(null);
             toast.success(getText('Form deleted', 'Formulir dihapus'));
         } catch (error: any) {
-            console.error('Error deleting form:', error);
             toast.error(getText('Failed to delete form', 'Gagal menghapus formulir'));
         } finally {
             setProcessingId(null);
@@ -216,7 +213,6 @@ const FormManagement: React.FC = () => {
             toast.success(getText('Form duplicated', 'Formulir diduplikasi'));
             fetchForms();
         } catch (error: any) {
-            console.error('Error duplicating form:', error);
             toast.error(getText('Failed to duplicate form', 'Gagal menduplikasi formulir'));
         } finally {
             setProcessingId(null);

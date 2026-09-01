@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+﻿import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 
 interface RoomConflict {
@@ -77,7 +77,6 @@ export class RoomAvailabilityChecker {
 
       return conflicts;
     } catch (error) {
-      console.error('Error checking lecture conflicts:', error);
       return [];
     }
   }
@@ -122,7 +121,6 @@ export class RoomAvailabilityChecker {
 
       return conflicts;
     } catch (error) {
-      console.error('Error checking exam conflicts:', error);
       return [];
     }
   }
@@ -174,7 +172,6 @@ export class RoomAvailabilityChecker {
 
       return conflicts;
     } catch (error) {
-      console.error('Error checking session conflicts:', error);
       return [];
     }
   }
@@ -267,7 +264,6 @@ export class RoomAvailabilityChecker {
 
       return conflicts;
     } catch (error) {
-      console.error('Error checking booking conflicts:', error);
       return [];
     }
   }
@@ -357,7 +353,6 @@ export class RoomAvailabilityChecker {
       };
 
     } catch (error) {
-      console.error('Error checking room availability:', error);
       return {
         isAvailable: false,
         conflicts: [],

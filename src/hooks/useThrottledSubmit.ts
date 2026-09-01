@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+﻿import { useState, useCallback, useRef } from 'react';
 
 /**
  * Hook to throttle form submissions to prevent double-clicks/spam.
@@ -13,7 +13,6 @@ export const useThrottledSubmit = (delay = 2000) => {
         const now = Date.now();
 
         if (now - lastRun.current < delay) {
-            console.warn('⚠️ Submission throttled (spam prevention)');
             return;
         }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Package,
   Search,
@@ -278,7 +278,6 @@ const CheckoutValidation: React.FC = () => {
 
       setCheckouts(filteredCheckouts);
     } catch (error) {
-      console.error('Error fetching checkouts:', error);
       toast.error('Failed to load checkouts');
     } finally {
       setLoading(false);
@@ -307,7 +306,6 @@ const CheckoutValidation: React.FC = () => {
         setShowDetailModal(false);
       }
     } catch (error: any) {
-      console.error('Error approving checkout:', error);
       toast.error(error.message || 'Failed to approve checkout');
     } finally {
       setProcessingIds(prev => {
@@ -360,7 +358,6 @@ const CheckoutValidation: React.FC = () => {
         setShowDetailModal(false);
       }
     } catch (error: any) {
-      console.error('Error deleting checkout:', error);
       toast.error(error.message || 'Failed to delete checkout');
     } finally {
       setProcessingIds(prev => {
@@ -413,7 +410,6 @@ const CheckoutValidation: React.FC = () => {
       fetchCheckouts();
 
     } catch (error: any) {
-      console.error('Error adding violation:', error);
       toast.error(error.message || 'Failed to add violation');
     } finally {
       if (selectedCheckout) {

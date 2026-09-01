@@ -15,7 +15,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.equipment_mutations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    equipment_id UUID NOT NULL REFERENCES public.equipment(id) ON DELETE CASCADE,
+    equipment_id UUID REFERENCES public.equipment(id) ON DELETE CASCADE,
     previous_room_id UUID REFERENCES public.rooms(id) ON DELETE SET NULL,
     new_room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
     pic_name TEXT NOT NULL,
@@ -90,10 +90,16 @@ CREATE POLICY "em_insert_anon"
     FOR INSERT TO anon
     WITH CHECK (true);
 
--- UPDATE: hanya authenticated users
+-- UPDATE: authenticated & anon users
 CREATE POLICY "em_update_authenticated"
     ON public.equipment_mutations
     FOR UPDATE TO authenticated
+    USING (true)
+    WITH CHECK (true);
+
+CREATE POLICY "em_update_anon"
+    ON public.equipment_mutations
+    FOR UPDATE TO anon
     USING (true)
     WITH CHECK (true);
 
@@ -114,7 +120,7 @@ CREATE POLICY "em_delete_admin"
 -- ============================================================
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT SELECT, INSERT ON public.equipment_mutations TO anon;
+GRANT SELECT, INSERT, UPDATE ON public.equipment_mutations TO anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.equipment_mutations TO authenticated;
 
 -- ============================================================

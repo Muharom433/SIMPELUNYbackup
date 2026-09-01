@@ -1,4 +1,4 @@
-/**
+﻿/**
  * queryUtils.ts
  * ─────────────────────────────────────────────────────────────────
  * Utilities untuk menangani bulk data fetch secara aman:
@@ -81,10 +81,6 @@ export async function withRetry<T>(
 
             if (onRetry) onRetry(attempt + 1, error);
 
-            console.warn(
-                `[QueryUtils] Retry ${attempt + 1}/${maxRetries} setelah ${delay}ms.`,
-                isTimeout ? '(Timeout)' : '(Network Error)'
-            );
 
             await sleep(delay);
         }
