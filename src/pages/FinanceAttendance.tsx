@@ -1095,12 +1095,57 @@ const FinanceAttendance: React.FC = () => {
     const generateLPJPDF = async (type: 'homebase' | 'non_homebase', selectedDate: string) => {
         console.log(`Starting generateLPJPDF for ${type} on ${selectedDate}`);
         try {
-            const recordsForDate = attendanceRecords.filter(r =>
-                r.verification_status === 'verified' &&
-                r.attendance_date === selectedDate
-            );
+            // ─── FETCH LANGSUNG DARI DB (BUKAN dari attendanceRecords state) ────────
+            // attendanceRecords di state bisa terfilter oleh statusFilter UI (misal: 'pending'),
+            // sehingga data 'verified' tidak akan muncul di state.
+            // Solusi: selalu fetch fresh dari DB dengan filter verified + tanggal yang dipilih.
+            toast.loading('Memuat data LPJ...', { id: 'lpj-loading' });
 
-            console.log(`Found ${recordsForDate.length} verified records for date ${selectedDate}`);
+            const { data: rawRecordsForDate, error: fetchError } = await supabase
+                .from('lecturer_attendance')
+                .select(`
+                    id,
+                    lecturer_user_id,
+                    lecturer_name,
+                    attendance_date,
+                    attendance_time,
+                    purpose,
+                    purpose_description,
+                    verification_status,
+                    is_included_in_recap,
+                    study_program_id,
+                    scanned_room_id,
+                    additional_notes,
+                    study_program:study_programs(id, name),
+                    scanned_room:rooms(id, name, building:building(id, name, campus_id))
+                `)
+                .eq('verification_status', 'verified')
+                .eq('attendance_date', selectedDate)
+                .order('attendance_time', { ascending: true });
+
+            toast.dismiss('lpj-loading');
+
+            if (fetchError) throw fetchError;
+
+            // Enrich dengan is_homebase dari tabel users
+            const lecturerIds = [...new Set((rawRecordsForDate || []).map((r: any) => r.lecturer_user_id).filter(Boolean))];
+            let homebaseMap: Record<string, boolean> = {};
+            if (lecturerIds.length > 0) {
+                const { data: usersData } = await supabase
+                    .from('users')
+                    .select('id, is_homebase')
+                    .in('id', lecturerIds);
+                if (usersData) {
+                    usersData.forEach((u: any) => { homebaseMap[u.id] = u.is_homebase ?? true; });
+                }
+            }
+
+            const recordsForDate = (rawRecordsForDate || []).map((r: any) => ({
+                ...r,
+                is_homebase: homebaseMap[r.lecturer_user_id] ?? true,
+            })) as AttendanceRecord[];
+
+            console.log(`Found ${recordsForDate.length} verified records for date ${selectedDate} (fetched directly from DB)`);
 
             if (recordsForDate.length === 0) {
                 toast.error(`Tidak ada data terverifikasi untuk tanggal ${format(new Date(selectedDate), 'd MMMM yyyy', { locale: localeId })}`);
