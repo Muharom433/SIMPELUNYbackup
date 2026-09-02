@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Package, History, Copy, CheckCircle, Clock, MapPin, ArrowRight, User, Plus, Phone, AlertTriangle, RefreshCw, Pencil, Trash2, X, Download, Filter, Search, ChevronDown, Check, Tag, Building, DoorClosed, Info } from 'lucide-react';
@@ -142,6 +142,7 @@ const ItemHistory = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [buildingFilter, setBuildingFilter] = useState<{id: string, name: string} | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const uniqueBuildings = React.useMemo(() => {
     const buildingsMap = new Map<string, {id: string, name: string}>();
@@ -159,10 +160,25 @@ const ItemHistory = () => {
   }, [history]);
 
   const filteredHistory = history.filter(item => {
-    if (!buildingFilter) return true;
-    const prevBuilding = (item.previous_room as any)?.building?.name || (item.previous_room as any)?.building_id?.name;
-    const newBuilding = (item.new_room as any)?.building?.name || (item.new_room as any)?.building_id?.name;
-    return prevBuilding === buildingFilter.name || newBuilding === buildingFilter.name;
+    let matchBuilding = true;
+    if (buildingFilter) {
+      const prevBuilding = (item.previous_room as any)?.building?.name || (item.previous_room as any)?.building_id?.name;
+      const newBuilding = (item.new_room as any)?.building?.name || (item.new_room as any)?.building_id?.name;
+      matchBuilding = prevBuilding === buildingFilter.name || newBuilding === buildingFilter.name;
+    }
+
+    let matchSearch = true;
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      const mutationCode = `mut-${item.id.substring(0, 8).toLowerCase()}`;
+      matchSearch = 
+        mutationCode.includes(search) || 
+        (item.equipment?.name || '').toLowerCase().includes(search) ||
+        (item.equipment?.code || '').toLowerCase().includes(search) ||
+        (item.pic_name || '').toLowerCase().includes(search);
+    }
+
+    return matchBuilding && matchSearch;
   });
 
   const sortedHistory = [...filteredHistory].sort((a, b) => {
@@ -179,6 +195,7 @@ const ItemHistory = () => {
 
     const exportData = sortedHistory.map((item, index) => ({
       'No': index + 1,
+      'Kode Mutasi': `MUT-${item.id.substring(0, 8).toUpperCase()}`,
       'Waktu': formatDate(item.created_at),
       'Nama Barang': item.equipment?.name || 'Barang Tidak Diketahui',
       'Kode Barang': item.equipment?.code || '-',
@@ -194,14 +211,15 @@ const ItemHistory = () => {
     // Mengatur lebar kolom agar lebih rapi
     worksheet['!cols'] = [
       { wch: 5 },  // A: No
-      { wch: 20 }, // B: Waktu
-      { wch: 35 }, // C: Nama Barang
-      { wch: 25 }, // D: Kode Barang
-      { wch: 25 }, // E: Dari Ruangan
-      { wch: 25 }, // F: Ke Ruangan
-      { wch: 25 }, // G: Penanggung Jawab
-      { wch: 15 }, // H: No. HP
-      { wch: 45 }  // I: Catatan
+      { wch: 15 }, // B: Kode Mutasi
+      { wch: 20 }, // C: Waktu
+      { wch: 35 }, // D: Nama Barang
+      { wch: 25 }, // E: Kode Barang
+      { wch: 25 }, // F: Dari Ruangan
+      { wch: 25 }, // G: Ke Ruangan
+      { wch: 25 }, // H: Penanggung Jawab
+      { wch: 15 }, // I: No. HP
+      { wch: 45 }  // J: Catatan
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -701,6 +719,16 @@ NOTIFY pgrst, 'reload schema';`}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
         <div className="flex-1"></div>
         <div className="flex flex-wrap items-center gap-3">
+          <div className="relative w-full sm:w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder={getText('Search code or item...', 'Cari kode atau barang...')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2.5 h-[42px] bg-white border border-gray-300 rounded-lg shadow-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+            />
+          </div>
           <div className="w-full sm:w-[220px]">
             <DropdownSearch
                 items={uniqueBuildings}
@@ -793,6 +821,22 @@ NOTIFY pgrst, 'reload schema';`}
                           </div>
                           <div className={`text-xs ${record.equipment ? 'text-gray-500' : 'text-amber-500 italic'}`}>
                             {record.equipment?.code || getText('Not registered', 'Tidak terdaftar')}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <Tag className="h-3 w-3 text-emerald-600" />
+                            <span className="text-xs font-mono font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              MUT-{record.id.substring(0, 8).toUpperCase()}
+                            </span>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(`MUT-${record.id.substring(0, 8).toUpperCase()}`);
+                                toast.success(getText('Mutation code copied!', 'Kode mutasi tersalin!'));
+                              }}
+                              className="p-1 hover:bg-emerald-100 rounded text-emerald-600 transition-colors"
+                              title={getText('Copy code', 'Salin kode')}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
                           </div>
                         </div>
                       </div>
