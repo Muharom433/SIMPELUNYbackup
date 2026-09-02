@@ -395,7 +395,7 @@ const ValidationQueue: React.FC = () => {
         return items;
     }, [allEquipment]);
 
-    // ⭐⭐ BUILD VERIFICATION ITEMS - ASYNC (untuk modal detail, fetch nama equipment yang belum di-cache)
+    // ⭐⭐ BUILD VERIFICATION ITEMS - ASYNC (untuk modal detail, selalu fetch fresh dari DB)
     const buildVerificationItemsAsync = useCallback(async (checkout: CheckoutWithDetails): Promise<VerificationItem[]> => {
         const items: VerificationItem[] = [];
 
@@ -404,28 +404,46 @@ const ValidationQueue: React.FC = () => {
         const checkoutItem = checkout.checkout_items[0];
         if (!checkoutItem.equipment_requested || !checkoutItem.equipment_quantities) return [];
 
-        // Cari equipment_id yang belum ada di cache lokal
+        // ─── Selalu fetch SEMUA equipment yang dibutuhkan langsung dari DB ────────
+        // Tidak bergantung pada cache allEquipment yang mungkin belum ready
+        // (race condition di production: allEquipment masih [] saat modal dibuka pertama kali)
+        let freshEquipment: Equipment[] = allEquipment.filter(
+            e => checkoutItem.equipment_requested.includes(e.id)
+        );
+        const cachedIds = freshEquipment.map(e => e.id);
         const missingIds = checkoutItem.equipment_requested.filter(
-            eqId => !allEquipment.find(e => e.id === eqId)
+            eqId => !cachedIds.includes(eqId)
         );
 
-        let extraEquipment: Equipment[] = [];
         if (missingIds.length > 0) {
             try {
                 const { data } = await supabase
                     .from('equipment')
                     .select('id, name, code, category, quantity, unit, is_mandatory')
                     .in('id', missingIds);
-                extraEquipment = data || [];
+                if (data && data.length > 0) {
+                    freshEquipment = [...freshEquipment, ...data];
+                }
             } catch {
                 // fallback ke ID jika fetch gagal
             }
         }
 
-        const allKnownEquipment = [...allEquipment, ...extraEquipment];
+        // Jika semua equipment masih tidak ditemukan (edge case), fetch semua sekaligus
+        if (freshEquipment.length === 0 && checkoutItem.equipment_requested.length > 0) {
+            try {
+                const { data } = await supabase
+                    .from('equipment')
+                    .select('id, name, code, category, quantity, unit, is_mandatory')
+                    .in('id', checkoutItem.equipment_requested);
+                freshEquipment = data || [];
+            } catch {
+                // fallback ke ID
+            }
+        }
 
         checkoutItem.equipment_requested.forEach((eqId, index) => {
-            const equipment = allKnownEquipment.find(e => e.id === eqId);
+            const equipment = freshEquipment.find(e => e.id === eqId);
             const borrowedQty = Number(checkoutItem.equipment_quantities[index]) || 1;
 
             let alreadyReturned = 0;
@@ -440,8 +458,8 @@ const ValidationQueue: React.FC = () => {
 
             items.push({
                 equipment_id: eqId,
-                equipment_name: equipment?.name || eqId,
-                equipment_code: equipment?.code,
+                equipment_name: equipment?.name || `Equipment ${eqId.substring(0, 8)}`,
+                equipment_code: equipment?.code || undefined,
                 equipment_unit: equipment?.unit || 'pcs',
                 borrowed_quantity: borrowedQty,
                 returned_quantity: gap > 0 ? gap : 0,
@@ -1015,8 +1033,13 @@ const ValidationQueue: React.FC = () => {
     // ===== EFFECTS =====
     useEffect(() => {
         if (profile) {
-            fetchAllEquipment();
-            fetchCheckouts();
+            // ⚠️ await fetchAllEquipment terlebih dahulu agar cache equipment
+            // sudah terisi sebelum fetchCheckouts & buildVerificationItems dijalankan.
+            // Tanpa ini, di production (koneksi lambat) terjadi race condition:
+            // allEquipment masih [] saat modal dibuka → nama tampil sebagai raw UUID.
+            fetchAllEquipment().then(() => {
+                fetchCheckouts();
+            });
         }
     }, [profile, fetchCheckouts]);
 
