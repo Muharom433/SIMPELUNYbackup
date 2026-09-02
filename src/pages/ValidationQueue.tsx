@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Bell, CheckCircle, XCircle, AlertTriangle, User, Building, Calendar,
     Timer, Eye, Check, X, RefreshCw, Filter, Search, FileText, Package,
@@ -355,62 +355,102 @@ const ValidationQueue: React.FC = () => {
         }
     };
 
-    // ⭐⭐ BUILD VERIFICATION ITEMS - DARI CHECKOUT_ITEMS ARRAYS
+    // ⭐⭐ BUILD VERIFICATION ITEMS - SYNC (untuk render list kartu)
     const buildVerificationItems = useCallback((checkout: CheckoutWithDetails): VerificationItem[] => {
         const items: VerificationItem[] = [];
 
-        // ⭐⭐ WAJIB DARI CHECKOUT_ITEMS
-        if (!checkout.checkout_items || checkout.checkout_items.length === 0) {
-            return [];
-        }
+        if (!checkout.checkout_items || checkout.checkout_items.length === 0) return [];
 
-        // ⭐ Ambil checkout_item pertama (biasanya hanya ada 1 record per checkout)
         const checkoutItem = checkout.checkout_items[0];
+        if (!checkoutItem.equipment_requested || !checkoutItem.equipment_quantities) return [];
 
-        if (!checkoutItem.equipment_requested || !checkoutItem.equipment_quantities) {
-            return [];
-        }
-
-        // ⭐ Loop langsung tanpa grouping (supaya angka tidak dijumlahkan)
         checkoutItem.equipment_requested.forEach((eqId, index) => {
             const equipment = allEquipment.find(e => e.id === eqId);
-
-            // ⭐⭐ PENTING: Konversi eksplisit ke NUMBER untuk hindari string concatenation
             const borrowedQty = Number(checkoutItem.equipment_quantities[index]) || 1;
 
-
-
-            // ⭐⭐ LOGIKA BARU: Cari sudah kembali dari quantities_back (bukan equipment_back)
-            // quantities_back = total kumulatif yang sudah dikembalikan
             let alreadyReturned = 0;
             if (checkoutItem.equipment_back && checkoutItem.quantities_back) {
                 const backIndex = checkoutItem.equipment_back.indexOf(eqId);
                 if (backIndex !== -1) {
-                    // ⭐⭐ Konversi eksplisit ke NUMBER
                     alreadyReturned = Number(checkoutItem.quantities_back[backIndex]) || 0;
-
                 }
             }
 
-            // ⭐⭐ GAP = dipinjam - sudah kembali
             const gap = borrowedQty - alreadyReturned;
-
-
 
             items.push({
                 equipment_id: eqId,
-                equipment_name: equipment?.name || `Equipment ${eqId.slice(0, 8)}`,
+                equipment_name: equipment?.name || eqId,
                 equipment_code: equipment?.code,
                 equipment_unit: equipment?.unit || 'pcs',
-                borrowed_quantity: borrowedQty, // ⭐ Total dipinjam
-                returned_quantity: gap > 0 ? gap : 0, // ⭐ Default input admin = sisa gap
-                previously_returned: alreadyReturned, // ⭐ Sudah kembali (dari quantities_back)
+                borrowed_quantity: borrowedQty,
+                returned_quantity: gap > 0 ? gap : 0,
+                previously_returned: alreadyReturned,
                 is_verified: false,
                 condition_notes: '',
                 is_mandatory: equipment?.is_mandatory || false
             });
         });
 
+        return items;
+    }, [allEquipment]);
+
+    // ⭐⭐ BUILD VERIFICATION ITEMS - ASYNC (untuk modal detail, fetch nama equipment yang belum di-cache)
+    const buildVerificationItemsAsync = useCallback(async (checkout: CheckoutWithDetails): Promise<VerificationItem[]> => {
+        const items: VerificationItem[] = [];
+
+        if (!checkout.checkout_items || checkout.checkout_items.length === 0) return [];
+
+        const checkoutItem = checkout.checkout_items[0];
+        if (!checkoutItem.equipment_requested || !checkoutItem.equipment_quantities) return [];
+
+        // Cari equipment_id yang belum ada di cache lokal
+        const missingIds = checkoutItem.equipment_requested.filter(
+            eqId => !allEquipment.find(e => e.id === eqId)
+        );
+
+        let extraEquipment: Equipment[] = [];
+        if (missingIds.length > 0) {
+            try {
+                const { data } = await supabase
+                    .from('equipment')
+                    .select('id, name, code, category, quantity, unit, is_mandatory')
+                    .in('id', missingIds);
+                extraEquipment = data || [];
+            } catch {
+                // fallback ke ID jika fetch gagal
+            }
+        }
+
+        const allKnownEquipment = [...allEquipment, ...extraEquipment];
+
+        checkoutItem.equipment_requested.forEach((eqId, index) => {
+            const equipment = allKnownEquipment.find(e => e.id === eqId);
+            const borrowedQty = Number(checkoutItem.equipment_quantities[index]) || 1;
+
+            let alreadyReturned = 0;
+            if (checkoutItem.equipment_back && checkoutItem.quantities_back) {
+                const backIndex = checkoutItem.equipment_back.indexOf(eqId);
+                if (backIndex !== -1) {
+                    alreadyReturned = Number(checkoutItem.quantities_back[backIndex]) || 0;
+                }
+            }
+
+            const gap = borrowedQty - alreadyReturned;
+
+            items.push({
+                equipment_id: eqId,
+                equipment_name: equipment?.name || eqId,
+                equipment_code: equipment?.code,
+                equipment_unit: equipment?.unit || 'pcs',
+                borrowed_quantity: borrowedQty,
+                returned_quantity: gap > 0 ? gap : 0,
+                previously_returned: alreadyReturned,
+                is_verified: false,
+                condition_notes: '',
+                is_mandatory: equipment?.is_mandatory || false
+            });
+        });
 
         return items;
     }, [allEquipment]);
@@ -981,11 +1021,13 @@ const ValidationQueue: React.FC = () => {
     }, [profile, fetchCheckouts]);
 
     useEffect(() => {
-        if (selectedCheckout && allEquipment.length > 0) {
-            const items = buildVerificationItems(selectedCheckout);
-            setVerificationItems(items);
+        if (selectedCheckout) {
+            // Gunakan versi async agar nama equipment yang belum di-cache bisa di-fetch
+            buildVerificationItemsAsync(selectedCheckout).then(items => {
+                setVerificationItems(items);
+            });
         }
-    }, [selectedCheckout, allEquipment, buildVerificationItems]);
+    }, [selectedCheckout, allEquipment, buildVerificationItemsAsync]);
 
     // ===== FILTERS =====
     const filteredCheckouts = useMemo(() => {
