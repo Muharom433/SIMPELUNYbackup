@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
@@ -1077,7 +1077,6 @@ const FinanceAttendance: React.FC = () => {
             // Solusi: selalu fetch fresh dari DB dengan filter verified + tanggal yang dipilih.
             toast.loading('Memuat data LPJ...', { id: 'lpj-loading' });
 
-<<<<<<< HEAD
             const { data: rawRecordsForDate, error: fetchError } = await supabase
                 .from('lecturer_attendance')
                 .select(`
@@ -1123,8 +1122,6 @@ const FinanceAttendance: React.FC = () => {
             })) as AttendanceRecord[];
 
             console.log(`Found ${recordsForDate.length} verified records for date ${selectedDate} (fetched directly from DB)`);
-=======
->>>>>>> 1bd28b103c93451d54c0db4a9ffcca926dc788aa
 
             if (recordsForDate.length === 0) {
                 toast.error(`Tidak ada data terverifikasi untuk tanggal ${format(new Date(selectedDate), 'd MMMM yyyy', { locale: localeId })}`);
