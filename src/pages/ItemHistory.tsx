@@ -762,6 +762,9 @@ NOTIFY pgrst, 'reload schema';`}
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  {getText('Code', 'Kode Mutasi')}
+                </th>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {getText('Time', 'Waktu')}
                 </th>
                 <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
@@ -784,7 +787,7 @@ NOTIFY pgrst, 'reload schema';`}
             <tbody className="bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     <div className="flex justify-center">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                     </div>
@@ -793,7 +796,7 @@ NOTIFY pgrst, 'reload schema';`}
                 </tr>
               ) : history.length === 0 && !error ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     <History className="mx-auto h-12 w-12 text-gray-400" />
                     <h3 className="mt-2 text-sm font-medium text-gray-900">
                       {getText('No transfers yet', 'Belum ada perpindahan')}
@@ -806,6 +809,24 @@ NOTIFY pgrst, 'reload schema';`}
               ) : (
                 sortedHistory.map((record) => (
                   <tr key={record.id} className="border-b border-gray-100 transition-all duration-150 hover:bg-emerald-50/20">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <Tag className="h-4 w-4 text-emerald-600 hidden sm:block" />
+                        <span className="text-sm font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200 shadow-sm">
+                          MUT-{record.id.substring(0, 8).toUpperCase()}
+                        </span>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(`MUT-${record.id.substring(0, 8).toUpperCase()}`);
+                            toast.success(getText('Mutation code copied!', 'Kode mutasi tersalin!'));
+                          }}
+                          className="p-1.5 hover:bg-emerald-100 rounded text-emerald-600 transition-colors"
+                          title={getText('Copy code', 'Salin kode')}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center">
                         <Clock className="h-4 w-4 mr-1.5 text-gray-400 flex-shrink-0" />
@@ -821,22 +842,6 @@ NOTIFY pgrst, 'reload schema';`}
                           </div>
                           <div className={`text-xs ${record.equipment ? 'text-gray-500' : 'text-amber-500 italic'}`}>
                             {record.equipment?.code || getText('Not registered', 'Tidak terdaftar')}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <Tag className="h-3 w-3 text-emerald-600" />
-                            <span className="text-xs font-mono font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                              MUT-{record.id.substring(0, 8).toUpperCase()}
-                            </span>
-                            <button 
-                              onClick={() => {
-                                navigator.clipboard.writeText(`MUT-${record.id.substring(0, 8).toUpperCase()}`);
-                                toast.success(getText('Mutation code copied!', 'Kode mutasi tersalin!'));
-                              }}
-                              className="p-1 hover:bg-emerald-100 rounded text-emerald-600 transition-colors"
-                              title={getText('Copy code', 'Salin kode')}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </button>
                           </div>
                         </div>
                       </div>
