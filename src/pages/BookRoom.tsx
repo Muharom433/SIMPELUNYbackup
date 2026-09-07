@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { parseISO, format, differenceInMinutes, isBefore, startOfDay, isSameDay } from "date-fns";
 import { id } from "date-fns/locale";
@@ -1465,11 +1465,18 @@ const BookRoom: React.FC = () => {
     let hasConflict = false;
     let hasScheduleToday = false;
 
-    // Check bookings
-    if (room.targetDateBookings && room.targetDateBookings.length > 0) {
-      hasScheduleToday = true;
+    // Check bookings — hanya status 'approved' dan 'borrowed' yang dianggap konflik sah
+    // Booking 'pending'/'rejected' belum sah, tidak dihitung sebagai konflik maupun jadwal
+    const confirmedBookings = (room.targetDateBookings || []).filter(
+      b => b.status === 'approved' || b.status === 'borrowed'
+    );
 
-      for (const booking of room.targetDateBookings) {
+    if (confirmedBookings.length > 0) {
+      hasScheduleToday = true;
+    }
+
+    if (confirmedBookings.length > 0) {
+      for (const booking of confirmedBookings) {
         const bookingStart = new Date(booking.start_time);
         const bookingEnd = new Date(booking.end_time);
 
@@ -1565,24 +1572,12 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    if (hasScheduleToday) {
-      return {
-        status: 'Scheduled',
-        reason: getText(
-          "Room has other schedules today but no conflict with your time",
-          "Ruangan memiliki jadwal lain hari ini tapi tidak bentrok dengan waktu Anda"
-        ),
-        color: "bg-yellow-100 text-yellow-800 border-yellow-200",
-        hasSchedule: true,
-        isAvailable: true
-      };
-    }
-
+    // Ada jadwal lain tapi tidak bentrok → tetap Available, cukup tampilkan ikon mata
     return {
       status: 'Available',
       reason: getText("Room is free", "Ruangan tersedia"),
       color: "bg-green-100 text-green-800 border-green-200",
-      hasSchedule: false,
+      hasSchedule: hasScheduleToday,
       isAvailable: true
     };
   }
@@ -1602,27 +1597,22 @@ const BookRoom: React.FC = () => {
     const e = getValues("end_datetime");
 
     if (!s || !e) {
+      // Hanya booking approved/borrowed yang dianggap punya jadwal (untuk ikon mata)
+      const confirmedBookings = (room.targetDateBookings || []).filter(
+        b => b.status === 'approved' || b.status === 'borrowed'
+      );
       const hasScheduledContent =
-        (room.targetDateBookings && room.targetDateBookings.length > 0) ||
+        confirmedBookings.length > 0 ||
         (room.scheduleDetails?.lectures && room.scheduleDetails.lectures.length > 0) ||
         (room.scheduleDetails?.exams && room.scheduleDetails.exams.length > 0) ||
         (room.scheduleDetails?.sessions && room.scheduleDetails.sessions.length > 0);
 
-      if (hasScheduledContent) {
-        return {
-          status: 'Scheduled',
-          reason: getText("Room has scheduled activities", "Ruangan memiliki aktivitas terjadwal"),
-          color: "bg-yellow-100 text-yellow-800 border-yellow-200",
-          hasSchedule: true,
-          isAvailable: false
-        };
-      }
-
+      // Selalu tampilkan sebagai Available; ikon mata muncul jika ada jadwal
       return {
         status: 'Available',
         reason: "",
         color: "bg-green-100 text-green-800 border-green-200",
-        hasSchedule: false,
+        hasSchedule: hasScheduledContent,
         isAvailable: true
       };
     }
@@ -2026,13 +2016,22 @@ const BookRoom: React.FC = () => {
     }
 
     if (activeTab === 'normal' && startDateTime && endDateTime) {
+      // Sembunyikan ruangan yang jadwalnya konflik (approved/borrowed booking atau jadwal lain)
+      // Booking pending tidak dianggap konflik
+      filtered = filtered.filter(room => {
+        const status = getOptimizedRoomStatus(room);
+        // Ruangan yang 'Conflict' atau 'In Use' disembunyikan sepenuhnya
+        return status.status !== 'Conflict' && status.status !== 'In Use';
+      });
+
       filtered.sort((a, b) => {
         const statusA = getOptimizedRoomStatus(a);
         const statusB = getOptimizedRoomStatus(b);
 
-        const statusPriority = { 'Available': 0, 'Scheduled': 1, 'Conflict': 2, 'In Use': 2, 'Unavailable': 3 };
-        const statusDiff = (statusPriority[statusA.status as keyof typeof statusPriority] ?? 3) -
-          (statusPriority[statusB.status as keyof typeof statusPriority] ?? 3);
+        // Available (termasuk yang punya jadwal tapi tidak bentrok) tampil dulu
+        const statusPriority: Record<string, number> = { 'Available': 0, 'Unavailable': 2 };
+        const statusDiff = (statusPriority[statusA.status] ?? 1) -
+          (statusPriority[statusB.status] ?? 1);
 
         if (statusDiff !== 0) return statusDiff;
 
@@ -2981,9 +2980,9 @@ const BookRoom: React.FC = () => {
                                           </p>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium border ${status.color}`}>
-                                          {status.status === 'Available'
+                                          {status.isAvailable
                                             ? getText('Available', 'Tersedia')
-                                            : getText('Scheduled', 'Terjadwal')}
+                                            : getText('Unavailable', 'Tidak Tersedia')}
                                         </span>
                                       </div>
 
@@ -3072,15 +3071,7 @@ const BookRoom: React.FC = () => {
                                         </button>
                                       </div>
 
-                                      {/* Show info for Scheduled rooms */}
-                                      {status.status === 'Scheduled' && (
-                                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                                          <p className="text-xs text-yellow-800">
-                                            <Info className="h-3 w-3 inline mr-1" />
-                                            {getText('Has other schedules today but no conflict with your selected time', 'Ada jadwal lain hari ini tapi tidak bentrok dengan waktu yang Anda pilih')}
-                                          </p>
-                                        </div>
-                                      )}
+                                      {/* Info box Scheduled dihapus — status tidak bentrok cukup ditandai ikon mata */}
 
                                       {/* Show info for Conflict rooms */}
                                       {(status.status === 'Conflict' || status.status === 'In Use') && (
