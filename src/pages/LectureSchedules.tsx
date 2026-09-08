@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -546,6 +546,10 @@ const LectureSchedules: React.FC = () => {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [scheduleToDuplicate, setScheduleToDuplicate] = useState<LectureSchedule | null>(null);
 
+  // State for split feature (1 jadwal 2 dosen → 2 jadwal)
+  const [showSplitConfirm, setShowSplitConfirm] = useState(false);
+  const [scheduleToSplitInMatching, setScheduleToSplitInMatching] = useState<LectureSchedule | null>(null);
+
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
@@ -1005,32 +1009,23 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  // UPDATE USER'S FULL_NAME BASED ON SCHEDULE LECTURER NAME (Excel is master)
-  // ✅ FIXED: Also update lecture_schedules.lecturer_user_id to link schedules
+  // ✅ BARU: UPDATE lecture_schedules.lecturer agar cocok dengan users.full_name
+  // Tabel users TIDAK DIUBAH — users adalah master data yang dilindungi
   const handleBulkUpdateLecturer = async (scheduleLecturerName: string, selectedUserId: string) => {
     try {
       setMatchingLoading(true);
 
-      // Find the selected user
       const selectedUser = lecturers.find(l => l.id === selectedUserId);
-      if (!selectedUser) {
-        throw new Error('User not found');
-      }
+      if (!selectedUser) throw new Error('User not found');
 
-      // Step 1: Update user's full_name to match the schedule lecturer name
-      const { error: userError } = await supabase
-        .from('users')
-        .update({ full_name: scheduleLecturerName })
-        .eq('id', selectedUserId);
-
-      if (userError) throw userError;
-
-      // ✅ Step 2: Link all schedules with this lecturer name to the user
-      // This is critical for DosenPresensi to find schedules via lecturer_user_id
+      // Update lecture_schedules: ganti nama di jadwal → nama resmi user, dan set lecturer_user_id
       const { data: updatedSchedules, error: scheduleError } = await supabase
         .from('lecture_schedules')
-        .update({ lecturer_user_id: selectedUserId })
-        .eq('lecturer', scheduleLecturerName)
+        .update({
+          lecturer: selectedUser.full_name,       // nama resmi dari tabel users
+          lecturer_user_id: selectedUserId         // link ke user
+        })
+        .eq('lecturer', scheduleLecturerName)      // cari berdasarkan nama lama di jadwal
         .select('id');
 
       if (scheduleError) throw scheduleError;
@@ -1038,22 +1033,85 @@ const LectureSchedules: React.FC = () => {
       const countUpdated = updatedSchedules?.length || 0;
 
       alert.success(getText(
-        `Successfully updated user "${selectedUser.full_name}" to "${scheduleLecturerName}" and linked ${countUpdated} schedule(s)`,
-        `Berhasil memperbarui nama user "${selectedUser.full_name}" menjadi "${scheduleLecturerName}" dan menghubungkan ${countUpdated} jadwal`
+        `Updated ${countUpdated} schedule(s): lecturer name changed from "${scheduleLecturerName}" to "${selectedUser.full_name}" (users table unchanged)`,
+        `Berhasil memperbarui ${countUpdated} jadwal: nama dosen diubah dari "${scheduleLecturerName}" menjadi "${selectedUser.full_name}" (tabel user tidak diubah)`
       ));
 
-      // Refresh lecturers list and re-analyze data
-      const { data: updatedLecturers } = await supabase
-        .from('users')
-        .select('id, full_name, identity_number')
-        .eq('role', 'lecturer')
-        .order('full_name');
-
-      setLecturers(updatedLecturers || []);
       await analyzeUnmatchedData();
+      fetchSchedules();
 
     } catch (error: any) {
       alert.error(error.message || getText('Failed to update lecturer', 'Gagal memperbarui dosen'));
+    } finally {
+      setMatchingLoading(false);
+    }
+  };
+
+  // Deteksi apakah nama dosen di jadwal mengandung 2 dosen (separator: /, &, ' dan ', ' and ')
+  const detectDualLecturer = (lecturerName: string): string[] => {
+    const separators = [' / ', '/', ' & ', '&', ' dan ', ' and ', ' , ', ', '];
+    for (const sep of separators) {
+      if (lecturerName.includes(sep)) {
+        const parts = lecturerName.split(sep).map(s => s.trim()).filter(Boolean);
+        if (parts.length >= 2) return parts;
+      }
+    }
+    return [];
+  };
+
+  // Split jadwal 1 baris (2 dosen) menjadi 2 baris masing-masing 1 dosen
+  const handleSplitScheduleInMatching = async (schedule: LectureSchedule, lecturer1: string, lecturer2: string) => {
+    try {
+      setMatchingLoading(true);
+
+      // Update baris asli → dosen pertama
+      const { error: updateError } = await supabase
+        .from('lecture_schedules')
+        .update({ lecturer: lecturer1, lecturer_user_id: null })
+        .eq('id', schedule.id);
+
+      if (updateError) throw updateError;
+
+      // Duplikat baris → dosen kedua
+      const { lecturer_user_id: _luid, ...scheduleWithoutLUID } = schedule as any;
+      const { error: insertError } = await supabase
+        .from('lecture_schedules')
+        .insert({
+          course_name: schedule.course_name,
+          course_code: schedule.course_code,
+          subject_study: schedule.subject_study,
+          day: schedule.day,
+          start_time: schedule.start_time,
+          end_time: schedule.end_time,
+          semester: schedule.semester,
+          academics_year: schedule.academics_year,
+          type: schedule.type,
+          class: schedule.class,
+          room: schedule.room,
+          amount: schedule.amount,
+          kurikulum: schedule.kurikulum,
+          lecturer: lecturer2,
+          lecturer_user_id: null
+        });
+
+      if (insertError) throw insertError;
+
+      alert.success(getText(
+        `Schedule split into 2 rows: "${lecturer1}" and "${lecturer2}"`,
+        `Jadwal berhasil dipisah menjadi 2 baris: "${lecturer1}" dan "${lecturer2}"`
+      ));
+
+      setShowSplitConfirm(false);
+      setScheduleToSplitInMatching(null);
+
+      await analyzeUnmatchedData();
+      if (selectedLecturerForSchedule) {
+        fetchLecturerSchedules(selectedLecturerForSchedule);
+      }
+      fetchSchedules();
+
+    } catch (error: any) {
+      alert.error(error.message || getText('Failed to split schedule', 'Gagal memisahkan jadwal'));
     } finally {
       setMatchingLoading(false);
     }
@@ -1099,10 +1157,9 @@ const LectureSchedules: React.FC = () => {
     }
   };
 
-  // Batch update all lecturers that have mappings defined
-  // ✅ FIXED: Also update lecture_schedules.lecturer_user_id for each mapping
+  // ✅ BARU: Batch update — update lecture_schedules.lecturer agar cocok dengan users.full_name
+  // Tabel users TIDAK DIUBAH
   const handleBatchUpdateAllLecturers = async () => {
-    // Get all lecturers that have a mapping defined
     const lecturersWithMappings = Object.entries(lecturerMappings).filter(([_, target]) => target);
 
     if (lecturersWithMappings.length === 0) {
@@ -1114,48 +1171,32 @@ const LectureSchedules: React.FC = () => {
       setMatchingLoading(true);
       let totalSchedulesUpdated = 0;
 
-      // For each lecturer mapping, update the user's full_name AND link schedules
       for (const [scheduleLecturerName, userId] of lecturersWithMappings) {
         const selectedUser = lecturers.find(l => l.id === userId);
         if (!selectedUser) continue;
 
-        // Step 1: Update user's full_name to match the schedule lecturer name
-        const { error: userError } = await supabase
-          .from('users')
-          .update({ full_name: scheduleLecturerName })
-          .eq('id', userId);
-
-        if (userError) throw userError;
-
-        // ✅ Step 2: Link all schedules with this lecturer name to the user
+        // Update lecture_schedules: ganti nama lama di jadwal → nama resmi dari users
         const { data: updatedSchedules, error: scheduleError } = await supabase
           .from('lecture_schedules')
-          .update({ lecturer_user_id: userId })
+          .update({
+            lecturer: selectedUser.full_name,
+            lecturer_user_id: userId
+          })
           .eq('lecturer', scheduleLecturerName)
           .select('id');
 
         if (scheduleError) throw scheduleError;
-
         totalSchedulesUpdated += updatedSchedules?.length || 0;
       }
 
       alert.success(getText(
-        `Successfully updated ${lecturersWithMappings.length} user names and linked ${totalSchedulesUpdated} schedules`,
-        `Berhasil memperbarui ${lecturersWithMappings.length} nama user dan menghubungkan ${totalSchedulesUpdated} jadwal`
+        `Successfully updated ${totalSchedulesUpdated} schedule(s) across ${lecturersWithMappings.length} mapping(s). Users table was NOT modified.`,
+        `Berhasil memperbarui ${totalSchedulesUpdated} jadwal dari ${lecturersWithMappings.length} pemetaan. Tabel user tidak diubah.`
       ));
 
-      // Refresh lecturers list
-      const { data: updatedLecturers } = await supabase
-        .from('users')
-        .select('id, full_name, identity_number')
-        .eq('role', 'lecturer')
-        .order('full_name');
-
-      setLecturers(updatedLecturers || []);
-
-      // Reset mappings and refresh
       setLecturerMappings({});
       await analyzeUnmatchedData();
+      fetchSchedules();
 
     } catch (error: any) {
       alert.error(error.message || getText('Failed to update lecturers', 'Gagal memperbarui dosen'));
@@ -3148,12 +3189,18 @@ const LectureSchedules: React.FC = () => {
                           </div>
                         ) : (
                           <>
-                            {/* Info Box */}
-                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                            {/* Info Box — logika baru: jadwal mengikuti users */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
                               <strong>{getText('Note:', 'Catatan:')}</strong> {getText(
-                                'Clicking "Set" will update the selected user\'s name to match the schedule name (Excel data is master).',
-                                'Klik "Set" akan mengupdate nama user yang dipilih agar sesuai dengan nama di jadwal (data Excel adalah master).'
+                                'Clicking "Set" will update the lecturer name in the SCHEDULE to match the official user name. The users table will NOT be modified.',
+                                'Klik "Set" akan mengubah nama dosen di JADWAL agar sesuai dengan nama resmi di data user. Tabel user tidak akan diubah.'
                               )}
+                                <div className="mt-1 text-xs text-blue-600">
+                                  {getText(
+                                    'If a lecturer name is not in the user list, you can add them directly by clicking the + icon next to their name.',
+                                    'Jika nama dosen belum ada di daftar user, Anda bisa menambahkannya langsung dengan mengklik tombol + di sebelah namanya.'
+                                  )}
+                                </div>
                             </div>
 
                             {/* Action Bar - Set All Button and Confirm Edits */}
@@ -3218,7 +3265,7 @@ const LectureSchedules: React.FC = () => {
                                         }}
                                         className="flex-1 text-left p-2 rounded hover:bg-purple-100 transition-colors"
                                       >
-                                        <span className="text-sm font-medium text-purple-700 flex items-center gap-1">
+                                        <span className="text-sm font-medium text-red-600 flex items-center gap-1">
                                           {selectedLecturerForSchedule === lecturer ? (
                                             <ChevronDown className="h-4 w-4" />
                                           ) : (
@@ -3226,7 +3273,7 @@ const LectureSchedules: React.FC = () => {
                                           )}
                                           {lecturer}
                                         </span>
-                                        <span className="text-xs text-gray-500 block ml-5">{getText('(Schedule name)', '(Nama di jadwal)')}</span>
+                                        <span className="text-xs text-gray-500 block ml-5">{getText('(Name in schedule — will be updated)', '(Nama di jadwal — akan diperbarui)')}</span>
                                       </button>
 
                                       {/* Tombol + untuk tambah user baru */}
@@ -3242,9 +3289,9 @@ const LectureSchedules: React.FC = () => {
                                       </button>
                                     </div>
 
-                                    <span className="text-gray-400">←</span>
+                                    <span className="text-gray-400" title={getText('Schedule name will be updated to match user name', 'Nama di jadwal akan diubah menjadi nama resmi user')}>→</span>
 
-                                    {/* Target dropdown */}
+                                    {/* Target dropdown — pilih user resmi; nama user inilah yang akan menggantikan nama di jadwal */}
                                     <div className="flex-1">
                                       <SearchableDropdownById
                                         options={lecturers.map(l => ({ id: l.id, name: l.full_name, code: l.identity_number }))}
@@ -3252,9 +3299,9 @@ const LectureSchedules: React.FC = () => {
                                         onChange={(id) => {
                                           setLecturerMappings(prev => ({ ...prev, [lecturer]: id }));
                                         }}
-                                        placeholder={getText('Select target user...', 'Pilih user target...')}
+                                        placeholder={getText('Select official user (schedule will use this name)...', 'Pilih user resmi (jadwal akan pakai nama ini)...')}
                                         searchPlaceholder={getText('Search by name or ID...', 'Cari nama atau NIP...')}
-                                        emptyMessage={getText('No user found', 'User tidak ditemukan')}
+                                        emptyMessage={getText('No user found. Add user first via User Management.', 'User tidak ditemukan. Tambahkan dulu via Manajemen User.')}
                                       />
                                     </div>
 
@@ -3293,11 +3340,25 @@ const LectureSchedules: React.FC = () => {
                                                 <span className="text-xs px-2 py-1 bg-purple-200 text-purple-800 rounded font-medium">
                                                   {sched.class}
                                                 </span>
+                                                {/* Tombol Split — muncul jika nama dosen mengandung 2 dosen */}
+                                                {sched.lecturer && detectDualLecturer(sched.lecturer).length >= 2 && (
+                                                  <button
+                                                    onClick={() => {
+                                                      setScheduleToSplitInMatching(sched);
+                                                      setShowSplitConfirm(true);
+                                                    }}
+                                                    className="p-1.5 text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                                    title={getText('Split: This schedule has 2 lecturers — click to split into 2 rows', 'Split: Jadwal ini punya 2 dosen — klik untuk pisah menjadi 2 baris')}
+                                                  >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                      <path d="M16 3h5v5" /><path d="M8 3H3v5" /><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3" /><path d="m15 9 6-6" /><path d="M12 22v-8.3a4 4 0 0 1 1.172-2.872L21 3" />
+                                                    </svg>
+                                                  </button>
+                                                )}
                                                 {/* Tombol Edit */}
                                                 <button
                                                   onClick={() => {
                                                     handleEdit(sched);
-                                                    // Don't close Data Matching modal
                                                   }}
                                                   className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                                   title={getText('Edit this schedule', 'Edit jadwal ini')}
@@ -3375,6 +3436,68 @@ const LectureSchedules: React.FC = () => {
           </div>
         )
       }
+
+      {/* Split Confirm Modal — untuk memisahkan jadwal 2 dosen menjadi 2 baris */}
+      {showSplitConfirm && scheduleToSplitInMatching && (() => {
+        const parts = detectDualLecturer(scheduleToSplitInMatching.lecturer || '');
+        const lecturer1 = parts[0] || '';
+        const lecturer2 = parts[1] || '';
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
+              <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-5 text-white rounded-t-xl">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M16 3h5v5" /><path d="M8 3H3v5" /><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3" /><path d="m15 9 6-6" /><path d="M12 22v-8.3a4 4 0 0 1 1.172-2.872L21 3" />
+                  </svg>
+                  {getText('Split Schedule for 2 Lecturers', 'Pisah Jadwal untuk 2 Dosen')}
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-sm text-orange-800">
+                  <p className="font-medium mb-2">{getText('Current lecturer name in schedule:', 'Nama dosen saat ini di jadwal:')}</p>
+                  <p className="font-bold text-orange-900 bg-white px-3 py-2 rounded border border-orange-200">{scheduleToSplitInMatching.lecturer}</p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700">
+                  <p className="font-medium mb-3">{getText('This schedule will be split into 2 rows:', 'Jadwal ini akan dipisah menjadi 2 baris:')}</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+                      <span className="bg-blue-50 border border-blue-200 px-3 py-1.5 rounded text-blue-800 font-medium flex-1">{lecturer1}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+                      <span className="bg-green-50 border border-green-200 px-3 py-1.5 rounded text-green-800 font-medium flex-1">{lecturer2}</span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500">
+                    {getText(
+                      'Both rows will have the same course, room, day, and time. lecturer_user_id will be cleared and needs to be re-matched.',
+                      'Kedua baris akan punya mata kuliah, ruangan, hari, dan waktu yang sama. lecturer_user_id akan dikosongkan dan perlu di-match ulang.'
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => { setShowSplitConfirm(false); setScheduleToSplitInMatching(null); }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    {getText('Cancel', 'Batal')}
+                  </button>
+                  <button
+                    onClick={() => handleSplitScheduleInMatching(scheduleToSplitInMatching, lecturer1, lecturer2)}
+                    disabled={matchingLoading}
+                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {matchingLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                    {getText('Yes, Split into 2 Rows', 'Ya, Pisah Menjadi 2 Baris')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ExcelUploadModal - Super Admin Only */}
       {
