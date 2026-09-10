@@ -549,6 +549,7 @@ const LectureSchedules: React.FC = () => {
   // State for split feature (1 jadwal 2 dosen → 2 jadwal)
   const [showSplitConfirm, setShowSplitConfirm] = useState(false);
   const [scheduleToSplitInMatching, setScheduleToSplitInMatching] = useState<LectureSchedule | null>(null);
+  const [splitNames, setSplitNames] = useState<string[]>([]);
 
   const [sortConfig, setSortConfig] = useState<{ key: keyof LectureSchedule; direction: 'ascending' | 'descending' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1059,50 +1060,57 @@ const LectureSchedules: React.FC = () => {
     return [];
   };
 
-  // Split jadwal 1 baris (2 dosen) menjadi 2 baris masing-masing 1 dosen
-  const handleSplitScheduleInMatching = async (schedule: LectureSchedule, lecturer1: string, lecturer2: string) => {
+  // Split jadwal 1 baris (n dosen) menjadi n baris masing-masing 1 dosen
+  const handleSplitScheduleInMatching = async (schedule: LectureSchedule, newLecturerNames: string[]) => {
     try {
       setMatchingLoading(true);
+
+      const validNames = newLecturerNames.filter(n => n.trim() !== '');
+      if (validNames.length < 2) {
+         throw new Error('Please provide at least 2 valid names');
+      }
 
       // Update baris asli → dosen pertama
       const { error: updateError } = await supabase
         .from('lecture_schedules')
-        .update({ lecturer: lecturer1, lecturer_user_id: null })
+        .update({ lecturer: validNames[0], lecturer_user_id: null })
         .eq('id', schedule.id);
 
       if (updateError) throw updateError;
 
-      // Duplikat baris → dosen kedua
-      const { lecturer_user_id: _luid, ...scheduleWithoutLUID } = schedule as any;
-      const { error: insertError } = await supabase
-        .from('lecture_schedules')
-        .insert({
-          course_name: schedule.course_name,
-          course_code: schedule.course_code,
-          subject_study: schedule.subject_study,
-          day: schedule.day,
-          start_time: schedule.start_time,
-          end_time: schedule.end_time,
-          semester: schedule.semester,
-          academics_year: schedule.academics_year,
-          type: schedule.type,
-          class: schedule.class,
-          room: schedule.room,
-          amount: schedule.amount,
-          kurikulum: schedule.kurikulum,
-          lecturer: lecturer2,
-          lecturer_user_id: null
-        });
+      // Duplikat baris → dosen sisanya
+      for (let i = 1; i < validNames.length; i++) {
+        const { error: insertError } = await supabase
+          .from('lecture_schedules')
+          .insert({
+            course_name: schedule.course_name,
+            course_code: schedule.course_code,
+            subject_study: schedule.subject_study,
+            day: schedule.day,
+            start_time: schedule.start_time,
+            end_time: schedule.end_time,
+            semester: schedule.semester,
+            academics_year: schedule.academics_year,
+            type: schedule.type,
+            class: schedule.class,
+            room: schedule.room,
+            amount: schedule.amount,
+            kurikulum: schedule.kurikulum,
+            lecturer: validNames[i],
+            lecturer_user_id: null
+          });
 
-      if (insertError) throw insertError;
+        if (insertError) throw insertError;
+      }
 
       alert.success(getText(
-        `Schedule split into 2 rows: "${lecturer1}" and "${lecturer2}"`,
-        `Jadwal berhasil dipisah menjadi 2 baris: "${lecturer1}" dan "${lecturer2}"`
+        `Schedule split into ${validNames.length} rows`,
+        `Jadwal berhasil dipisah menjadi ${validNames.length} baris`
       ));
 
       setShowSplitConfirm(false);
       setScheduleToSplitInMatching(null);
+      setSplitNames([]);
 
       await analyzeUnmatchedData();
       if (selectedLecturerForSchedule) {
@@ -3344,6 +3352,8 @@ const LectureSchedules: React.FC = () => {
                                                 {sched.lecturer && detectDualLecturer(sched.lecturer).length >= 2 && (
                                                   <button
                                                     onClick={() => {
+                                                      const parts = detectDualLecturer(sched.lecturer || '');
+                                                      setSplitNames(parts.length >= 2 ? parts : [sched.lecturer || '', '']);
                                                       setScheduleToSplitInMatching(sched);
                                                       setShowSplitConfirm(true);
                                                     }}
@@ -3439,18 +3449,15 @@ const LectureSchedules: React.FC = () => {
 
       {/* Split Confirm Modal — untuk memisahkan jadwal 2 dosen menjadi 2 baris */}
       {showSplitConfirm && scheduleToSplitInMatching && (() => {
-        const parts = detectDualLecturer(scheduleToSplitInMatching.lecturer || '');
-        const lecturer1 = parts[0] || '';
-        const lecturer2 = parts[1] || '';
         return (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
-              <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-5 text-white rounded-t-xl">
+            <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-5 text-white rounded-t-xl sticky top-0 z-10">
                 <h3 className="text-lg font-bold flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M16 3h5v5" /><path d="M8 3H3v5" /><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3" /><path d="m15 9 6-6" /><path d="M12 22v-8.3a4 4 0 0 1 1.172-2.872L21 3" />
                   </svg>
-                  {getText('Split Schedule for 2 Lecturers', 'Pisah Jadwal untuk 2 Dosen')}
+                  {getText('Split Schedule Lecturers', 'Pisah Dosen pada Jadwal')}
                 </h3>
               </div>
               <div className="p-6 space-y-4">
@@ -3459,38 +3466,66 @@ const LectureSchedules: React.FC = () => {
                   <p className="font-bold text-orange-900 bg-white px-3 py-2 rounded border border-orange-200">{scheduleToSplitInMatching.lecturer}</p>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700">
-                  <p className="font-medium mb-3">{getText('This schedule will be split into 2 rows:', 'Jadwal ini akan dipisah menjadi 2 baris:')}</p>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
-                      <span className="bg-blue-50 border border-blue-200 px-3 py-1.5 rounded text-blue-800 font-medium flex-1">{lecturer1}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
-                      <span className="bg-green-50 border border-green-200 px-3 py-1.5 rounded text-green-800 font-medium flex-1">{lecturer2}</span>
-                    </div>
+                  <div className="flex justify-between items-center mb-3">
+                    <p className="font-medium">{getText('Edit the split names below:', 'Edit nama yang dipisah di bawah ini:')}</p>
+                    <button
+                      onClick={() => setSplitNames([...splitNames, ''])}
+                      className="px-3 py-1 bg-white border border-gray-300 rounded text-xs font-medium hover:bg-gray-50 flex items-center gap-1 text-gray-600"
+                    >
+                      <Plus className="h-3 w-3" /> {getText('Add Row', 'Tambah Baris')}
+                    </button>
                   </div>
-                  <p className="mt-3 text-xs text-gray-500">
+                  <div className="space-y-3">
+                    {splitNames.map((name, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${idx === 0 ? 'bg-blue-100 text-blue-700' : idx === 1 ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>{idx + 1}</span>
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={(e) => {
+                            const newNames = [...splitNames];
+                            newNames[idx] = e.target.value;
+                            setSplitNames(newNames);
+                          }}
+                          className={`flex-1 px-3 py-2 border rounded focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none ${idx === 0 ? 'border-blue-200 bg-blue-50' : idx === 1 ? 'border-green-200 bg-green-50' : 'border-purple-200 bg-purple-50'}`}
+                          placeholder={getText('Lecturer Name', 'Nama Dosen')}
+                        />
+                        {splitNames.length > 2 && (
+                          <button
+                            onClick={() => {
+                              const newNames = splitNames.filter((_, i) => i !== idx);
+                              setSplitNames(newNames);
+                            }}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded"
+                            title={getText('Remove', 'Hapus')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-xs text-gray-500">
                     {getText(
-                      'Both rows will have the same course, room, day, and time. lecturer_user_id will be cleared and needs to be re-matched.',
-                      'Kedua baris akan punya mata kuliah, ruangan, hari, dan waktu yang sama. lecturer_user_id akan dikosongkan dan perlu di-match ulang.'
+                      `The schedule will be split into ${splitNames.length} rows. All rows will have the same course, room, day, and time.`,
+                      `Jadwal akan dipisah menjadi ${splitNames.length} baris. Semua baris akan memiliki mata kuliah, ruangan, hari, dan waktu yang sama.`
                     )}
                   </p>
                 </div>
-                <div className="flex gap-3 justify-end">
+                <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
                   <button
-                    onClick={() => { setShowSplitConfirm(false); setScheduleToSplitInMatching(null); }}
+                    onClick={() => { setShowSplitConfirm(false); setScheduleToSplitInMatching(null); setSplitNames([]); }}
                     className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                   >
                     {getText('Cancel', 'Batal')}
                   </button>
                   <button
-                    onClick={() => handleSplitScheduleInMatching(scheduleToSplitInMatching, lecturer1, lecturer2)}
-                    disabled={matchingLoading}
+                    onClick={() => handleSplitScheduleInMatching(scheduleToSplitInMatching, splitNames)}
+                    disabled={matchingLoading || splitNames.filter(n => n.trim() !== '').length < 2}
                     className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     {matchingLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                    {getText('Yes, Split into 2 Rows', 'Ya, Pisah Menjadi 2 Baris')}
+                    {getText(`Split into ${splitNames.length} Rows`, `Pisah menjadi ${splitNames.length} Baris`)}
                   </button>
                 </div>
               </div>

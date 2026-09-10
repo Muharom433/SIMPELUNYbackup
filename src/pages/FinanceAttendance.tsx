@@ -3,7 +3,7 @@ import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
     Eye, X, Building, Loader2, FileSpreadsheet, Users, TrendingUp, PieChart, Trash2, ChevronDown, ChevronUp,
-    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff, SlidersHorizontal, UserPlus
+    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff, SlidersHorizontal, UserPlus, Pencil
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { withRetry, deduplicatedFetch, AbortManager, appCache } from '../lib/queryUtils';
@@ -225,6 +225,15 @@ const FinanceAttendance: React.FC = () => {
     const [lecturerSearchTerm, setLecturerSearchTerm] = useState('');
     const [showLecturerDropdown, setShowLecturerDropdown] = useState(false);
     const lecturerDropdownRef = React.useRef<HTMLDivElement>(null);
+
+    // Edit Attendance Modal
+    const [showEditAttendanceModal, setShowEditAttendanceModal] = useState(false);
+    const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
+    const [editLecturerSearchTerm, setEditLecturerSearchTerm] = useState('');
+    const [showEditLecturerDropdown, setShowEditLecturerDropdown] = useState(false);
+    const [editSelectedLecturerId, setEditSelectedLecturerId] = useState('');
+    const [savingEditAttendance, setSavingEditAttendance] = useState(false);
+    const editLecturerDropdownRef = React.useRef<HTMLDivElement>(null);
     // AbortManager: cancel stale requests saat filter berubah sebelum response tiba
     const abortManager = React.useRef(new AbortManager()).current;
 
@@ -237,6 +246,17 @@ const FinanceAttendance: React.FC = () => {
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Close edit lecturer dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutsideEdit = (e: MouseEvent) => {
+            if (editLecturerDropdownRef.current && !editLecturerDropdownRef.current.contains(e.target as Node)) {
+                setShowEditLecturerDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutsideEdit);
+        return () => document.removeEventListener('mousedown', handleClickOutsideEdit);
     }, []);
 
 
@@ -983,6 +1003,52 @@ const FinanceAttendance: React.FC = () => {
             fetchAttendanceRecords();
         } catch (error: any) {
             toast.error('Gagal menghapus data presensi');
+        }
+    };
+
+    const handleOpenEditAttendance = (record: AttendanceRecord) => {
+        setEditingRecord(record);
+        setEditSelectedLecturerId(record.lecturer_user_id);
+        const currentLecturer = allLecturers.find(l => l.id === record.lecturer_user_id);
+        setEditLecturerSearchTerm(currentLecturer ? currentLecturer.full_name + (currentLecturer.is_homebase === false ? ' (Non-HB)' : '') : record.lecturer_name);
+        setShowEditAttendanceModal(true);
+    };
+
+    const handleSaveEditAttendance = async () => {
+        if (!editingRecord || !editSelectedLecturerId) {
+            toast.error('Pilih dosen terlebih dahulu');
+            return;
+        }
+
+        const selectedLecturer = allLecturers.find(l => l.id === editSelectedLecturerId);
+        if (!selectedLecturer) {
+            toast.error('Dosen tidak ditemukan');
+            return;
+        }
+
+        try {
+            setSavingEditAttendance(true);
+            const { error } = await supabase
+                .from('lecturer_attendance')
+                .update({
+                    lecturer_user_id: selectedLecturer.id,
+                    lecturer_name: selectedLecturer.full_name,
+                    study_program_id: selectedLecturer.study_program_id || null,
+                })
+                .eq('id', editingRecord.id);
+
+            if (error) throw error;
+
+            toast.success(`Data presensi berhasil diperbarui ke ${selectedLecturer.full_name}`);
+            setShowEditAttendanceModal(false);
+            setEditingRecord(null);
+            setEditLecturerSearchTerm('');
+            setEditSelectedLecturerId('');
+            fetchAttendanceRecords();
+        } catch (error: any) {
+            toast.error('Gagal memperbarui data presensi');
+        } finally {
+            setSavingEditAttendance(false);
         }
     };
 
@@ -2533,6 +2599,13 @@ const FinanceAttendance: React.FC = () => {
                                                             <Eye className="w-4 h-4" />
                                                         </button>
                                                         <button
+                                                            onClick={() => handleOpenEditAttendance(record)}
+                                                            className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                            title="Edit Dosen"
+                                                        >
+                                                            <Pencil className="w-4 h-4" />
+                                                        </button>
+                                                        <button
                                                             onClick={() => handleDelete(record.id, record.lecturer_name)}
                                                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                             title="Hapus"
@@ -3814,6 +3887,153 @@ const FinanceAttendance: React.FC = () => {
                                         <Save className="w-4 h-4" />
                                     )}
                                     {savingManualAttendance ? 'Menyimpan...' : getText('Save', 'Simpan')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Attendance Modal */}
+            {showEditAttendanceModal && editingRecord && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20">
+                        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => { setShowEditAttendanceModal(false); setShowEditLecturerDropdown(false); }} />
+                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-4">
+                                <div className="flex items-center justify-between">
+                                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                                        <Pencil className="w-5 h-5" />
+                                        Edit Dosen Presensi
+                                    </h2>
+                                    <button onClick={() => { setShowEditAttendanceModal(false); setShowEditLecturerDropdown(false); }} className="p-2 text-white hover:bg-white/20 rounded-full">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <p className="text-amber-100 text-sm mt-1">Ganti atribusi dosen pada data presensi ini</p>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="p-6 space-y-4">
+                                {/* Info record yang sedang diedit */}
+                                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-sm space-y-1">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">Tanggal</span>
+                                        <span className="font-medium text-gray-800">{format(new Date(editingRecord.attendance_date), 'dd MMM yyyy', { locale: localeId })} · {editingRecord.attendance_time?.substring(0, 5)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">Tujuan</span>
+                                        <span className="font-medium text-gray-800 capitalize">{editingRecord.purpose}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">Dosen Saat Ini</span>
+                                        <span className="font-medium text-amber-700">{editingRecord.lecturer_name}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">ID Record</span>
+                                        <span className="font-mono text-xs text-gray-400">#{editingRecord.id.substring(0, 8)}</span>
+                                    </div>
+                                </div>
+
+                                {/* Lecturer Selection - Searchable Dropdown */}
+                                <div ref={editLecturerDropdownRef} className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Ganti ke Dosen <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            value={editLecturerSearchTerm}
+                                            onChange={(e) => {
+                                                setEditLecturerSearchTerm(e.target.value);
+                                                setShowEditLecturerDropdown(true);
+                                                if (e.target.value === '') {
+                                                    setEditSelectedLecturerId('');
+                                                }
+                                            }}
+                                            onFocus={() => setShowEditLecturerDropdown(true)}
+                                            placeholder="Ketik nama dosen untuk mencari..."
+                                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                                        />
+                                        {editSelectedLecturerId && (
+                                            <button
+                                                onClick={() => {
+                                                    setEditLecturerSearchTerm('');
+                                                    setEditSelectedLecturerId('');
+                                                    setShowEditLecturerDropdown(false);
+                                                }}
+                                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {showEditLecturerDropdown && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                                            {allLecturers
+                                                .filter(l => {
+                                                    if (!editLecturerSearchTerm) return true;
+                                                    return l.full_name.toLowerCase().includes(editLecturerSearchTerm.toLowerCase());
+                                                })
+                                                .map(l => (
+                                                    <button
+                                                        key={l.id}
+                                                        onClick={() => {
+                                                            setEditSelectedLecturerId(l.id);
+                                                            setEditLecturerSearchTerm(l.full_name + (l.is_homebase === false ? ' (Non-HB)' : ''));
+                                                            setShowEditLecturerDropdown(false);
+                                                        }}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 transition-colors flex items-center justify-between ${
+                                                            editSelectedLecturerId === l.id ? 'bg-amber-50 text-amber-700 font-medium' : 'text-gray-700'
+                                                        }`}
+                                                    >
+                                                        <span>{l.full_name}</span>
+                                                        {l.is_homebase === false && (
+                                                            <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Non-HB</span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            {allLecturers.filter(l => !editLecturerSearchTerm || l.full_name.toLowerCase().includes(editLecturerSearchTerm.toLowerCase())).length === 0 && (
+                                                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                                    Tidak ada dosen ditemukan
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Warning */}
+                                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                                    <div className="flex items-start gap-2">
+                                        <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                                        <div className="text-xs text-amber-700">
+                                            <p>Perubahan ini akan memindahkan data presensi ke dosen yang dipilih, termasuk <strong>ID user, nama, dan program studi</strong>-nya.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex gap-3">
+                                <button
+                                    onClick={() => { setShowEditAttendanceModal(false); setShowEditLecturerDropdown(false); }}
+                                    className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleSaveEditAttendance}
+                                    disabled={savingEditAttendance || !editSelectedLecturerId || editSelectedLecturerId === editingRecord.lecturer_user_id}
+                                    className="flex-1 px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 font-medium"
+                                >
+                                    {savingEditAttendance ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Save className="w-4 h-4" />
+                                    )}
+                                    {savingEditAttendance ? 'Menyimpan...' : 'Simpan Perubahan'}
                                 </button>
                             </div>
                         </div>
