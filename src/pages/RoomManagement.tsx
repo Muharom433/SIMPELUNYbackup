@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2, QrCode, Download, FileSpreadsheet
+    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2, QrCode, Download, Printer
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import html2canvas from 'html2canvas';
@@ -138,7 +139,7 @@ const RoomManagement: React.FC = () => {
     const [showInUse, setShowInUse] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showAvailabilitySearch, setShowAvailabilitySearch] = useState(false);
-    const [exportingRoomId, setExportingRoomId] = useState<string | null>(null);
+    const [isPrintingPDF, setIsPrintingPDF] = useState(false);
 
     const [roomNameSuggestions, setRoomNameSuggestions] = useState<string[]>([]);
     const [roomNameInput, setRoomNameInput] = useState('');
@@ -688,80 +689,155 @@ const RoomManagement: React.FC = () => {
         }
     };
 
-    // Export lecture schedule for a specific room to Excel
-    const exportRoomScheduleExcel = async (room: EnhancedRoomStatus) => {
-        setExportingRoomId(room.id);
+    // Export lecture schedules of ALL filtered rooms to a single PDF
+    const exportAllRoomsPDF = async (rooms: EnhancedRoomStatus[]) => {
+        if (rooms.length === 0) {
+            alert.error(getText('No rooms to print. Apply filters first.', 'Tidak ada ruangan untuk dicetak. Terapkan filter terlebih dahulu.'));
+            return;
+        }
+        setIsPrintingPDF(true);
         try {
-            // Fetch all lecture schedules for this room
-            const { data: lectureData, error } = await supabase
-                .from('lecture_schedules')
-                .select('day, start_time, end_time, course_name, class, subject_study, lecturer, semester, room')
-                .ilike('room', `%${room.name}%`)
-                .order('day')
-                .order('start_time');
-
-            if (error) throw error;
-
             const dayOrder = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
-            const rows = (lectureData || []).map((l, idx) => ({
-                'No': idx + 1,
-                'Hari': l.day || '',
-                'Jam Mulai': l.start_time?.substring(0, 5) || '',
-                'Jam Selesai': l.end_time?.substring(0, 5) || '',
-                'Mata Kuliah': l.course_name || '',
-                'Kelas': l.class || '',
-                'Program Studi': l.subject_study || '',
-                'Dosen': l.lecturer || '',
-                'Semester': l.semester || '',
-                'Ruangan': l.room || room.name,
-            }));
+            // Fetch schedules for all rooms in parallel
+            const roomSchedules = await Promise.all(
+                rooms.map(async (room) => {
+                    const { data, error } = await supabase
+                        .from('lecture_schedules')
+                        .select('day, start_time, end_time, course_name, class, subject_study, lecturer, semester, room')
+                        .ilike('room', `%${room.name}%`)
+                        .order('day')
+                        .order('start_time');
+                    const rows = (error ? [] : (data || [])).map((l, idx) => ({
+                        no: idx + 1,
+                        day: l.day || '',
+                        start: l.start_time?.substring(0, 5) || '',
+                        end: l.end_time?.substring(0, 5) || '',
+                        course: l.course_name || '',
+                        cls: l.class || '',
+                        prodi: l.subject_study || '',
+                        lecturer: l.lecturer || '',
+                        semester: String(l.semester || ''),
+                    }));
+                    rows.sort((a, b) => {
+                        const dA = dayOrder.indexOf(a.day);
+                        const dB = dayOrder.indexOf(b.day);
+                        if (dA !== dB) return (dA === -1 ? 99 : dA) - (dB === -1 ? 99 : dB);
+                        return a.start.localeCompare(b.start);
+                    });
+                    rows.forEach((r, i) => { r.no = i + 1; });
+                    return { room, rows };
+                })
+            );
 
-            // Sort by day order then time
-            rows.sort((a, b) => {
-                const dayA = dayOrder.indexOf(a['Hari']);
-                const dayB = dayOrder.indexOf(b['Hari']);
-                if (dayA !== dayB) return (dayA === -1 ? 99 : dayA) - (dayB === -1 ? 99 : dayB);
-                return a['Jam Mulai'].localeCompare(b['Jam Mulai']);
+            // Build PDF
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const pageW = doc.internal.pageSize.getWidth();
+            const printDate = new Date().toLocaleString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            // ── Cover / header page ──
+            doc.setFillColor(30, 64, 175);
+            doc.rect(0, 0, pageW, 28, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(18);
+            doc.setFont('helvetica', 'bold');
+            doc.text('SIMPEL Kuliah — Jadwal Kuliah Ruangan', pageW / 2, 12, { align: 'center' });
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Dicetak: ${printDate}  |  Total Ruangan: ${rooms.length}`, pageW / 2, 20, { align: 'center' });
+
+            // Filter info summary
+            const filterParts: string[] = [];
+            if (selectedCampus !== 'all') filterParts.push(`Kampus: ${selectedCampus === 'gunungkidul' ? 'Gunungkidul' : selectedCampus === 'kulonprogo' ? 'Kulon Progo' : campuses.find(c => c.id === selectedCampus)?.name || selectedCampus}`);
+            if (selectedBuilding !== 'all') filterParts.push(`Gedung: ${buildingsForCampus.find(b => b.id === selectedBuilding)?.name || selectedBuilding}`);
+            if (filterStatus !== 'all') filterParts.push(`Status: ${filterStatus}`);
+            if (filterParts.length > 0) {
+                doc.setTextColor(100, 100, 100);
+                doc.setFontSize(8);
+                doc.text(`Filter aktif: ${filterParts.join('  |  ')}`, 14, 34);
+            }
+
+            let yPos = filterParts.length > 0 ? 40 : 34;
+
+            // ── One section per room ──
+            roomSchedules.forEach(({ room, rows }, idx) => {
+                // Check if we need a new page (need at least 40mm)
+                if (yPos > doc.internal.pageSize.getHeight() - 40 && idx > 0) {
+                    doc.addPage();
+                    yPos = 14;
+                }
+
+                // Room header banner
+                doc.setFillColor(239, 246, 255);
+                doc.roundedRect(10, yPos, pageW - 20, 12, 2, 2, 'F');
+                doc.setDrawColor(147, 197, 253);
+                doc.roundedRect(10, yPos, pageW - 20, 12, 2, 2, 'S');
+
+                doc.setTextColor(30, 64, 175);
+                doc.setFontSize(11);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${idx + 1}. ${room.name}`, 15, yPos + 8);
+
+                const loc = [room.building?.campus?.name, room.building?.name].filter(Boolean).join(' • ') || room.department?.name || 'Umum';
+                doc.setTextColor(100, 100, 100);
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Kode: ${room.code}  |  Kapasitas: ${room.capacity} kursi  |  Lokasi: ${loc}`, pageW - 15, yPos + 8, { align: 'right' });
+
+                yPos += 14;
+
+                if (rows.length === 0) {
+                    doc.setTextColor(150, 150, 150);
+                    doc.setFontSize(9);
+                    doc.setFont('helvetica', 'italic');
+                    doc.text('Tidak ada jadwal kuliah untuk ruangan ini.', 15, yPos + 6);
+                    yPos += 14;
+                } else {
+                    autoTable(doc, {
+                        startY: yPos,
+                        margin: { left: 10, right: 10 },
+                        head: [['No', 'Hari', 'Jam Mulai', 'Jam Selesai', 'Mata Kuliah', 'Kelas', 'Program Studi', 'Dosen', 'Smt']],
+                        body: rows.map(r => [r.no, r.day, r.start, r.end, r.course, r.cls, r.prodi, r.lecturer, r.semester]),
+                        styles: { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak' },
+                        headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+                        alternateRowStyles: { fillColor: [239, 246, 255] },
+                        columnStyles: {
+                            0: { cellWidth: 8, halign: 'center' },
+                            1: { cellWidth: 20 },
+                            2: { cellWidth: 18, halign: 'center' },
+                            3: { cellWidth: 18, halign: 'center' },
+                            4: { cellWidth: 'auto' },
+                            5: { cellWidth: 14, halign: 'center' },
+                            6: { cellWidth: 40 },
+                            7: { cellWidth: 45 },
+                            8: { cellWidth: 10, halign: 'center' },
+                        },
+                        didDrawPage: (data: any) => {
+                            // Page footer
+                            const pg = doc.internal.pages.length - 1;
+                            doc.setFontSize(7);
+                            doc.setTextColor(150);
+                            doc.text(`Halaman ${pg}  |  SIMPEL Kuliah — Jadwal Ruangan`, pageW / 2, doc.internal.pageSize.getHeight() - 5, { align: 'center' });
+                        },
+                    });
+                    yPos = (doc as any).lastAutoTable.finalY + 8;
+                }
+
+                // Separator line between rooms
+                if (idx < roomSchedules.length - 1) {
+                    doc.setDrawColor(200, 200, 200);
+                    doc.setLineWidth(0.3);
+                    doc.line(10, yPos - 2, pageW - 10, yPos - 2);
+                }
             });
 
-            // Re-number after sort
-            rows.forEach((r, i) => { r['No'] = i + 1; });
-
-            const ws = XLSX.utils.json_to_sheet(rows);
-
-            // Column widths
-            ws['!cols'] = [
-                { wch: 5 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
-                { wch: 30 }, { wch: 10 }, { wch: 25 }, { wch: 30 }, { wch: 10 }, { wch: 20 }
-            ];
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Jadwal Kuliah');
-
-            // Header info sheet
-            const infoData = [
-                ['SIMPEL Kuliah - Jadwal Kuliah Ruangan'],
-                [''],
-                ['Ruangan', room.name],
-                ['Kode', room.code],
-                ['Kapasitas', `${room.capacity} kursi`],
-                ['Lokasi', [room.building?.campus?.name, room.building?.name].filter(Boolean).join(' • ') || '-'],
-                ['Total Jadwal', `${rows.length} sesi`],
-                ['Diekspor pada', new Date().toLocaleString('id-ID')],
-            ];
-            const wsInfo = XLSX.utils.aoa_to_sheet(infoData);
-            wsInfo['!cols'] = [{ wch: 20 }, { wch: 40 }];
-            XLSX.utils.book_append_sheet(wb, wsInfo, 'Info Ruangan');
-
-            const fileName = `Jadwal-${room.name.replace(/[^a-zA-Z0-9]/g, '_')}-${new Date().toISOString().slice(0, 10)}.xlsx`;
-            XLSX.writeFile(wb, fileName);
-
-            alert.success(getText('Schedule exported to Excel successfully!', 'Jadwal berhasil diekspor ke Excel!'));
+            const fileName = `Jadwal-Ruangan-${new Date().toISOString().slice(0, 10)}.pdf`;
+            doc.save(fileName);
+            alert.success(getText(`PDF printed for ${rooms.length} rooms successfully!`, `PDF berhasil dicetak untuk ${rooms.length} ruangan!`));
         } catch (err: any) {
-            alert.error(getText('Failed to export schedule', 'Gagal mengekspor jadwal'));
+            alert.error(getText('Failed to print PDF', 'Gagal mencetak PDF'));
         } finally {
-            setExportingRoomId(null);
+            setIsPrintingPDF(false);
         }
     };
 
@@ -1899,6 +1975,23 @@ const RoomManagement: React.FC = () => {
                                     <Plus className="h-5 w-5" />
                                     <span>{getText('Add Room', 'Tambah Ruangan')}</span>
                                 </button>
+                                <button
+                                    onClick={() => exportAllRoomsPDF(filteredAndSortedRooms)}
+                                    disabled={isPrintingPDF || filteredAndSortedRooms.length === 0}
+                                    className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    title={getText('Print schedule PDF for all filtered rooms', 'Cetak PDF jadwal semua ruangan yang terfilter')}
+                                >
+                                    {isPrintingPDF
+                                        ? <Loader2 className="h-5 w-5 animate-spin" />
+                                        : <Printer className="h-5 w-5" />
+                                    }
+                                    <span>
+                                        {isPrintingPDF
+                                            ? getText('Printing...', 'Mencetak...')
+                                            : `${getText('Print PDF', 'Cetak PDF')} (${filteredAndSortedRooms.length})`
+                                        }
+                                    </span>
+                                </button>
                             </div>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -2131,17 +2224,6 @@ const RoomManagement: React.FC = () => {
                                         </div>
                                         <div className="flex items-center justify-end pt-4 mt-4 border-t border-gray-100 space-x-1">
                                             <button
-                                                onClick={() => exportRoomScheduleExcel(room)}
-                                                disabled={exportingRoomId === room.id}
-                                                className="p-1 text-gray-500 hover:text-green-600 transition-colors disabled:opacity-50"
-                                                title={getText("Export Schedule to Excel", "Ekspor Jadwal ke Excel")}
-                                            >
-                                                {exportingRoomId === room.id
-                                                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                                                    : <FileSpreadsheet className="h-4 w-4" />
-                                                }
-                                            </button>
-                                            <button
                                                 onClick={() => handleShowQR(room)}
                                                 className="p-1 text-gray-500 hover:text-purple-600 transition-colors"
                                                 title={getText("View QR Code", "Lihat QR Code")}
@@ -2210,17 +2292,6 @@ const RoomManagement: React.FC = () => {
                                             {getText(roomStatus.status, roomStatus.status)}
                                         </span>
                                         <div className="flex items-center space-x-2">
-                                            <button
-                                                onClick={() => exportRoomScheduleExcel(room)}
-                                                disabled={exportingRoomId === room.id}
-                                                className="p-2 text-gray-600 hover:text-green-600 transition-colors disabled:opacity-50"
-                                                title={getText("Export Schedule to Excel", "Ekspor Jadwal ke Excel")}
-                                            >
-                                                {exportingRoomId === room.id
-                                                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                                                    : <FileSpreadsheet className="h-4 w-4" />
-                                                }
-                                            </button>
                                             <button
                                                 onClick={() => handleShowQR(room)}
                                                 className="p-2 text-gray-600 hover:text-purple-600 transition-colors"
