@@ -1,9 +1,11 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
-    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2, QrCode, Download
+    Building, Plus, Search, Edit, Trash2, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, BookOpen, GraduationCap, UserCheck, UserPlus, UserMinus, AlertTriangle, Filter, ChevronUp, Maximize2, QrCode, Download, Printer
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import html2canvas from 'html2canvas';
@@ -129,10 +131,15 @@ const RoomManagement: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [selectedCampus, setSelectedCampus] = useState('all');
+    const [selectedBuilding, setSelectedBuilding] = useState('all');
+    const [buildingSearchTerm, setBuildingSearchTerm] = useState('');
+    const [showBuildingDropdown, setShowBuildingDropdown] = useState(false);
+    const buildingDropdownRef = useRef<HTMLDivElement>(null);
     const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
     const [showInUse, setShowInUse] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showAvailabilitySearch, setShowAvailabilitySearch] = useState(false);
+    const [isPrintingPDF, setIsPrintingPDF] = useState(false);
 
     const [roomNameSuggestions, setRoomNameSuggestions] = useState<string[]>([]);
     const [roomNameInput, setRoomNameInput] = useState('');
@@ -334,6 +341,53 @@ const RoomManagement: React.FC = () => {
         }
     }, [profile, fetchRoomData, targetDate]);
 
+    // Derive unique buildings from allRooms, filtered by selected campus
+    const buildingsForCampus = useMemo(() => {
+        const seen = new Set<string>();
+        const result: { id: string; name: string }[] = [];
+        displayedRooms.forEach(room => {
+            if (!room.building?.name) return;
+            // If a campus is selected, only show buildings from that campus
+            if (selectedCampus !== 'all') {
+                const roomCampusId = room.building?.campus?.id;
+                const roomCampusName = (room.building?.campus?.name || '').toLowerCase();
+                const roomBuildingName = (room.building?.name || '').toLowerCase();
+                let campusMatch = false;
+                if (selectedCampus === 'gunungkidul' || selectedCampus === 'gunung_kidul') {
+                    campusMatch = roomCampusName.includes('gunung') || roomCampusId === selectedCampus || roomBuildingName.includes('gunung');
+                } else if (selectedCampus === 'kulonprogo' || selectedCampus === 'kulon_progo') {
+                    campusMatch = roomCampusName.includes('kulon') || roomCampusName.includes('wates') || roomCampusId === selectedCampus || roomBuildingName.includes('kulon');
+                } else {
+                    campusMatch = roomCampusId === selectedCampus || roomCampusName === selectedCampus.toLowerCase() || roomCampusName.includes(selectedCampus.toLowerCase());
+                }
+                if (!campusMatch) return;
+            }
+            const key = room.building.id || room.building.name;
+            if (!seen.has(key)) {
+                seen.add(key);
+                result.push({ id: room.building.id || room.building.name, name: room.building.name });
+            }
+        });
+        return result.sort((a, b) => a.name.localeCompare(b.name));
+    }, [displayedRooms, selectedCampus]);
+
+    // Reset building filter when campus changes
+    useEffect(() => {
+        setSelectedBuilding('all');
+        setBuildingSearchTerm('');
+    }, [selectedCampus]);
+
+    // Close building dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (buildingDropdownRef.current && !buildingDropdownRef.current.contains(e.target as Node)) {
+                setShowBuildingDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const filteredAndSortedRooms = useMemo(() => {
         if (!Array.isArray(displayedRooms)) return [];
 
@@ -379,7 +433,14 @@ const RoomManagement: React.FC = () => {
                 }
             }
 
-            return matchesSearch && matchesStatus && matchesVisibility && matchesCampus;
+            // Building filter
+            let matchesBuilding = true;
+            if (selectedBuilding !== 'all') {
+                const roomBuildingId = room.building?.id || room.building?.name;
+                matchesBuilding = roomBuildingId === selectedBuilding;
+            }
+
+            return matchesSearch && matchesStatus && matchesVisibility && matchesCampus && matchesBuilding;
         }).sort((a, b) => {
             // Priority sorting: Available > Scheduled > In Use > Unavailable
             const statusOrder = { 'Available': 0, 'Scheduled': 1, 'In Use': 2, 'Conflict': 3, 'Unavailable': 4 };
@@ -392,7 +453,7 @@ const RoomManagement: React.FC = () => {
             // Secondary sort by name
             return a.name.localeCompare(b.name);
         });
-    }, [displayedRooms, searchTerm, filterStatus, selectedCampus, showInUse, getOptimizedRoomStatus]);
+    }, [displayedRooms, searchTerm, filterStatus, selectedCampus, selectedBuilding, showInUse, getOptimizedRoomStatus]);
 
     const fetchSchedulesForRoom = async (roomName: string, roomId: string) => {
         setLoadingSchedules(true);
@@ -625,6 +686,158 @@ const RoomManagement: React.FC = () => {
             if (error) throw error;
             setCampuses(data || []);
         } catch (error: any) {
+        }
+    };
+
+    // Export lecture schedules of ALL filtered rooms to a single PDF
+    const exportAllRoomsPDF = async (rooms: EnhancedRoomStatus[]) => {
+        if (rooms.length === 0) {
+            alert.error(getText('No rooms to print. Apply filters first.', 'Tidak ada ruangan untuk dicetak. Terapkan filter terlebih dahulu.'));
+            return;
+        }
+        setIsPrintingPDF(true);
+        try {
+            const dayOrder = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+
+            // Fetch schedules for all rooms in parallel
+            const roomSchedules = await Promise.all(
+                rooms.map(async (room) => {
+                    const { data, error } = await supabase
+                        .from('lecture_schedules')
+                        .select('day, start_time, end_time, course_name, class, subject_study, lecturer, semester, room')
+                        .ilike('room', `%${room.name}%`)
+                        .order('day')
+                        .order('start_time');
+                    const rows = (error ? [] : (data || [])).map((l, idx) => ({
+                        no: idx + 1,
+                        day: l.day || '',
+                        start: l.start_time?.substring(0, 5) || '',
+                        end: l.end_time?.substring(0, 5) || '',
+                        course: l.course_name || '',
+                        cls: l.class || '',
+                        prodi: l.subject_study || '',
+                        lecturer: l.lecturer || '',
+                        semester: String(l.semester || ''),
+                    }));
+                    rows.sort((a, b) => {
+                        const dA = dayOrder.indexOf(a.day);
+                        const dB = dayOrder.indexOf(b.day);
+                        if (dA !== dB) return (dA === -1 ? 99 : dA) - (dB === -1 ? 99 : dB);
+                        return a.start.localeCompare(b.start);
+                    });
+                    rows.forEach((r, i) => { r.no = i + 1; });
+                    return { room, rows };
+                })
+            );
+
+            // Build PDF
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const pageW = doc.internal.pageSize.getWidth();
+            const printDate = new Date().toLocaleString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            // ── Cover / header page ──
+            doc.setFillColor(30, 64, 175);
+            doc.rect(0, 0, pageW, 28, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(18);
+            doc.setFont('helvetica', 'bold');
+            doc.text('SIMPEL Kuliah — Jadwal Kuliah Ruangan', pageW / 2, 12, { align: 'center' });
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Dicetak: ${printDate}  |  Total Ruangan: ${rooms.length}`, pageW / 2, 20, { align: 'center' });
+
+            // Filter info summary
+            const filterParts: string[] = [];
+            if (selectedCampus !== 'all') filterParts.push(`Kampus: ${selectedCampus === 'gunungkidul' ? 'Gunungkidul' : selectedCampus === 'kulonprogo' ? 'Kulon Progo' : campuses.find(c => c.id === selectedCampus)?.name || selectedCampus}`);
+            if (selectedBuilding !== 'all') filterParts.push(`Gedung: ${buildingsForCampus.find(b => b.id === selectedBuilding)?.name || selectedBuilding}`);
+            if (filterStatus !== 'all') filterParts.push(`Status: ${filterStatus}`);
+            if (filterParts.length > 0) {
+                doc.setTextColor(100, 100, 100);
+                doc.setFontSize(8);
+                doc.text(`Filter aktif: ${filterParts.join('  |  ')}`, 14, 34);
+            }
+
+            let yPos = filterParts.length > 0 ? 40 : 34;
+
+            // ── One section per room ──
+            roomSchedules.forEach(({ room, rows }, idx) => {
+                // Check if we need a new page (need at least 40mm)
+                if (yPos > doc.internal.pageSize.getHeight() - 40 && idx > 0) {
+                    doc.addPage();
+                    yPos = 14;
+                }
+
+                // Room header banner
+                doc.setFillColor(239, 246, 255);
+                doc.roundedRect(10, yPos, pageW - 20, 12, 2, 2, 'F');
+                doc.setDrawColor(147, 197, 253);
+                doc.roundedRect(10, yPos, pageW - 20, 12, 2, 2, 'S');
+
+                doc.setTextColor(30, 64, 175);
+                doc.setFontSize(11);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${idx + 1}. ${room.name}`, 15, yPos + 8);
+
+                const loc = [room.building?.campus?.name, room.building?.name].filter(Boolean).join(' • ') || room.department?.name || 'Umum';
+                doc.setTextColor(100, 100, 100);
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Kode: ${room.code}  |  Kapasitas: ${room.capacity} kursi  |  Lokasi: ${loc}`, pageW - 15, yPos + 8, { align: 'right' });
+
+                yPos += 14;
+
+                if (rows.length === 0) {
+                    doc.setTextColor(150, 150, 150);
+                    doc.setFontSize(9);
+                    doc.setFont('helvetica', 'italic');
+                    doc.text('Tidak ada jadwal kuliah untuk ruangan ini.', 15, yPos + 6);
+                    yPos += 14;
+                } else {
+                    autoTable(doc, {
+                        startY: yPos,
+                        margin: { left: 10, right: 10 },
+                        head: [['No', 'Hari', 'Jam Mulai', 'Jam Selesai', 'Mata Kuliah', 'Kelas', 'Program Studi', 'Dosen', 'Smt']],
+                        body: rows.map(r => [r.no, r.day, r.start, r.end, r.course, r.cls, r.prodi, r.lecturer, r.semester]),
+                        styles: { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak' },
+                        headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+                        alternateRowStyles: { fillColor: [239, 246, 255] },
+                        columnStyles: {
+                            0: { cellWidth: 8, halign: 'center' },
+                            1: { cellWidth: 20 },
+                            2: { cellWidth: 18, halign: 'center' },
+                            3: { cellWidth: 18, halign: 'center' },
+                            4: { cellWidth: 'auto' },
+                            5: { cellWidth: 14, halign: 'center' },
+                            6: { cellWidth: 40 },
+                            7: { cellWidth: 45 },
+                            8: { cellWidth: 10, halign: 'center' },
+                        },
+                        didDrawPage: (data: any) => {
+                            // Page footer
+                            const pg = doc.internal.pages.length - 1;
+                            doc.setFontSize(7);
+                            doc.setTextColor(150);
+                            doc.text(`Halaman ${pg}  |  SIMPEL Kuliah — Jadwal Ruangan`, pageW / 2, doc.internal.pageSize.getHeight() - 5, { align: 'center' });
+                        },
+                    });
+                    yPos = (doc as any).lastAutoTable.finalY + 8;
+                }
+
+                // Separator line between rooms
+                if (idx < roomSchedules.length - 1) {
+                    doc.setDrawColor(200, 200, 200);
+                    doc.setLineWidth(0.3);
+                    doc.line(10, yPos - 2, pageW - 10, yPos - 2);
+                }
+            });
+
+            const fileName = `Jadwal-Ruangan-${new Date().toISOString().slice(0, 10)}.pdf`;
+            doc.save(fileName);
+            alert.success(getText(`PDF printed for ${rooms.length} rooms successfully!`, `PDF berhasil dicetak untuk ${rooms.length} ruangan!`));
+        } catch (err: any) {
+            alert.error(getText('Failed to print PDF', 'Gagal mencetak PDF'));
+        } finally {
+            setIsPrintingPDF(false);
         }
     };
 
@@ -1754,14 +1967,32 @@ const RoomManagement: React.FC = () => {
                         </div>
                     )}
 
-                    <div className="border-t pt-4 flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                        <div className="flex flex-wrap gap-3">
-                            <button onClick={handleAddNewRoom} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-                                <Plus className="h-5 w-5" />
-                                <span>{getText('Add Room', 'Tambah Ruangan')}</span>
-                            </button>
-                        </div>
-                        <div className="flex items-center space-x-3">
+                    <div className="border-t pt-4 flex flex-col gap-4">
+                        {/* Row 1: Add button + search */}
+                        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+                            <div className="flex flex-wrap gap-3">
+                                <button onClick={handleAddNewRoom} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                                    <Plus className="h-5 w-5" />
+                                    <span>{getText('Add Room', 'Tambah Ruangan')}</span>
+                                </button>
+                                <button
+                                    onClick={() => exportAllRoomsPDF(filteredAndSortedRooms)}
+                                    disabled={isPrintingPDF || filteredAndSortedRooms.length === 0}
+                                    className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    title={getText('Print schedule PDF for all filtered rooms', 'Cetak PDF jadwal semua ruangan yang terfilter')}
+                                >
+                                    {isPrintingPDF
+                                        ? <Loader2 className="h-5 w-5 animate-spin" />
+                                        : <Printer className="h-5 w-5" />
+                                    }
+                                    <span>
+                                        {isPrintingPDF
+                                            ? getText('Printing...', 'Mencetak...')
+                                            : `${getText('Print PDF', 'Cetak PDF')} (${filteredAndSortedRooms.length})`
+                                        }
+                                    </span>
+                                </button>
+                            </div>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                                 <input
@@ -1772,6 +2003,11 @@ const RoomManagement: React.FC = () => {
                                     className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
+                        </div>
+
+                        {/* Row 2: Filters */}
+                        <div className="flex flex-wrap items-center gap-3">
+                            {/* Campus Filter */}
                             <select
                                 value={selectedCampus}
                                 onChange={(e) => setSelectedCampus(e.target.value)}
@@ -1791,6 +2027,83 @@ const RoomManagement: React.FC = () => {
                                     );
                                 })}
                             </select>
+
+                            {/* Building Filter - Searchable Dropdown */}
+                            <div className="relative" ref={buildingDropdownRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowBuildingDropdown(prev => !prev)}
+                                    className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium text-sm min-w-[170px] justify-between"
+                                >
+                                    <span className="flex items-center space-x-1 truncate">
+                                        <Building className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                        <span className="truncate max-w-[120px]">
+                                            {selectedBuilding === 'all'
+                                                ? getText('All Buildings', 'Semua Gedung')
+                                                : buildingsForCampus.find(b => b.id === selectedBuilding)?.name || getText('All Buildings', 'Semua Gedung')
+                                            }
+                                        </span>
+                                    </span>
+                                    <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${showBuildingDropdown ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {showBuildingDropdown && (
+                                    <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl w-72 overflow-hidden">
+                                        {/* Search input */}
+                                        <div className="p-2 border-b border-gray-100">
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                <input
+                                                    type="text"
+                                                    placeholder={getText('Search building...', 'Cari gedung...')}
+                                                    value={buildingSearchTerm}
+                                                    onChange={(e) => setBuildingSearchTerm(e.target.value)}
+                                                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    autoFocus
+                                                />
+                                            </div>
+                                        </div>
+                                        {/* Options */}
+                                        <div className="max-h-60 overflow-y-auto">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setSelectedBuilding('all'); setShowBuildingDropdown(false); setBuildingSearchTerm(''); }}
+                                                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition-colors flex items-center space-x-2 ${
+                                                    selectedBuilding === 'all' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                                                }`}
+                                            >
+                                                <Building className="h-4 w-4 text-gray-400" />
+                                                <span>{getText('All Buildings', 'Semua Gedung')}</span>
+                                                {selectedBuilding === 'all' && <span className="ml-auto text-blue-500">✓</span>}
+                                            </button>
+                                            {buildingsForCampus
+                                                .filter(b => b.name.toLowerCase().includes(buildingSearchTerm.toLowerCase()))
+                                                .map(b => (
+                                                    <button
+                                                        key={b.id}
+                                                        type="button"
+                                                        onClick={() => { setSelectedBuilding(b.id); setShowBuildingDropdown(false); setBuildingSearchTerm(''); }}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition-colors flex items-center space-x-2 ${
+                                                            selectedBuilding === b.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                                                        }`}
+                                                    >
+                                                        <Building className="h-4 w-4 text-gray-400" />
+                                                        <span>{b.name}</span>
+                                                        {selectedBuilding === b.id && <span className="ml-auto text-blue-500">✓</span>}
+                                                    </button>
+                                                ))
+                                            }
+                                            {buildingsForCampus.filter(b => b.name.toLowerCase().includes(buildingSearchTerm.toLowerCase())).length === 0 && (
+                                                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                                    {getText('No buildings found', 'Gedung tidak ditemukan')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Status Filter */}
                             <select
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -1803,6 +2116,8 @@ const RoomManagement: React.FC = () => {
                                 <option value="Conflict">{getText('Conflict', 'Konflik')}</option>
                                 <option value="Unavailable">{getText('Unavailable', 'Tidak Tersedia')}</option>
                             </select>
+
+                            {/* Show In Use checkbox */}
                             <label className="flex items-center space-x-2 cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -1812,7 +2127,9 @@ const RoomManagement: React.FC = () => {
                                 />
                                 <span className="text-sm text-gray-700">{getText('Show In Use', 'Tampilkan Sedang Digunakan')}</span>
                             </label>
-                            <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+
+                            {/* View mode toggle */}
+                            <div className="flex border border-gray-300 rounded-lg overflow-hidden ml-auto">
                                 <button
                                     onClick={() => setViewMode('grid')}
                                     className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
@@ -1827,6 +2144,24 @@ const RoomManagement: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Active filter badges */}
+                        {(selectedCampus !== 'all' || selectedBuilding !== 'all') && (
+                            <div className="flex flex-wrap gap-2">
+                                {selectedCampus !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                                        📍 {selectedCampus === 'gunungkidul' ? 'Kampus Gunungkidul' : selectedCampus === 'kulonprogo' ? 'Kampus Kulon Progo' : campuses.find(c => c.id === selectedCampus)?.name}
+                                        <button onClick={() => setSelectedCampus('all')} className="ml-1 hover:text-blue-900"><X className="h-3 w-3" /></button>
+                                    </span>
+                                )}
+                                {selectedBuilding !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                                        🏢 {buildingsForCampus.find(b => b.id === selectedBuilding)?.name}
+                                        <button onClick={() => setSelectedBuilding('all')} className="ml-1 hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                                    </span>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
