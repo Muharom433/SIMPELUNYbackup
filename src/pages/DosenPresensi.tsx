@@ -539,11 +539,23 @@ const DosenPresensi: React.FC = () => {
     }, []);
 
     // Initialize camera when tab is presensi AND room is scanned
+    // Delay start to ensure QR scanner has fully released camera tracks on all devices
     useEffect(() => {
+        let cleanupCalled = false;
+        let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+
         if (activeTab === 'presensi' && scannedRoomId) {
-            initCamera();
+            // Wait for QR scanner to fully release the camera hardware before opening selfie cam
+            retryTimeout = setTimeout(() => {
+                if (!cleanupCalled) {
+                    initCamera();
+                }
+            }, 800);
         }
+
         return () => {
+            cleanupCalled = true;
+            if (retryTimeout) clearTimeout(retryTimeout);
             stopCamera();
         };
     }, [activeTab, scannedRoomId]);
@@ -783,18 +795,66 @@ const DosenPresensi: React.FC = () => {
         }
     };
 
-    const initCamera = async () => {
+    const initCamera = async (retryCount = 0) => {
         try {
             setCameraError(null);
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-            });
-            setCameraStream(stream);
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
+
+            // Stop any lingering tracks first to avoid "camera in use" on some devices
+            if (videoRef.current && videoRef.current.srcObject) {
+                const oldStream = videoRef.current.srcObject as MediaStream;
+                oldStream.getTracks().forEach(t => t.stop());
+                videoRef.current.srcObject = null;
             }
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'user',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
+
+            setCameraStream(stream);
+
+            // videoRef may not be mounted yet — wait for it
+            const attachStream = () => {
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    // Ensure video plays after metadata is loaded
+                    videoRef.current.onloadedmetadata = () => {
+                        videoRef.current?.play().catch(() => {});
+                    };
+                    // If metadata already loaded (e.g. re-render), play immediately
+                    if (videoRef.current.readyState >= 1) {
+                        videoRef.current.play().catch(() => {});
+                    }
+                } else {
+                    // Ref not yet mounted, retry after a tick
+                    setTimeout(attachStream, 100);
+                }
+            };
+            attachStream();
+
         } catch (error: any) {
-            setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera sudah diberikan.');
+            // If device is still busy (NotReadableError), retry a few times with backoff
+            const isDeviceBusy =
+                error?.name === 'NotReadableError' ||
+                error?.name === 'TrackStartError' ||
+                error?.message?.toLowerCase().includes('could not start video source');
+
+            if (isDeviceBusy && retryCount < 4) {
+                const delay = 600 * (retryCount + 1); // 600ms, 1200ms, 1800ms, 2400ms
+                setTimeout(() => initCamera(retryCount + 1), delay);
+                return;
+            }
+
+            if (error?.name === 'NotAllowedError') {
+                setCameraError('Izin kamera ditolak. Aktifkan izin kamera di pengaturan browser.');
+            } else if (isDeviceBusy) {
+                setCameraError('Kamera sedang digunakan aplikasi lain. Tutup tab lain yang menggunakan kamera, lalu muat ulang halaman.');
+            } else {
+                setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera sudah diberikan.');
+            }
         }
     };
 
@@ -802,6 +862,10 @@ const DosenPresensi: React.FC = () => {
         if (cameraStream) {
             cameraStream.getTracks().forEach(track => track.stop());
             setCameraStream(null);
+        }
+        // Also clear the video element src to fully release hardware
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
         }
     };
 
