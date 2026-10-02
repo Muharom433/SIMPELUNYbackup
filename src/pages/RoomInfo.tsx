@@ -6,6 +6,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../lib/supabase';
 import { Room, Department, Equipment, StudyProgram } from '../types';
 import { format } from 'date-fns';
+import { id as localeId } from 'date-fns/locale';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export const parseEquipmentSpec = (spec: string | null) => {
@@ -173,6 +174,13 @@ const RoomInfo: React.FC = () => {
     const [roomCurrentPage, setRoomCurrentPage] = useState(0);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
+    // Campus filter for rooms tab
+    const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
+    const [selectedCampus, setSelectedCampus] = useState('all');
+    const [isCampusDropdownOpen, setIsCampusDropdownOpen] = useState(false);
+    const [campusSearchTerm, setCampusSearchTerm] = useState('');
+    const campusDropdownRef = useRef<HTMLDivElement>(null);
+
     // Active Tab: 'rooms' or 'equipment'
     const [activeTab, setActiveTab] = useState<'rooms' | 'equipment'>('rooms');
 
@@ -239,6 +247,10 @@ const RoomInfo: React.FC = () => {
                 const { data: spData } = await supabase.from('study_programs').select('*').order('name');
                 setStudyPrograms(spData || []);
 
+                // Fetch Campuses
+                const { data: campusData } = await supabase.from('campus').select('id, name').order('name');
+                setCampuses(campusData || []);
+
                 await fetchRooms();
             } catch (err) {
             } finally {
@@ -246,6 +258,17 @@ const RoomInfo: React.FC = () => {
             }
         };
         fetchInitialData();
+    }, []);
+
+    // Close campus dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (campusDropdownRef.current && !campusDropdownRef.current.contains(e.target as Node)) {
+                setIsCampusDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     // Trigger details fetching when room modal is shown
@@ -932,10 +955,22 @@ const RoomInfo: React.FC = () => {
     };
 
     // Filter and search logic for rooms
+    const filteredCampusDropdown = campuses.filter(c =>
+        c.name.toLowerCase().includes(campusSearchTerm.toLowerCase())
+    );
+
     const filteredRooms = rooms.filter(room => {
         const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             room.code.toLowerCase().includes(searchTerm.toLowerCase());
-        return matchesSearch;
+
+        let matchesCampus = true;
+        if (selectedCampus !== 'all') {
+            const roomCampusId = (room as any).building?.campus?.id;
+            const roomCampusName = ((room as any).building?.campus?.name || '').toLowerCase();
+            matchesCampus = roomCampusId === selectedCampus || roomCampusName.includes(selectedCampus.toLowerCase());
+        }
+
+        return matchesSearch && matchesCampus;
     });
 
     const totalRoomPages = Math.max(1, Math.ceil(filteredRooms.length / roomPageSize));
@@ -1125,35 +1160,155 @@ const RoomInfo: React.FC = () => {
                 {activeTab === 'rooms' && (
                     <>
                         {/* Filters section */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder={getText('Search rooms by name or code...', 'Cari ruangan berdasarkan nama atau kode...')}
-                                    value={searchTerm}
-                                    onChange={(e) => { setSearchTerm(e.target.value); resetRoomPage(); }}
-                                    className="w-full pl-11 pr-4 py-3 border-2 border-gray-100 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm"
-                                />
-                            </div>
-                            <div className="flex flex-wrap items-center gap-3">
-                                {/* Per-page selector */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex flex-col gap-4">
+                            {/* Row 1: Date + Campus + Search */}
+                            <div className="flex flex-col lg:flex-row gap-3">
+
+                                {/* 📅 Filter Tanggal */}
                                 <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span className="text-xs text-gray-500 whitespace-nowrap">{getText('Show', 'Tampil')}</span>
-                                    <select
-                                        value={roomPageSize}
-                                        onChange={(e) => { setRoomPageSize(Number(e.target.value)); resetRoomPage(); }}
-                                        className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-blue-500 bg-white"
-                                    >
-                                        {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                                    </select>
+                                    <label className="text-xs font-semibold text-gray-500 whitespace-nowrap flex items-center gap-1">
+                                        <CalendarIcon className="h-4 w-4 text-blue-400" />
+                                        Tanggal
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={targetDate}
+                                        onChange={(e) => setTargetDate(e.target.value)}
+                                        className="px-3 py-2.5 border-2 border-gray-100 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm font-medium text-gray-700 bg-white shadow-sm"
+                                    />
+                                    {targetDate !== format(new Date(), 'yyyy-MM-dd') && (
+                                        <button
+                                            onClick={() => setTargetDate(format(new Date(), 'yyyy-MM-dd'))}
+                                            className="text-xs text-blue-500 hover:text-blue-700 underline whitespace-nowrap"
+                                        >
+                                            Hari Ini
+                                        </button>
+                                    )}
                                 </div>
 
-                                {/* Grid/List View Toggles */}
-                                <div className="flex border border-gray-200 rounded-xl overflow-hidden p-0.5 bg-gray-55 flex-shrink-0">
-                                    <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-700'}`}><Grid className="h-4 w-4" /></button>
-                                    <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-700'}`}><List className="h-4 w-4" /></button>
+                                {/* 🏫 Dropdown Kampus */}
+                                <div className="relative flex-shrink-0" ref={campusDropdownRef}>
+                                    <button
+                                        onClick={() => setIsCampusDropdownOpen(o => !o)}
+                                        className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-100 rounded-xl text-sm font-medium text-gray-700 bg-white hover:border-blue-300 focus:outline-none focus:border-blue-500 transition-colors shadow-sm min-w-[180px] justify-between"
+                                    >
+                                        <span className="flex items-center gap-1.5 truncate">
+                                            <MapPin className="h-4 w-4 text-blue-400 flex-shrink-0" />
+                                            {selectedCampus === 'all'
+                                                ? 'Semua Kampus'
+                                                : (campuses.find(c => c.id === selectedCampus)?.name || selectedCampus)}
+                                        </span>
+                                        <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${isCampusDropdownOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {isCampusDropdownOpen && (
+                                        <div className="absolute top-full left-0 mt-1 w-[260px] bg-white border border-gray-200 rounded-xl shadow-xl z-[100] max-h-[300px] flex flex-col overflow-hidden">
+                                            <div className="p-2 border-b border-gray-100 flex items-center gap-1.5">
+                                                <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Cari kampus..."
+                                                    value={campusSearchTerm}
+                                                    onChange={(e) => setCampusSearchTerm(e.target.value)}
+                                                    className="w-full bg-transparent text-xs focus:outline-none text-gray-700 placeholder-gray-400 py-1"
+                                                    autoFocus
+                                                />
+                                                {campusSearchTerm && (
+                                                    <button onClick={() => setCampusSearchTerm('')} className="p-0.5 text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                                                )}
+                                            </div>
+                                            <div className="overflow-y-auto flex-1 py-1">
+                                                <button
+                                                    onClick={() => { setSelectedCampus('all'); setIsCampusDropdownOpen(false); setCampusSearchTerm(''); resetRoomPage(); }}
+                                                    className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors ${selectedCampus === 'all' ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-700'}`}
+                                                >
+                                                    Semua Kampus
+                                                </button>
+                                                {filteredCampusDropdown.map(campus => (
+                                                    <button
+                                                        key={campus.id}
+                                                        onClick={() => { setSelectedCampus(campus.id); setIsCampusDropdownOpen(false); setCampusSearchTerm(''); resetRoomPage(); }}
+                                                        className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors truncate ${selectedCampus === campus.id ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-700'}`}
+                                                        title={campus.name}
+                                                    >
+                                                        {campus.name}
+                                                    </button>
+                                                ))}
+                                                {filteredCampusDropdown.length === 0 && (
+                                                    <div className="px-4 py-3 text-xs text-gray-400 italic text-center">Tidak ditemukan</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
+
+                                {/* 🔍 Search Ruangan */}
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Cari ruangan berdasarkan nama atau kode..."
+                                        value={searchTerm}
+                                        onChange={(e) => { setSearchTerm(e.target.value); resetRoomPage(); }}
+                                        className="w-full pl-11 pr-10 py-2.5 border-2 border-gray-100 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm"
+                                    />
+                                    {searchTerm && (
+                                        <button onClick={() => { setSearchTerm(''); resetRoomPage(); }} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600">
+                                            <X className="h-4 w-4" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Grid/List + Per-page */}
+                                <div className="flex items-center gap-3 flex-shrink-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-500 whitespace-nowrap">Tampil</span>
+                                        <select
+                                            value={roomPageSize}
+                                            onChange={(e) => { setRoomPageSize(Number(e.target.value)); resetRoomPage(); }}
+                                            className="px-2 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:border-blue-500 bg-white"
+                                        >
+                                            {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="flex border border-gray-200 rounded-xl overflow-hidden p-0.5">
+                                        <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-700'}`}><Grid className="h-4 w-4" /></button>
+                                        <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-700'}`}><List className="h-4 w-4" /></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Active filter chips */}
+                            {(searchTerm || selectedCampus !== 'all') && (
+                                <div className="flex flex-wrap gap-2 items-center">
+                                    <span className="text-xs text-gray-400">Filter aktif:</span>
+                                    {searchTerm && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-200">
+                                            <Search className="h-3 w-3" />"{searchTerm}"
+                                            <button onClick={() => { setSearchTerm(''); resetRoomPage(); }} className="ml-1 hover:text-red-500"><X className="h-3 w-3" /></button>
+                                        </span>
+                                    )}
+                                    {selectedCampus !== 'all' && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-medium border border-indigo-200">
+                                            <MapPin className="h-3 w-3" />{campuses.find(c => c.id === selectedCampus)?.name || selectedCampus}
+                                            <button onClick={() => { setSelectedCampus('all'); resetRoomPage(); }} className="ml-1 hover:text-red-500"><X className="h-3 w-3" /></button>
+                                        </span>
+                                    )}
+                                    <button
+                                        onClick={() => { setSearchTerm(''); setSelectedCampus('all'); resetRoomPage(); }}
+                                        className="text-xs text-red-500 hover:text-red-700 underline"
+                                    >
+                                        Reset semua
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Info tanggal yang sedang dilihat */}
+                            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-700 font-medium">
+                                <CalendarIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                                <span>
+                                    Melihat jadwal ruangan untuk: <strong>{format(new Date(targetDate + 'T00:00:00'), 'EEEE, d MMMM yyyy', { locale: localeId })}</strong>
+                                    {targetDate === format(new Date(), 'yyyy-MM-dd') && <span className="ml-2 px-1.5 py-0.5 bg-blue-200 text-blue-800 rounded-full text-[10px] font-bold">HARI INI</span>}
+                                </span>
                             </div>
                         </div>
 
@@ -1968,14 +2123,12 @@ const RoomInfo: React.FC = () => {
 
                                         {/* Right: Room Schedule */}
                                         <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm space-y-5 flex flex-col h-full">
-                                            <div className="flex items-center justify-between">
-                                                <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><CalendarIcon className="h-5 w-5 text-gray-500" />{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
-                                                <input
-                                                    type="date"
-                                                    value={targetDate}
-                                                    onChange={(e) => setTargetDate(e.target.value)}
-                                                    className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-blue-500 text-gray-700 shadow-sm"
-                                                />
+                                            <div className="flex items-center gap-2">
+                                                <CalendarIcon className="h-5 w-5 text-gray-500" />
+                                                <h4 className="font-extrabold text-gray-900 text-base">{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
+                                                <span className="ml-auto text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg border border-blue-100 font-medium">
+                                                    {format(new Date(targetDate + 'T00:00:00'), 'd MMM yyyy', { locale: localeId })}
+                                                </span>
                                             </div>
                                             <div className="flex-1 overflow-y-auto pr-2 min-h-[300px]">
                                                 <CombinedScheduleSection />

@@ -2974,8 +2974,9 @@ const RoomManagement: React.FC = () => {
                                     <X className="h-6 w-6" />
                                 </button>
                             </div>
+
                             <div className="p-6 flex flex-col items-center">
-                                {/* The Card to be captured */}
+                                {/* QR Card - encode hanya room ID */}
                                 <div
                                     id="qr-card-element"
                                     className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
@@ -2998,7 +2999,7 @@ const RoomManagement: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <p className="text-sm text-gray-500 mt-6 text-center">
+                                <p className="text-sm text-gray-500 mt-4 text-center">
                                     Cetak dan tempel kode QR ini di ruangan agar dosen dapat melakukan presensi.
                                 </p>
 
@@ -3033,8 +3034,7 @@ const RoomManagement: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                )
-            }
+                )}
 
             {/* HIDDEN TEMPLATE FOR GENERATING IMAGE */}
             {/* Positioned absolute off-screen so user doesn't see it but html2canvas can capture it */}
