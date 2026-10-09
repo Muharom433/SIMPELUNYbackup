@@ -1,9 +1,10 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     ClipboardCheck, BarChart3, FileText, Search, CheckCircle, XCircle,
     AlertCircle, User, Clock, Download, RefreshCw, ChevronLeft, ChevronRight,
     Eye, X, Building, Loader2, FileSpreadsheet, Users, TrendingUp, PieChart, Trash2, ChevronDown, ChevronUp,
-    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff, SlidersHorizontal, UserPlus
+    BookOpen, GraduationCap, Settings, Calendar, DollarSign, Plus, Save, CalendarOff, SlidersHorizontal, UserPlus,
+    AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { withRetry, deduplicatedFetch, AbortManager, appCache } from '../lib/queryUtils';
@@ -127,6 +128,280 @@ interface LectureSchedule {
     subject_study: string;
 }
 
+// Interface for matching room booking (Fase 2)
+export interface MatchingBooking {
+    id: string;
+    room_id: string;
+    start_time: string;
+    end_time: string;
+    purpose: string;
+    status: string;
+    notes?: string | null;
+    sks?: number | null;
+    class_type?: string | null;
+    user_info?: {
+        full_name?: string;
+        identity_number?: string;
+        phone_number?: string;
+        study_program_id?: string;
+    } | null;
+    user?: {
+        id: string;
+        full_name: string;
+        identity_number?: string;
+        phone_number?: string;
+        email?: string;
+    } | null;
+}
+
+// Hasil analisis pencocokan peminjaman ruangan dengan presensi dosen (Fase 2)
+export interface BookingMatchResult {
+    isTimeMatch: boolean;        // Scan presensi / jadwal kegiatan masuk dalam rentang waktu booking (toleransi ±30 menit)
+    isCourseMatch: boolean;      // Matkul atau dosen tercatat di peminjaman
+    isContinuingClass: boolean;  // Terdeteksi multi-kegiatan / kelas berkelanjutan
+    bookingStartWIB: string;     // Jam mulai lokal WIB (HH:mm)
+    bookingEndWIB: string;       // Jam selesai lokal WIB (HH:mm)
+    matchQuality: 'perfect' | 'time_only' | 'course_only' | 'unrelated';
+}
+
+// Format timestamp ISO UTC ke string waktu WIB HH:mm
+export const formatWIBTime = (isoString?: string | null): string => {
+    if (!isoString) return '--:--';
+    try {
+        const d = new Date(isoString);
+        return format(d, 'HH:mm');
+    } catch {
+        return '--:--';
+    }
+};
+
+// Helper chunking array untuk mencegah batasan URL parameter & optimasi batch query PostgREST (Fase 5)
+export function chunkArray<T>(arr: T[], size: number = 50): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+        chunks.push(arr.slice(i, i + size));
+    }
+    return chunks;
+}
+
+// Logika pencocokan Time-window & Ruangan & Matkul
+export const checkBookingMatch = (
+    booking: MatchingBooking,
+    record: AttendanceRecord,
+    details: AttendanceDetail[] = []
+): BookingMatchResult => {
+    const bookingStartDate = new Date(booking.start_time);
+    const bookingEndDate = new Date(booking.end_time);
+    const bookingStartWIB = formatWIBTime(booking.start_time);
+    const bookingEndWIB = formatWIBTime(booking.end_time);
+
+    // Toleransi waktu 30 menit (30 * 60 * 1000 ms)
+    const toleranceMs = 30 * 60 * 1000;
+    const bookingStartWithTol = bookingStartDate.getTime() - toleranceMs;
+    const bookingEndWithTol = bookingEndDate.getTime() + toleranceMs;
+
+    // 1. Cek jam scan presensi dosen
+    let isScanTimeMatch = false;
+    if (record.attendance_time && record.attendance_date) {
+        const cleanTime = (record.attendance_time || '00:00').substring(0, 5);
+        const scanISO = `${record.attendance_date}T${cleanTime}:00+07:00`;
+        const scanTimeMs = new Date(scanISO).getTime();
+        if (!isNaN(scanTimeMs) && scanTimeMs >= bookingStartWithTol && scanTimeMs <= bookingEndWithTol) {
+            isScanTimeMatch = true;
+        }
+    }
+
+    // 2. Cek jadwal kegiatan (kuliah / sidang) jika ada
+    let isScheduleOverlap = false;
+    if (details.length > 0 && record.attendance_date) {
+        for (const det of details) {
+            if (det.start_time && det.end_time) {
+                const sClean = det.start_time.substring(0, 5);
+                const eClean = det.end_time.substring(0, 5);
+                const sMs = new Date(`${record.attendance_date}T${sClean}:00+07:00`).getTime();
+                const eMs = new Date(`${record.attendance_date}T${eClean}:00+07:00`).getTime();
+
+                if (!isNaN(sMs) && !isNaN(eMs)) {
+                    if (sMs < (bookingEndDate.getTime() + toleranceMs) && eMs > (bookingStartDate.getTime() - toleranceMs)) {
+                        isScheduleOverlap = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    const isTimeMatch = isScanTimeMatch || isScheduleOverlap;
+
+    // 3. Cek kesesuaian Matkul / Dosen
+    const bookingPurposeNorm = (booking.purpose || '').toLowerCase();
+    const bookingNotesNorm = (booking.notes || '').toLowerCase();
+    const lecturerNameNorm = (record.lecturer_name || '').toLowerCase();
+
+    let isCourseMatch = false;
+    let isContinuingClass = false;
+
+    if (details.length > 0) {
+        const matchedCourses = details.filter(d => {
+            if (!d.course_name) return false;
+            const cName = d.course_name.toLowerCase();
+            return bookingPurposeNorm.includes(cName) || bookingNotesNorm.includes(cName);
+        });
+
+        if (matchedCourses.length > 0) {
+            isCourseMatch = true;
+            if (details.length > 1) {
+                isContinuingClass = true;
+            }
+        }
+    }
+
+    if (lecturerNameNorm && (bookingPurposeNorm.includes(lecturerNameNorm) || bookingNotesNorm.includes(lecturerNameNorm))) {
+        isCourseMatch = true;
+    }
+
+    let matchQuality: 'perfect' | 'time_only' | 'course_only' | 'unrelated' = 'unrelated';
+    if (isTimeMatch && isCourseMatch) {
+        matchQuality = 'perfect';
+    } else if (isTimeMatch) {
+        matchQuality = 'time_only';
+    } else if (isCourseMatch) {
+        matchQuality = 'course_only';
+    }
+
+    return {
+        isTimeMatch,
+        isCourseMatch,
+        isContinuingClass,
+        bookingStartWIB,
+        bookingEndWIB,
+        matchQuality
+    };
+};
+
+// Interface hasil analisis indikator otomatis (Fase 3)
+export interface VerificationIndicator {
+    type: 'green' | 'yellow' | 'blue' | 'orange';
+    badgeLabel: string;
+    badgeBg: string;
+    badgeText: string;
+    badgeBorder: string;
+    cardBg: string;
+    cardBorder: string;
+    iconColor: string;
+    title: string;
+    description: string;
+}
+
+// Logika indikator otomatis presensi (Fase 3: Hijau, Kuning, Biru, Oranye)
+export const computeVerificationIndicator = (
+    record: AttendanceRecord,
+    details: AttendanceDetail[] = [],
+    matchingBookings: MatchingBooking[] = []
+): VerificationIndicator => {
+    // 1. Analisis kecocokan dengan seluruh booking aktif yang ditemukan
+    const matchResults = matchingBookings.map(b => ({
+        booking: b,
+        match: checkBookingMatch(b, record, details)
+    }));
+
+    const perfectMatches = matchResults.filter(m => m.match.matchQuality === 'perfect');
+    const timeMatches = matchResults.filter(m => m.match.isTimeMatch);
+
+    // KUNING: Multi-kegiatan / kelas berkelanjutan (>1 detail) dan ada minimal 1 kecocokan waktu / booking
+    if (details.length > 1 && (perfectMatches.length > 0 || timeMatches.length > 0)) {
+        const topMatch = perfectMatches[0] || timeMatches[0];
+        const matchedCourse = details.find(d => {
+            if (!d.course_name) return false;
+            const cName = d.course_name.toLowerCase();
+            const bPurp = (topMatch.booking.purpose || '').toLowerCase();
+            const bNotes = (topMatch.booking.notes || '').toLowerCase();
+            return bPurp.includes(cName) || bNotes.includes(cName);
+        });
+        const courseNameDisplay = matchedCourse?.course_name || details[0]?.course_name || 'Matkul utama';
+
+        return {
+            type: 'yellow',
+            badgeLabel: 'Kelas Berkelanjutan',
+            badgeBg: 'bg-amber-100',
+            badgeText: 'text-amber-800',
+            badgeBorder: 'border-amber-300',
+            cardBg: 'bg-gradient-to-r from-amber-50/90 to-yellow-50/90',
+            cardBorder: 'border-amber-200',
+            iconColor: 'text-amber-600',
+            title: 'Terdeteksi Kelas Lanjutan / Multi-Kegiatan',
+            description: `Mata kuliah "${courseNameDisplay}" terdaftar di peminjaman ruangan. Dosen mengajar ${details.length} kegiatan berturut-turut. Periksa bukti foto selfie kegiatan & catatan dosen untuk verifikasi.`
+        };
+    }
+
+    // HIJAU: Cocok Penuh (Ruangan, jam, dan matkul/dosen terkonfirmasi)
+    if (perfectMatches.length > 0) {
+        const topMatch = perfectMatches[0];
+        const borrower = topMatch.booking.user_info?.full_name || topMatch.booking.user?.full_name || 'Mahasiswa';
+        return {
+            type: 'green',
+            badgeLabel: 'Cocok Penuh',
+            badgeBg: 'bg-emerald-100',
+            badgeText: 'text-emerald-800',
+            badgeBorder: 'border-emerald-300',
+            cardBg: 'bg-gradient-to-r from-emerald-50/90 to-teal-50/90',
+            cardBorder: 'border-emerald-200',
+            iconColor: 'text-emerald-600',
+            title: 'Peminjaman Ruangan & Waktu Sesuai',
+            description: `Ruangan, rentang jam, dan kegiatan cocok dengan peminjaman oleh ${borrower} (${topMatch.match.bookingStartWIB} - ${topMatch.match.bookingEndWIB} WIB).`
+        };
+    }
+
+    // HIJAU (Alternatif): Waktu dan ruangan cocok dengan peminjaman mahasiswa aktif
+    if (timeMatches.length > 0) {
+        const topMatch = timeMatches[0];
+        const borrower = topMatch.booking.user_info?.full_name || topMatch.booking.user?.full_name || 'Mahasiswa';
+        return {
+            type: 'green',
+            badgeLabel: 'Peminjaman Cocok',
+            badgeBg: 'bg-emerald-100',
+            badgeText: 'text-emerald-800',
+            badgeBorder: 'border-emerald-300',
+            cardBg: 'bg-gradient-to-r from-emerald-50/90 to-teal-50/90',
+            cardBorder: 'border-emerald-200',
+            iconColor: 'text-emerald-600',
+            title: 'Peminjaman Ruangan Terdeteksi',
+            description: `Ruangan dan jam scan dosen masuk dalam rentang peminjaman oleh ${borrower} (${topMatch.match.bookingStartWIB} - ${topMatch.match.bookingEndWIB} WIB).`
+        };
+    }
+
+    // BIRU: Jadwal Reguler (Tercatat di lecture_schedules / session_schedules atau schedule_id ada)
+    const isRegular = record.schedule_type === 'lecture' || record.schedule_type === 'session' || Boolean(record.schedule_id) || record.purpose === 'sidang';
+    if (isRegular) {
+        return {
+            type: 'blue',
+            badgeLabel: 'Jadwal Reguler',
+            badgeBg: 'bg-blue-100',
+            badgeText: 'text-blue-800',
+            badgeBorder: 'border-blue-300',
+            cardBg: 'bg-gradient-to-r from-blue-50/90 to-indigo-50/90',
+            cardBorder: 'border-blue-200',
+            iconColor: 'text-blue-600',
+            title: 'Jadwal Perkuliahan / Sidang Reguler',
+            description: 'Kegiatan ini terdaftar dalam jadwal perkuliahan atau sidang resmi kalender akademik kampus.'
+        };
+    }
+
+    // ORANYE: Di luar jadwal & belum ada booking ruangan
+    return {
+        type: 'orange',
+        badgeLabel: 'Perlu Konfirmasi',
+        badgeBg: 'bg-orange-100',
+        badgeText: 'text-orange-800',
+        badgeBorder: 'border-orange-300',
+        cardBg: 'bg-gradient-to-r from-orange-50/90 to-amber-50/90',
+        cardBorder: 'border-orange-200',
+        iconColor: 'text-orange-600',
+        title: 'Di Luar Jadwal / Belum Ada Peminjaman',
+        description: 'Belum ditemukan data peminjaman ruangan mahasiswa yang aktif untuk jam ini. Periksa alasan di catatan dosen dan foto selfie sebelum verifikasi.'
+    };
+};
+
 const FinanceAttendance: React.FC = () => {
     const { profile } = useAuth();
     const { getText } = useLanguage();
@@ -161,6 +436,10 @@ const FinanceAttendance: React.FC = () => {
     const [showImageModal, setShowImageModal] = useState(false);
     const [verificationNotes, setVerificationNotes] = useState('');
     const [processing, setProcessing] = useState(false);
+
+    // Matching Room Bookings state (Fase 2)
+    const [matchingBookings, setMatchingBookings] = useState<MatchingBooking[]>([]);
+    const [loadingBookings, setLoadingBookings] = useState(false);
 
     // Expanded study programs for reports
     const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
@@ -295,13 +574,14 @@ const FinanceAttendance: React.FC = () => {
             // ─── PAGINATION: Supabase default limit = 1000 baris.
             // Tanpa pagination, data awal bulan (tgl 1-8) bisa terpotong jika total > 1000
             // karena sort descending mengambil terbaru dulu.
-            // Solusi: loop range() sampai semua data habis.
+            // Solusi: loop range() sampai semua data habis dengan safety guard (Fase 5).
             const PAGE_SIZE = 1000;
+            const MAX_PAGES = 50; // Safety guard: maksimal 50,000 baris untuk cegah infinite loop
             let allData: any[] = [];
             let page = 0;
             let hasMore = true;
 
-            while (hasMore) {
+            while (hasMore && page < MAX_PAGES) {
                 const from = page * PAGE_SIZE;
                 const to = from + PAGE_SIZE - 1;
 
@@ -350,6 +630,10 @@ const FinanceAttendance: React.FC = () => {
                 if (result.error) throw result.error;
 
                 const pageData = result.data || [];
+                if (pageData.length === 0) {
+                    hasMore = false;
+                    break;
+                }
                 allData = [...allData, ...pageData];
                 hasMore = pageData.length === PAGE_SIZE;
                 page++;
@@ -362,25 +646,36 @@ const FinanceAttendance: React.FC = () => {
 
             toast.dismiss('retry-toast');
 
-            // Fetch is_homebase untuk unique lecturer IDs
+            // Fetch is_homebase dan full_name terbaru dari tabel users (Optimasi batching Fase 5)
             const lecturerIds = [...new Set((data || []).map(r => r.lecturer_user_id).filter(Boolean))];
             let homebaseMap: Record<string, boolean> = {};
+            let userNameMap: Record<string, string> = {};
 
             if (lecturerIds.length > 0) {
-                const { data: usersData } = await supabase
-                    .from('users')
-                    .select('id, is_homebase')
-                    .in('id', lecturerIds);
+                const chunks = chunkArray(lecturerIds, 50);
+                const userResults = await Promise.all(
+                    chunks.map(chunk =>
+                        supabase
+                            .from('users')
+                            .select('id, full_name, is_homebase')
+                            .in('id', chunk)
+                    )
+                );
 
-                if (usersData) {
-                    usersData.forEach(u => {
-                        homebaseMap[u.id] = u.is_homebase ?? true;
-                    });
-                }
+                userResults.forEach(({ data: usersData, error: usersError }) => {
+                    if (usersError) console.warn('Gagal memuat batch users:', usersError);
+                    if (usersData) {
+                        usersData.forEach(u => {
+                            homebaseMap[u.id] = u.is_homebase ?? true;
+                            if (u.full_name) userNameMap[u.id] = u.full_name;
+                        });
+                    }
+                });
             }
 
             let enrichedData = (data || []).map(r => ({
                 ...r,
+                lecturer_name: (r.lecturer_user_id && userNameMap[r.lecturer_user_id]) ? userNameMap[r.lecturer_user_id] : r.lecturer_name,
                 is_homebase: homebaseMap[r.lecturer_user_id] ?? true
             }));
 
@@ -404,8 +699,9 @@ const FinanceAttendance: React.FC = () => {
             if (error?.name === 'AbortError') return;
             toast.error(
                 error?.code === '57014'
-                    ? 'Query timeout — coba perkecil rentang tanggal atau gunakan filter'
-                    : 'Gagal memuat data presensi'
+                    ? 'Query database timeout (57014) — silakan persempit rentang tanggal atau filter program studi'
+                    : 'Gagal memuat data presensi: ' + (error?.message || 'Kesalahan jaringan'),
+                { id: 'retry-toast', duration: 5000 }
             );
         } finally {
             setLoading(false);
@@ -474,13 +770,14 @@ const FinanceAttendance: React.FC = () => {
     const fetchLectureSchedules = async () => {
         try {
             // Supabase defaults to max 1000 rows per query
-            // We need to paginate to get ALL lecture schedules
+            // We need to paginate to get ALL lecture schedules with safety cap (Fase 5)
             const PAGE_SIZE = 1000;
+            const MAX_SCHEDULE_PAGES = 30; // Safety guard: max 30,000 jadwal
             let allData: LectureSchedule[] = [];
             let page = 0;
             let hasMore = true;
 
-            while (hasMore) {
+            while (hasMore && page < MAX_SCHEDULE_PAGES) {
                 const from = page * PAGE_SIZE;
                 const to = from + PAGE_SIZE - 1;
 
@@ -493,11 +790,11 @@ const FinanceAttendance: React.FC = () => {
 
                 if (data && data.length > 0) {
                     allData = [...allData, ...data];
-                    // If we got less than PAGE_SIZE, we've reached the end
                     hasMore = data.length === PAGE_SIZE;
                     page++;
                 } else {
                     hasMore = false;
+                    break;
                 }
             }
 
@@ -910,15 +1207,96 @@ const FinanceAttendance: React.FC = () => {
         }
     };
 
-    // Handle selecting a record (fetch details + photo lazily)
+    // Fetch matching bookings for scanned room & date (Fase 2)
+    const fetchMatchingBookings = async (
+        roomId?: string | null,
+        attendanceDate?: string,
+        fallbackRoomName?: string
+    ) => {
+        try {
+            setLoadingBookings(true);
+            if (!attendanceDate) {
+                setMatchingBookings([]);
+                return;
+            }
+
+            let effectiveRoomId = roomId;
+
+            // Fallback: jika scanned_room_id null tapi ada nama ruangan dari jadwal
+            if (!effectiveRoomId && fallbackRoomName) {
+                const { data: foundRoom } = await supabase
+                    .from('rooms')
+                    .select('id')
+                    .ilike('name', fallbackRoomName.trim())
+                    .maybeSingle();
+                if (foundRoom?.id) {
+                    effectiveRoomId = foundRoom.id;
+                }
+            }
+
+            if (!effectiveRoomId) {
+                setMatchingBookings([]);
+                return;
+            }
+
+            // Rentang waktu hari tersebut dalam timezone WIB (+07:00)
+            const startOfDay = `${attendanceDate}T00:00:00+07:00`;
+            const endOfDay = `${attendanceDate}T23:59:59+07:00`;
+
+            const { data, error } = await supabase
+                .from('bookings')
+                .select(`
+                    id,
+                    room_id,
+                    start_time,
+                    end_time,
+                    purpose,
+                    status,
+                    notes,
+                    sks,
+                    class_type,
+                    user_info,
+                    user:users!bookings_user_id_fkey(
+                        id,
+                        full_name,
+                        identity_number,
+                        phone_number,
+                        email
+                    )
+                `)
+                .eq('room_id', effectiveRoomId)
+                .gte('end_time', startOfDay)
+                .lte('start_time', endOfDay)
+                .not('status', 'in', '("cancelled")')
+                .order('start_time', { ascending: true });
+
+            if (error) {
+                console.error('Error fetching matching bookings:', error);
+                setMatchingBookings([]);
+                return;
+            }
+
+            setMatchingBookings((data as unknown as MatchingBooking[]) || []);
+        } catch (err) {
+            console.error('Failed to fetch matching bookings:', err);
+            setMatchingBookings([]);
+        } finally {
+            setLoadingBookings(false);
+        }
+    };
+
+    // Handle selecting a record (fetch details, photo, and matching bookings lazily)
     const handleSelectRecord = async (record: AttendanceRecord) => {
         setSelectedRecord(record);
         setVerificationNotes(record.verified_notes || '');
         setLoadingPhoto(true); // Mulai skeleton foto
+        setMatchingBookings([]);
+        setLoadingBookings(true);
 
-        // Fetch details dan photo secara parallel — keduanya lazy
+        // Fetch details, matching bookings, dan photo secara parallel — ketiganya lazy
         await Promise.all([
             fetchAttendanceDetails(record.id),
+            fetchMatchingBookings(record.scanned_room_id, record.attendance_date, record.scanned_room?.name),
 
             // Lazy fetch photo_capture — hanya dipanggil saat modal dibuka
             supabase
@@ -958,6 +1336,8 @@ const FinanceAttendance: React.FC = () => {
             toast.success(status === 'verified' ? 'Presensi berhasil diverifikasi' : 'Presensi ditolak');
             setSelectedRecord(null);
             setVerificationNotes('');
+            setMatchingBookings([]);
+            setLoadingBookings(false);
             fetchAttendanceRecords();
         } catch (error: any) {
             toast.error('Gagal memproses verifikasi');
@@ -994,6 +1374,39 @@ const FinanceAttendance: React.FC = () => {
                 return;
             }
 
+            // Deduplikasi presensi per dosen per tanggal (1 transport harian per dosen per hari)
+            const deduplicatedMap = new Map<string, AttendanceRecord & {
+                sessionCount: number;
+                allPurposes: string[];
+            }>();
+
+            verifiedRecords.forEach(record => {
+                const key = `${record.lecturer_user_id || record.lecturer_name}_${record.attendance_date}`;
+                if (!deduplicatedMap.has(key)) {
+                    deduplicatedMap.set(key, {
+                        ...record,
+                        sessionCount: 1,
+                        allPurposes: [record.purpose]
+                    });
+                } else {
+                    const existing = deduplicatedMap.get(key)!;
+                    existing.sessionCount += 1;
+                    if (record.purpose && !existing.allPurposes.includes(record.purpose)) {
+                        existing.allPurposes.push(record.purpose);
+                    }
+                    // Simpan waktu scan presensi paling awal
+                    if (record.attendance_time && (!existing.attendance_time || record.attendance_time < existing.attendance_time)) {
+                        existing.attendance_time = record.attendance_time;
+                    }
+                }
+            });
+
+            const displayRecords = Array.from(deduplicatedMap.values()).sort((a, b) => {
+                const dateCmp = a.attendance_date.localeCompare(b.attendance_date);
+                if (dateCmp !== 0) return dateCmp;
+                return (a.lecturer_name || '').localeCompare(b.lecturer_name || '');
+            });
+
             const doc = new jsPDF();
 
             // Header
@@ -1005,7 +1418,7 @@ const FinanceAttendance: React.FC = () => {
             doc.setTextColor(100, 100, 100);
             doc.text(`Periode: ${format(new Date(dateRange.start), 'd MMM yyyy', { locale: localeId })} - ${format(new Date(dateRange.end), 'd MMM yyyy', { locale: localeId })}`, 20, 30);
             doc.text(`Dibuat: ${format(new Date(), 'd MMMM yyyy HH:mm', { locale: localeId })}`, 20, 36);
-            doc.text(`Total: ${verifiedRecords.length} kehadiran terverifikasi`, 20, 42);
+            doc.text(`Total: ${displayRecords.length} hari kehadiran terverifikasi (${verifiedRecords.length} total sesi)`, 20, 42);
 
             // Table header
             let y = 55;
@@ -1018,14 +1431,14 @@ const FinanceAttendance: React.FC = () => {
             doc.text('Nama Dosen', 35, y);
             doc.text('Tanggal', 95, y);
             doc.text('Waktu', 125, y);
-            doc.text('Tujuan', 150, y);
+            doc.text('Tujuan / Sesi', 150, y);
 
             y += 10;
             doc.setTextColor(40, 40, 40);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(8);
 
-            verifiedRecords.forEach((record, index) => {
+            displayRecords.forEach((record, index) => {
                 if (y > 270) {
                     doc.addPage();
                     y = 20;
@@ -1036,11 +1449,17 @@ const FinanceAttendance: React.FC = () => {
                     doc.rect(20, y - 5, 170, 8, 'F');
                 }
 
+                const formattedPurposes = (record.allPurposes || [record.purpose])
+                    .filter(Boolean)
+                    .map((p: string) => p === 'mengajar' ? 'Mengajar' : p === 'sidang' ? 'Sidang' : p);
+                const uniquePurposes = [...new Set(formattedPurposes)];
+                const purposeText = `${uniquePurposes.length > 0 ? uniquePurposes.join(' & ') : 'Lainnya'}${record.sessionCount > 1 ? ` (${record.sessionCount} Sesi)` : ''}`;
+
                 doc.text((index + 1).toString(), 25, y);
                 doc.text(record.lecturer_name.substring(0, 30), 35, y);
                 doc.text(format(new Date(record.attendance_date), 'dd/MM/yyyy'), 95, y);
                 doc.text(record.attendance_time?.substring(0, 5) || '-', 125, y);
-                doc.text(record.purpose === 'mengajar' ? 'Mengajar' : record.purpose === 'sidang' ? 'Sidang' : 'Lainnya', 150, y);
+                doc.text(purposeText, 150, y);
 
                 y += 8;
             });
@@ -1082,48 +1501,94 @@ const FinanceAttendance: React.FC = () => {
                 return;
             }
 
-            // ─── FETCH DETAILS & SIGNATURE URL LANGSUNG DARI DB ──────────────
-            // fetchAttendanceRecords utama tidak mengambil details maupun signature_url,
-            // sehingga kita perlu fetch secara terpisah di sini agar KELAS dan TTD muncul.
+            // ─── FETCH DETAILS, USERS & SIGNATURE URL LANGSUNG DARI DB (Optimasi Batching Fase 5) ───
             const attendanceIds = recordsForDate.map(r => r.id).filter(Boolean);
+            const lecturerUserIds = [...new Set(recordsForDate.map(r => r.lecturer_user_id).filter(Boolean))];
 
-            // 1. Fetch details (class_group, course_name, dsb) dari lecturer_attendance_details
+            // 1. Fetch data users terbaru (nama & gelar terkini + status homebase) dengan chunking 50 ID
+            let lpjUserMap: Record<string, { full_name: string; is_homebase: boolean }> = {};
+            if (lecturerUserIds.length > 0) {
+                const userChunks = chunkArray(lecturerUserIds, 50);
+                const userResults = await Promise.all(
+                    userChunks.map(chunk =>
+                        supabase
+                            .from('users')
+                            .select('id, full_name, is_homebase')
+                            .in('id', chunk)
+                    )
+                );
+
+                userResults.forEach(({ data: usersData, error: usersError }) => {
+                    if (usersError) console.warn('Gagal memuat batch users untuk LPJ:', usersError);
+                    if (usersData) {
+                        usersData.forEach((u: any) => {
+                            lpjUserMap[u.id] = {
+                                full_name: u.full_name,
+                                is_homebase: u.is_homebase ?? true
+                            };
+                        });
+                    }
+                });
+            }
+
+            // 2. Fetch details (class_group, course_name, dsb) dari lecturer_attendance_details dengan chunking 50 ID
             let detailsMap: Record<string, any[]> = {};
             if (attendanceIds.length > 0) {
-                const { data: detailsData } = await supabase
-                    .from('lecturer_attendance_details')
-                    .select('id, attendance_id, activity_type, course_name, course_code, study_program_name, class_group, semester, session_schedule_id, student_name, student_nim, session_type, role_in_session, scheduled_date, start_time, end_time, room_name')
-                    .in('attendance_id', attendanceIds);
+                const detailChunks = chunkArray(attendanceIds, 50);
+                const detailResults = await Promise.all(
+                    detailChunks.map(chunk =>
+                        supabase
+                            .from('lecturer_attendance_details')
+                            .select('id, attendance_id, activity_type, course_name, course_code, study_program_name, class_group, semester, session_schedule_id, student_name, student_nim, session_type, role_in_session, scheduled_date, start_time, end_time, room_name')
+                            .in('attendance_id', chunk)
+                    )
+                );
 
-                if (detailsData) {
-                    detailsData.forEach((d: any) => {
-                        if (!detailsMap[d.attendance_id]) detailsMap[d.attendance_id] = [];
-                        detailsMap[d.attendance_id].push(d);
-                    });
-                }
+                detailResults.forEach(({ data: detailsData, error: detailsError }) => {
+                    if (detailsError) console.warn('Gagal memuat batch details untuk LPJ:', detailsError);
+                    if (detailsData) {
+                        detailsData.forEach((d: any) => {
+                            if (!detailsMap[d.attendance_id]) detailsMap[d.attendance_id] = [];
+                            detailsMap[d.attendance_id].push(d);
+                        });
+                    }
+                });
             }
 
-            // 2. Fetch signature_url dari tabel lecturer_attendance
+            // 3. Fetch signature_url dari tabel lecturer_attendance dengan chunking 50 ID
             let signatureMap: Record<string, string | null> = {};
             if (attendanceIds.length > 0) {
-                const { data: sigData } = await supabase
-                    .from('lecturer_attendance')
-                    .select('id, signature_url')
-                    .in('id', attendanceIds);
+                const sigChunks = chunkArray(attendanceIds, 50);
+                const sigResults = await Promise.all(
+                    sigChunks.map(chunk =>
+                        supabase
+                            .from('lecturer_attendance')
+                            .select('id, signature_url')
+                            .in('id', chunk)
+                    )
+                );
 
-                if (sigData) {
-                    sigData.forEach((s: any) => {
-                        signatureMap[s.id] = s.signature_url || null;
-                    });
-                }
+                sigResults.forEach(({ data: sigData, error: sigError }) => {
+                    if (sigError) console.warn('Gagal memuat batch signature untuk LPJ:', sigError);
+                    if (sigData) {
+                        sigData.forEach((s: any) => {
+                            signatureMap[s.id] = s.signature_url || null;
+                        });
+                    }
+                });
             }
 
-            // Enrich recordsForDate dengan details dan signature_url
-            const enrichedRecords = recordsForDate.map(r => ({
-                ...r,
-                details: detailsMap[r.id] || (r.details ?? []),
-                signature_url: signatureMap[r.id] ?? (r as any).signature_url ?? null,
-            }));
+            // Enrich recordsForDate dengan data user terkini, details, dan signature_url
+            const enrichedRecords = recordsForDate.map(r => {
+                const userLatest = r.lecturer_user_id ? lpjUserMap[r.lecturer_user_id] : null;
+                return {
+                    ...r,
+                    lecturer_name: userLatest?.full_name || r.lecturer_name,
+                    is_homebase: userLatest ? userLatest.is_homebase : (r.is_homebase ?? true),
+                    details: detailsMap[r.id] || (r.details ?? []),
+                    signature_url: signatureMap[r.id] ?? (r as any).signature_url ?? null,
+                };
+            });
 
 
             // Group records
@@ -1142,7 +1607,10 @@ const FinanceAttendance: React.FC = () => {
                 if (type === 'homebase' && !isHomebase) return;
                 if (type === 'non_homebase' && isHomebase) return;
 
-                const key = record.lecturer_user_id;
+                const normalizedName = (record.lecturer_name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                const key = record.lecturer_user_id
+                    ? `uid_${record.lecturer_user_id}`
+                    : `name_${normalizedName}`;
                 const details = (record as any).details || [];
 
                 let courses = details.map((d: any) => d?.course_name).filter(Boolean);
@@ -1183,6 +1651,9 @@ const FinanceAttendance: React.FC = () => {
                     const existing = lecturerMap.get(key)!;
                     courses.forEach(c => { if (!existing.courses.includes(c)) existing.courses.push(c); });
                     classes.forEach(c => { if (!existing.classes.includes(c)) existing.classes.push(c); });
+                    if (!existing.signatureUrl && (record as any).signature_url) {
+                        existing.signatureUrl = (record as any).signature_url;
+                    }
                 } else {
                     lecturerMap.set(key, {
                         lecturerId: record.lecturer_user_id,
@@ -1401,9 +1872,12 @@ const FinanceAttendance: React.FC = () => {
             doc.save(filename);
             toast.success(`Lampiran LPJ berhasil diunduh`);
 
-        } catch (error) {
-            
-            toast.error('Gagal membuat PDF');
+        } catch (error: any) {
+            if (error?.code === '57014') {
+                toast.error('Query database timeout (57014) saat membuat LPJ. Silakan coba lagi beberapa saat.');
+            } else {
+                toast.error('Gagal membuat PDF: ' + (error?.message || 'Terjadi kesalahan'));
+            }
         }
     };
 
@@ -1477,17 +1951,18 @@ const FinanceAttendance: React.FC = () => {
 
             const exportPaymentRates: PaymentRate[] = paymentRatesData || [];
 
-            // ─── FETCH SEMUA VERIFIED RECORDS LANGSUNG DARI DB (PAGINATION) ──────
+            // ─── FETCH SEMUA VERIFIED RECORDS LANGSUNG DARI DB (PAGINATION DENGAN SAFETY GUARD) ───
             // PENTING: attendanceRecords state bisa terpotong di 1000 baris (Supabase default).
             // Jika total data bulan ini > 1000 dan sort=DESC, data tgl 1-8 tidak masuk state.
-            // Solusi: fetch ulang semua data langsung dari DB dengan loop range().
+            // Solusi: fetch ulang semua data langsung dari DB dengan loop range() & batas aman MAX_EXPORT_PAGES.
             toast.loading('Mengambil semua data presensi...', { id: 'export-fetch-toast' });
             const EXPORT_PAGE_SIZE = 1000;
+            const MAX_EXPORT_PAGES = 50; // Safety guard: maksimal 50,000 baris
             let allVerifiedRecordsRaw: any[] = [];
             let exportPage = 0;
             let exportHasMore = true;
 
-            while (exportHasMore) {
+            while (exportHasMore && exportPage < MAX_EXPORT_PAGES) {
                 const exportFrom = exportPage * EXPORT_PAGE_SIZE;
                 const exportTo = exportFrom + EXPORT_PAGE_SIZE - 1;
 
@@ -1521,6 +1996,10 @@ const FinanceAttendance: React.FC = () => {
                 if (pageError) throw pageError;
 
                 const records = pageData || [];
+                if (records.length === 0) {
+                    exportHasMore = false;
+                    break;
+                }
                 allVerifiedRecordsRaw = [...allVerifiedRecordsRaw, ...records];
                 exportHasMore = records.length === EXPORT_PAGE_SIZE;
                 exportPage++;
@@ -1528,22 +2007,35 @@ const FinanceAttendance: React.FC = () => {
 
             toast.dismiss('export-fetch-toast');
 
-            // Enrich with is_homebase from users table
+            // Enrich with full_name & is_homebase from users table (Optimasi Batching Fase 5)
             const exportLecturerIds = [...new Set(allVerifiedRecordsRaw.map((r: any) => r.lecturer_user_id).filter(Boolean))];
             let exportHomebaseMap: Record<string, boolean> = {};
+            let exportUserNameMap: Record<string, string> = {};
             if (exportLecturerIds.length > 0) {
-                const { data: exportUsersData } = await supabase
-                    .from('users')
-                    .select('id, is_homebase')
-                    .in('id', exportLecturerIds);
-                if (exportUsersData) {
-                    exportUsersData.forEach((u: any) => { exportHomebaseMap[u.id] = u.is_homebase ?? true; });
-                }
+                const chunks = chunkArray(exportLecturerIds, 50);
+                const userResults = await Promise.all(
+                    chunks.map(chunk =>
+                        supabase
+                            .from('users')
+                            .select('id, full_name, is_homebase')
+                            .in('id', chunk)
+                    )
+                );
+                userResults.forEach(({ data: exportUsersData, error: usersErr }) => {
+                    if (usersErr) console.warn('Gagal memuat batch users untuk Excel:', usersErr);
+                    if (exportUsersData) {
+                        exportUsersData.forEach((u: any) => {
+                            exportHomebaseMap[u.id] = u.is_homebase ?? true;
+                            if (u.full_name) exportUserNameMap[u.id] = u.full_name;
+                        });
+                    }
+                });
             }
 
-            // verifiedRecords = sumber data utama export (fresh dari DB, sudah di-enrich)
+            // verifiedRecords = sumber data utama export (fresh dari DB, sudah di-enrich dengan data users terkini)
             const verifiedRecords = allVerifiedRecordsRaw.map((r: any) => ({
                 ...r,
+                lecturer_name: (r.lecturer_user_id && exportUserNameMap[r.lecturer_user_id]) ? exportUserNameMap[r.lecturer_user_id] : r.lecturer_name,
                 is_homebase: exportHomebaseMap[r.lecturer_user_id] ?? true
             }));
 
@@ -2163,10 +2655,13 @@ const FinanceAttendance: React.FC = () => {
             saveAs(blob, filename);
 
             toast.success('Excel berhasil dibuat dan diunduh');
-        } catch (error) {
-            if (error instanceof Error) {
+        } catch (error: any) {
+            toast.dismiss('export-fetch-toast');
+            if (error?.code === '57014') {
+                toast.error('Query database timeout (57014) saat ekspor Excel. Coba persempit rentang tanggal.');
+            } else {
+                toast.error('Gagal membuat file Excel: ' + (error?.message || 'Terjadi kesalahan sistem'));
             }
-            toast.error('Gagal membuat file Excel');
         }
     };
 
@@ -2870,234 +3365,352 @@ const FinanceAttendance: React.FC = () => {
                 </div>
             )}
 
-            {/* Verification Modal */}
+            {/* Verification Modal (Fase 3: Two-Sided Comparison & Automatic Indicator) */}
             {
-                selectedRecord && !showImageModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-                        <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-                            <div className="p-6 border-b border-gray-200">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-lg font-semibold text-gray-900">
-                                        {selectedRecord.verification_status === 'pending'
-                                            ? getText('Verify Attendance', 'Verifikasi Presensi')
-                                            : getText('Attendance Detail', 'Detail Presensi')}
-                                    </h3>
-                                    <button onClick={() => { setSelectedRecord(null); setVerificationNotes(''); setLoadingPhoto(false); }} className="p-2 hover:bg-gray-100 rounded-lg">
-                                        <X className="w-5 h-5 text-gray-500" />
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="p-6 space-y-4">
-                                {/* Foto — Lazy Loaded (hanya saat modal dibuka) */}
-                                <div className="relative w-full h-48 rounded-xl overflow-hidden bg-gray-100">
-                                    {loadingPhoto ? (
-                                        /* Skeleton loader saat foto sedang di-fetch */
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 animate-pulse">
-                                            <div className="w-12 h-12 bg-gray-300 rounded-full" />
-                                            <div className="w-24 h-3 bg-gray-300 rounded" />
-                                            <p className="text-xs text-gray-400 mt-1">Memuat foto...</p>
+                selectedRecord && !showImageModal && (() => {
+                    const indicator = computeVerificationIndicator(selectedRecord, selectedRecordDetails, matchingBookings);
+
+                    return (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 md:p-6 animate-in fade-in duration-200">
+                            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
+                                
+                                {/* Header */}
+                                <div className="p-4 md:p-5 border-b border-gray-200 bg-white flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                                            <ClipboardCheck className="w-5 h-5" />
                                         </div>
-                                    ) : selectedRecord.photo_capture ? (
-                                        /* Foto sudah tersedia */
-                                        <img
-                                            src={selectedRecord.photo_capture}
-                                            alt="Foto presensi"
-                                            className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform duration-300"
-                                            onClick={() => setShowImageModal(true)}
-                                            title="Klik untuk perbesar"
-                                        />
-                                    ) : (
-                                        /* Tidak ada foto */
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
-                                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            </svg>
-                                            <span className="text-xs">Tidak ada foto</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <label className="text-gray-500">Nama Dosen</label>
-                                        <p className="font-medium text-gray-900">{selectedRecord.lecturer_name}</p>
-                                    </div>
-                                    <div>
-                                        <label className="text-gray-500">Program Studi</label>
-                                        <p className="font-medium text-gray-900">{selectedRecord.study_program?.name || '-'}</p>
-                                    </div>
-                                    <div>
-                                        <label className="text-gray-500">Tanggal & Waktu</label>
-                                        <p className="font-medium text-gray-900">
-                                            {format(new Date(selectedRecord.attendance_date), 'dd MMM yyyy', { locale: localeId })} {selectedRecord.attendance_time?.substring(0, 5)}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <label className="text-gray-500">Tujuan</label>
-                                        <p className="font-medium text-gray-900 capitalize">{selectedRecord.purpose}</p>
-                                    </div>
-                                    <div>
-                                        <label className="text-gray-500">Ruangan Scan</label>
-                                        <div className="flex items-center gap-2">
-                                            <div className="p-1 bg-blue-50 rounded">
-                                                <Building className="w-4 h-4 text-blue-600" />
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-base md:text-lg font-bold text-gray-900">
+                                                    {selectedRecord.verification_status === 'pending'
+                                                        ? getText('Verify Attendance', 'Verifikasi Kehadiran Dosen')
+                                                        : getText('Attendance Detail', 'Detail Presensi Dosen')}
+                                                </h3>
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                                                    selectedRecord.verification_status === 'verified'
+                                                        ? 'bg-emerald-100 text-emerald-700'
+                                                        : selectedRecord.verification_status === 'rejected'
+                                                            ? 'bg-red-100 text-red-700'
+                                                            : 'bg-amber-100 text-amber-700'
+                                                }`}>
+                                                    {selectedRecord.verification_status}
+                                                </span>
                                             </div>
-                                            <p className="font-medium text-gray-900">
-                                                {(() => {
-                                                    const scannedRoom = selectedRecord.scanned_room as any;
-                                                    if (scannedRoom?.name) {
-                                                        return scannedRoom.name;
-                                                    } else if (selectedRecord.scanned_room_id) {
-                                                        return <span className="text-xs text-gray-500 font-mono">{selectedRecord.scanned_room_id.substring(0, 8)}...</span>;
-                                                    } else {
-                                                        return <span className="text-gray-400 italic text-sm">Tidak ada data scan</span>;
-                                                    }
-                                                })()}
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                ID: <span className="font-mono">{selectedRecord.id.substring(0, 8)}...</span> • Tanggal: {format(new Date(selectedRecord.attendance_date), 'dd MMMM yyyy', { locale: localeId })}
                                             </p>
                                         </div>
                                     </div>
+                                    <button 
+                                        onClick={() => { setSelectedRecord(null); setVerificationNotes(''); setLoadingPhoto(false); setMatchingBookings([]); setLoadingBookings(false); }} 
+                                        className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-700 transition-colors"
+                                        title="Tutup Modal"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
                                 </div>
-                                {selectedRecord.purpose_description && (
-                                    <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                                        <label className="text-yellow-800 text-xs font-semibold uppercase tracking-wider">Detail Tujuan</label>
-                                        <p className="mt-1 font-medium text-gray-900">{selectedRecord.purpose_description}</p>
-                                    </div>
-                                )}
 
-                                {selectedRecord.additional_notes && (
-                                    selectedRecord.purpose === 'mengajar' ||
-                                    selectedRecord.additional_notes !== selectedRecord.purpose_description
-                                ) && (
-                                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                                            <label className="text-blue-800 text-xs font-semibold uppercase tracking-wider">Opsi Keterangan Tambahan</label>
-                                            <p className="mt-1 font-medium text-gray-900">{selectedRecord.additional_notes}</p>
-                                        </div>
-                                    )}
+                                {/* Body - Scrollable */}
+                                <div className="p-4 md:p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
 
-                                {/* Attendance Details Section - Multi-jadwal */}
-                                {loadingDetails ? (
-                                    <div className="flex items-center justify-center py-4">
-                                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                                        <span className="ml-2 text-sm text-gray-500">Memuat detail kegiatan...</span>
-                                    </div>
-                                ) : selectedRecordDetails.length > 0 && (
-                                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <BookOpen className="w-4 h-4 text-blue-600" />
-                                                <label className="text-blue-800 text-sm font-semibold">
-                                                    Detail Kegiatan ({selectedRecordDetails.length})
-                                                </label>
+                                    {/* 1. BANNER INDIKATOR OTOMATIS (Fase 3: Hijau / Kuning / Biru / Oranye) */}
+                                    <div className={`rounded-xl p-4 border shadow-xs ${indicator.cardBg} ${indicator.cardBorder}`}>
+                                        <div className="flex items-start gap-3">
+                                            <div className={`p-2 rounded-lg bg-white/80 shadow-xs shrink-0 ${indicator.iconColor}`}>
+                                                {indicator.type === 'green' && <CheckCircle className="w-5 h-5" />}
+                                                {indicator.type === 'yellow' && <AlertTriangle className="w-5 h-5" />}
+                                                {indicator.type === 'blue' && <BookOpen className="w-5 h-5" />}
+                                                {indicator.type === 'orange' && <AlertCircle className="w-5 h-5" />}
                                             </div>
-                                            <span className="text-xs text-gray-400" title={`ID Presensi: ${selectedRecord.id}`}>
-                                                #{selectedRecord.id.substring(0, 8)}
-                                            </span>
-                                        </div>
-                                        <div className="space-y-3 max-h-60 overflow-y-auto">
-                                            {selectedRecordDetails.map((detail, idx) => (
-                                                <div key={detail.id || idx} className="bg-white rounded-lg p-3 border border-blue-100 shadow-sm">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${detail.activity_type === 'mengajar'
-                                                            ? 'bg-blue-100 text-blue-700'
-                                                            : detail.activity_type === 'sidang'
-                                                                ? 'bg-purple-100 text-purple-700'
-                                                                : 'bg-amber-100 text-amber-700'
-                                                            }`}>
-                                                            {detail.activity_type === 'mengajar' ? 'Mengajar' :
-                                                                detail.activity_type === 'sidang' ? 'Sidang' : 'Lainnya'}
-                                                        </span>
-                                                        {detail.start_time && detail.end_time && (
-                                                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                                <Clock className="w-3 h-3" />
-                                                                {detail.start_time?.substring(0, 5)} - {detail.end_time?.substring(0, 5)}
-                                                            </span>
-                                                        )}
-                                                    </div>
-
-                                                    {detail.activity_type === 'mengajar' ? (
-                                                        <div className="space-y-1">
-                                                            <p className="font-medium text-gray-900">{detail.course_name || 'Mata Kuliah'}</p>
-                                                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                                                                {detail.study_program_name && (
-                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
-                                                                        <GraduationCap className="w-3 h-3" /> {detail.study_program_name}
-                                                                    </span>
-                                                                )}
-                                                                {detail.class_group && (
-                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
-                                                                        <Users className="w-3 h-3" /> Rombel {detail.class_group}
-                                                                    </span>
-                                                                )}
-                                                                {detail.semester && (
-                                                                    <span className="bg-gray-100 px-2 py-0.5 rounded">{detail.semester}</span>
-                                                                )}
-                                                                {detail.room_name && (
-                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
-                                                                        <Building className="w-3 h-3" /> {detail.room_name}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ) : detail.activity_type === 'sidang' ? (
-                                                        <div className="space-y-1">
-                                                            <p className="font-medium text-gray-900">
-                                                                {detail.session_type || 'Sidang'} - {detail.student_name || 'Mahasiswa'}
-                                                            </p>
-                                                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                                                                {detail.role_in_session && (
-                                                                    <span className="flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">
-                                                                        <User className="w-3 h-3" /> {detail.role_in_session}
-                                                                    </span>
-                                                                )}
-                                                                {detail.student_nim && (
-                                                                    <span className="bg-gray-100 px-2 py-0.5 rounded">NIM: {detail.student_nim}</span>
-                                                                )}
-                                                                {detail.room_name && (
-                                                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded">
-                                                                        <Building className="w-3 h-3" /> {detail.room_name}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ) : null}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${indicator.badgeBg} ${indicator.badgeText} ${indicator.badgeBorder}`}>
+                                                        {indicator.badgeLabel}
+                                                    </span>
+                                                    <h4 className="text-sm font-bold text-gray-900">{indicator.title}</h4>
                                                 </div>
-                                            ))}
+                                                <p className="text-xs text-gray-700 mt-1 leading-relaxed">
+                                                    {indicator.description}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                )}
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">{getText('Notes', 'Catatan')}</label>
-                                    <textarea
-                                        value={verificationNotes}
-                                        onChange={(e) => setVerificationNotes(e.target.value)}
-                                        placeholder={getText('Add verification notes (optional)...', 'Tambahkan catatan verifikasi (opsional)...')}
-                                        rows={3}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
+                                    {/* 2. DUA KARTU KOMPARASI DUA SISI */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                                        {/* KARTU KIRI: Data & Klaim Presensi Dosen */}
+                                        <div className="bg-white rounded-xl p-4 md:p-5 border border-slate-200 shadow-xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                                                        <User className="w-4 h-4" />
+                                                    </div>
+                                                    <h4 className="text-sm font-bold text-gray-900">Klaim & Presensi Dosen</h4>
+                                                </div>
+                                                <span className="text-xs text-gray-500 font-medium">Sisi Dosen</span>
+                                            </div>
+
+                                            {/* Foto Selfie Presensi */}
+                                            <div className="relative w-full h-44 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-inner group">
+                                                {loadingPhoto ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 animate-pulse">
+                                                        <div className="w-10 h-10 bg-gray-300 rounded-full" />
+                                                        <div className="w-20 h-2 bg-gray-300 rounded" />
+                                                        <p className="text-xs text-gray-400">Memuat foto selfie...</p>
+                                                    </div>
+                                                ) : selectedRecord.photo_capture ? (
+                                                    <>
+                                                        <img
+                                                            src={selectedRecord.photo_capture}
+                                                            alt="Foto presensi"
+                                                            className="w-full h-full object-cover cursor-zoom-in group-hover:scale-105 transition-transform duration-300"
+                                                            onClick={() => setShowImageModal(true)}
+                                                            title="Klik untuk melihat foto ukuran penuh"
+                                                        />
+                                                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 text-white text-[10px] rounded backdrop-blur-xs flex items-center gap-1 opacity-90 group-hover:opacity-100">
+                                                            <Eye className="w-3 h-3" /> Perbesar
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
+                                                        <User className="w-8 h-8 opacity-40" />
+                                                        <span className="text-xs">Tidak ada foto selfie</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Profil Dosen & Waktu Scan */}
+                                            <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3 rounded-xl border border-slate-100">
+                                                <div>
+                                                    <span className="text-gray-500 block">Nama Dosen</span>
+                                                    <span className="font-semibold text-gray-900 text-sm">{selectedRecord.lecturer_name}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500 block">Program Studi</span>
+                                                    <span className="font-medium text-gray-900">{selectedRecord.study_program?.name || '-'}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500 block">Jam Scan Presensi</span>
+                                                    <span className="font-semibold text-blue-700 flex items-center gap-1 mt-0.5">
+                                                        <Clock className="w-3.5 h-3.5" />
+                                                        {selectedRecord.attendance_time?.substring(0, 5)} WIB
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500 block">Ruangan Discan</span>
+                                                    <span className="font-semibold text-gray-900 flex items-center gap-1 mt-0.5">
+                                                        <Building className="w-3.5 h-3.5 text-blue-600" />
+                                                        {selectedRecord.scanned_room?.name || (selectedRecord.scanned_room_id ? `${selectedRecord.scanned_room_id.substring(0, 8)}...` : 'Tanpa data scan')}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Kegiatan yang Diklaim (Matkul / Sidang) */}
+                                            {loadingDetails ? (
+                                                <div className="flex items-center justify-center py-3 text-xs text-gray-500">
+                                                    <Loader2 className="w-4 h-4 animate-spin mr-1.5 text-blue-600" />
+                                                    Memuat jadwal kegiatan...
+                                                </div>
+                                            ) : selectedRecordDetails.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between text-xs">
+                                                        <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                                                            <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                                                            Jadwal Diklaim ({selectedRecordDetails.length})
+                                                        </span>
+                                                        <span className="text-[11px] text-gray-500 capitalize">{selectedRecord.purpose}</span>
+                                                    </div>
+                                                    <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                                                        {selectedRecordDetails.map((detail, idx) => (
+                                                            <div key={detail.id || idx} className="p-2.5 rounded-lg border border-blue-100 bg-blue-50/50 text-xs space-y-1">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-semibold text-gray-900">{detail.course_name || detail.session_type || 'Kegiatan'}</span>
+                                                                    {detail.start_time && detail.end_time && (
+                                                                        <span className="text-[11px] font-mono text-blue-700 bg-white px-1.5 py-0.5 rounded border border-blue-100">
+                                                                            {detail.start_time.substring(0, 5)} - {detail.end_time.substring(0, 5)}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-1 text-[11px] text-gray-600">
+                                                                    {detail.class_group && <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">Rombel {detail.class_group}</span>}
+                                                                    {detail.semester && <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">{detail.semester}</span>}
+                                                                    {detail.student_name && <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">Mhs: {detail.student_name}</span>}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            {/* Catatan Tambahan / Alasan Dosen */}
+                                            {selectedRecord.additional_notes && (
+                                                <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-xs">
+                                                    <span className="font-bold text-amber-900 block mb-1">
+                                                        📝 Catatan / Alasan Dosen:
+                                                    </span>
+                                                    <p className="text-amber-950 whitespace-pre-wrap leading-relaxed">
+                                                        {selectedRecord.additional_notes}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {selectedRecord.purpose_description && selectedRecord.purpose_description !== selectedRecord.additional_notes && (
+                                                <div className="p-2.5 bg-slate-100 rounded-lg text-xs text-gray-700">
+                                                    <span className="font-semibold block text-gray-800">Detail Tujuan:</span>
+                                                    {selectedRecord.purpose_description}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* KARTU KANAN: Data Peminjaman Ruangan Mahasiswa */}
+                                        <div className="bg-white rounded-xl p-4 md:p-5 border border-slate-200 shadow-xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                                                        <Building className="w-4 h-4" />
+                                                    </div>
+                                                    <h4 className="text-sm font-bold text-gray-900">Peminjaman Ruangan Aktif</h4>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    {loadingBookings ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                                                    ) : (
+                                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                                            {matchingBookings.length} Peminjaman
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Daftar Booking Mahasiswa */}
+                                            {loadingBookings ? (
+                                                <div className="py-12 flex flex-col items-center justify-center text-xs text-gray-500 gap-2">
+                                                    <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                                                    <span>Memeriksa data peminjaman ruangan...</span>
+                                                </div>
+                                            ) : matchingBookings.length > 0 ? (
+                                                <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                                                    {matchingBookings.map((b) => {
+                                                        const matchInfo = checkBookingMatch(b, selectedRecord, selectedRecordDetails);
+                                                        const borrowerName = b.user_info?.full_name || b.user?.full_name || 'Mahasiswa';
+                                                        const borrowerNim = b.user_info?.identity_number || b.user?.identity_number;
+
+                                                        return (
+                                                            <div 
+                                                                key={b.id} 
+                                                                className={`p-3.5 rounded-xl border text-xs space-y-2 transition-all ${
+                                                                    matchInfo.matchQuality === 'perfect'
+                                                                        ? 'bg-emerald-50/50 border-emerald-300 ring-1 ring-emerald-200'
+                                                                        : matchInfo.isTimeMatch
+                                                                            ? 'bg-blue-50/40 border-blue-200'
+                                                                            : 'bg-slate-50 border-slate-200 opacity-80'
+                                                                }`}
+                                                            >
+                                                                {/* Waktu & Status Badge */}
+                                                                <div className="flex items-center justify-between">
+                                                                    <div className="flex items-center gap-1.5 font-bold text-gray-900">
+                                                                        <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                                                                        <span>{matchInfo.bookingStartWIB} - {matchInfo.bookingEndWIB} WIB</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase ${
+                                                                            b.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                                                                            b.status === 'borrowed' ? 'bg-blue-100 text-blue-800' :
+                                                                            b.status === 'completed' ? 'bg-gray-100 text-gray-700' :
+                                                                            'bg-amber-100 text-amber-800'
+                                                                        }`}>
+                                                                            {b.status}
+                                                                        </span>
+                                                                        {matchInfo.isTimeMatch && (
+                                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                                                                                <CheckCircle className="w-3 h-3" /> Waktu Pas
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Peminjam Mahasiswa */}
+                                                                <div className="bg-white/80 p-2 rounded-lg border border-slate-100 space-y-1">
+                                                                    <div className="flex items-center gap-1.5 font-medium text-gray-900">
+                                                                        <User className="w-3.5 h-3.5 text-slate-500" />
+                                                                        <span>{borrowerName}</span>
+                                                                        {borrowerNim && <span className="text-gray-500">({borrowerNim})</span>}
+                                                                    </div>
+                                                                    <div className="text-gray-700">
+                                                                        <span className="font-semibold text-gray-900">Keperluan: </span>
+                                                                        {b.purpose || '-'}
+                                                                    </div>
+                                                                    {b.notes && (
+                                                                        <div className="text-gray-500 italic text-[11px]">
+                                                                            Catatan Peminjam: "{b.notes}"
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <div className="p-6 rounded-xl border border-dashed border-slate-300 text-center text-xs text-gray-500 space-y-2 bg-slate-50/60">
+                                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-gray-400">
+                                                        <Building className="w-5 h-5" />
+                                                    </div>
+                                                    <p className="font-semibold text-gray-700">
+                                                        Tidak Ada Peminjaman Ruangan Mahasiswa
+                                                    </p>
+                                                    <p className="text-gray-500 max-w-xs mx-auto text-[11px] leading-relaxed">
+                                                        {selectedRecord.schedule_type === 'lecture' || selectedRecord.schedule_id || selectedRecord.purpose === 'sidang'
+                                                            ? 'Ruangan digunakan untuk jadwal perkuliahan / sidang reguler kampus.'
+                                                            : 'Dosen mengajar di luar jadwal tanpa reservasi mahasiswa. Silakan konfirmasi via catatan dosen dan foto kegiatan.'}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                    </div>
+
+                                    {/* 3. CATATAN VERIFIKATOR */}
+                                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+                                        <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-1.5">
+                                            {getText('Verification Notes', 'Catatan Verifikator (Opsional)')}
+                                        </label>
+                                        <textarea
+                                            value={verificationNotes}
+                                            onChange={(e) => setVerificationNotes(e.target.value)}
+                                            placeholder={getText('Tambahkan catatan verifikasi, misal: Kelas pengganti disetujui, bukti foto jelas...', 'Tambahkan catatan verifikasi, misal: Kelas pengganti disetujui, bukti foto jelas...')}
+                                            rows={2}
+                                            className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        />
+                                    </div>
+
                                 </div>
-                            </div>
-                            <div className="p-6 border-t border-gray-200 flex gap-3">
-                                <button
-                                    onClick={() => handleVerify('rejected')}
-                                    disabled={processing}
-                                    className="flex-1 py-3 px-4 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    <XCircle className="w-4 h-4" />
-                                    {getText('Reject', 'Tolak')}
-                                </button>
-                                <button
-                                    onClick={() => handleVerify('verified')}
-                                    disabled={processing}
-                                    className="flex-1 py-3 px-4 bg-emerald-600 text-white font-medium rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                                    {getText('Verify', 'Verifikasi')}
-                                </button>
+
+                                {/* Footer Sticky Buttons */}
+                                <div className="p-4 md:p-5 border-t border-gray-200 bg-white flex gap-3 shrink-0">
+                                    <button
+                                        onClick={() => handleVerify('rejected')}
+                                        disabled={processing}
+                                        className="flex-1 py-2.5 px-4 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                                    >
+                                        <XCircle className="w-4 h-4" />
+                                        {getText('Reject', 'Tolak Presensi')}
+                                    </button>
+                                    <button
+                                        onClick={() => handleVerify('verified')}
+                                        disabled={processing}
+                                        className="flex-1 py-2.5 px-4 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                                    >
+                                        {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                        {getText('Verify', 'Verifikasi & Setujui')}
+                                    </button>
+                                </div>
+
                             </div>
                         </div>
-                    </div>
-                )
+                    );
+                })()
             }
 
             {/* Image Modal */}

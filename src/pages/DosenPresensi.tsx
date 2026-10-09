@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation, CalendarX, X, PenTool, QrCode, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Search, Camera, User, Clock, BookOpen, Users, CheckCircle, AlertCircle, ChevronDown, Loader2, ExternalLink, PartyPopper, GraduationCap, MapPin, Navigation, CalendarX, X, PenTool, QrCode, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -77,13 +77,7 @@ interface SubmitSuccessData {
     additionalNotes?: string;
 }
 
-// Interface untuk riwayat penolakan presensi
-interface RejectionRecord {
-    id: string;
-    attendance_date: string;
-    verified_notes: string;
-    verified_at: string;
-}
+
 
 // Searchable Dropdown Component
 const SearchableDropdown: React.FC<{
@@ -274,10 +268,7 @@ const DosenPresensi: React.FC = () => {
     // Course required modal state
     const [showCourseRequiredModal, setShowCourseRequiredModal] = useState(false);
 
-    // Rejection history modal state
-    const [rejectionRecords, setRejectionRecords] = useState<RejectionRecord[]>([]);
-    const [showRejectionModal, setShowRejectionModal] = useState(false);
-    const [checkingRejections, setCheckingRejections] = useState(false);
+
 
     // Calculate distance between two coordinates using Haversine formula
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -824,46 +815,12 @@ const DosenPresensi: React.FC = () => {
         return null;
     };
 
-    // Fetch rejection history for a lecturer
-    const fetchRejectionHistory = async (lecturerId: string) => {
-        if (!lecturerId) return;
-        setCheckingRejections(true);
-        try {
-            const { data, error } = await supabase
-                .from('lecturer_attendance')
-                .select('id, attendance_date, verified_notes, verified_at')
-                .eq('lecturer_user_id', lecturerId)
-                .eq('verification_status', 'rejected')
-                .order('verified_at', { ascending: false });
-
-            if (error) {
-                return;
-            }
-
-            if (data && data.length > 0) {
-                setRejectionRecords(data as RejectionRecord[]);
-                setShowRejectionModal(true);
-            } else {
-                setRejectionRecords([]);
-            }
-        } catch (error) {
-        } finally {
-            setCheckingRejections(false);
-        }
-    };
-
     // Handle lecturer selection change - reset related states
     const handleLecturerChange = (lecturerId: string) => {
         setSelectedLecturerId(lecturerId);
         // Reset selected schedules and custom purpose when changing lecturer
         setSelectedSchedules([]);
         setCustomPurpose('');
-        // Check rejection history for the selected lecturer
-        if (lecturerId) {
-            fetchRejectionHistory(lecturerId);
-        } else {
-            setRejectionRecords([]);
-        }
     };
 
     // Detect ALL schedules for SELECTED DAY (lectures + sessions)
@@ -2183,80 +2140,7 @@ const DosenPresensi: React.FC = () => {
                 )
             }
 
-            {/* Rejection History Warning Modal */}
-            {
-                showRejectionModal && rejectionRecords.length > 0 && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRejectionModal(false)} />
-                        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-300">
-                            {/* Header */}
-                            <div className="bg-gradient-to-br from-red-600 to-rose-700 p-6 text-center">
-                                <div className="w-16 h-16 bg-white/15 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <ShieldAlert className="w-8 h-8 text-white" />
-                                </div>
-                                <h2 className="text-xl font-bold text-white">Catatan Evaluasi Presensi</h2>
-                                <p className="text-red-100 text-sm mt-1">
-                                    Terdapat riwayat penolakan presensi sebelumnya
-                                </p>
-                            </div>
-                            {/* Content */}
-                            <div className="p-6">
-                                {/* Summary */}
-                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                                    <div className="flex items-center justify-center gap-3">
-                                        <div className="text-center">
-                                            <p className="text-3xl font-bold text-red-700">{rejectionRecords.length}</p>
-                                            <p className="text-xs text-red-600 font-medium uppercase tracking-wider">Kali Ditolak</p>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <p className="text-sm text-gray-600 mb-3">
-                                    Berikut catatan penolakan untuk bahan evaluasi:
-                                </p>
-
-                                {/* Rejection List */}
-                                <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                    {rejectionRecords.map((record, idx) => (
-                                        <div key={record.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <span className="text-xs font-semibold text-gray-500">#{idx + 1}</span>
-                                                <span className="text-xs text-gray-400">
-                                                    {format(new Date(record.attendance_date), 'd MMM yyyy', { locale: localeId })}
-                                                </span>
-                                            </div>
-                                            <p className="text-sm text-gray-800">
-                                                {record.verified_notes
-                                                    ? `"${record.verified_notes}"`
-                                                    : <span className="italic text-gray-400">Tidak ada catatan</span>
-                                                }
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Advisory */}
-                                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                    <p className="text-xs text-blue-800">
-                                        <strong>Catatan:</strong> Pastikan data presensi yang disubmit sudah sesuai dengan ketentuan. Jika terdapat kekeliruan, mohon dapat menghubungi{' '}
-                                        <a href="https://wa.me/6285601233382" target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-700 underline hover:text-blue-900">085601233382</a>.
-                                    </p>
-                                </div>
-                            </div>
-                            {/* Footer */}
-                            <div className="px-6 pb-6">
-                                <button
-                                    onClick={() => setShowRejectionModal(false)}
-                                    className="w-full py-3 bg-gradient-to-r from-red-600 to-rose-600 text-white font-semibold rounded-xl hover:from-red-700 hover:to-rose-700 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <CheckCircle className="w-5 h-5" />
-                                    Saya Mengerti, Lanjutkan
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
         </div >
     );
 };
