@@ -140,15 +140,11 @@ const SessionScheduleProgressive = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<any>(null);
 
-<<<<<<< HEAD
-=======
   // Bulk delete (superadmin)
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [bulkDeleteMonths, setBulkDeleteMonths] = useState<number>(2);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkDeletePreview, setBulkDeletePreview] = useState<any[]>([]);
-
->>>>>>> 006de5f (Update Web Simple)
   // Calendar Modal states
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [selectedRoomForCalendar, setSelectedRoomForCalendar] = useState('');
@@ -2720,10 +2716,8 @@ const SessionScheduleProgressive = () => {
     setSessionToDelete(null);
   };
 
-<<<<<<< HEAD
-=======
   // ========== BULK DELETE (Superadmin) ==========
-  const openBulkDeleteModal = (months: 2 | 3) => {
+  const openBulkDeleteModal = (months: 2) => {
     setBulkDeleteMonths(months as any);
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - months);
@@ -2753,8 +2747,6 @@ const SessionScheduleProgressive = () => {
       setBulkDeleting(false);
     }
   };
-
->>>>>>> 006de5f (Update Web Simple)
   const handlePrint = async (formData: PrintFormData) => {
     try {
       const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
@@ -3021,11 +3013,7 @@ const SessionScheduleProgressive = () => {
               <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
             </button>
 
-<<<<<<< HEAD
-            {profile?.role === 'department_admin' && (
-=======
             {(profile?.role === 'department_admin' || profile?.role === 'superadmin') && (
->>>>>>> 006de5f (Update Web Simple)
               <button
                 onClick={() => {
                   resetForm();
