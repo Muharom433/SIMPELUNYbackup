@@ -72,7 +72,7 @@ export const RoomQRModal: React.FC<RoomQRModalProps> = ({
   }, [user, room]);
 
   const handleRedeem = async () => {
-    if (!room || !user) return;
+    if (!room || !user || isRedeeming || loading) return;
 
     const result = await Swal.fire({
       title: getText('Redeem QR Code?', 'Tukar Kode QR?'),
@@ -84,29 +84,20 @@ export const RoomQRModal: React.FC<RoomQRModalProps> = ({
               '⚠️ Peringatan: Kode QR saat ini akan langsung tidak berlaku!'
             )}
           </p>
-          <p style="margin-bottom: 0.5rem;">
+          <p style="margin-bottom: 0;">
             ${getText(
               'The new QR must be printed and posted in the room. Lecturers cannot check in until the new QR is posted.',
               'Kode QR baru harus dicetak dan ditempel di ruangan. Dosen tidak dapat melakukan presensi hingga kode QR baru ditempel.'
             )}
           </p>
-          <p style="font-weight: 500; color: #1F2937; margin-top: 0.75rem;">
-            ${getText('Enter your password to authorize:', 'Masukkan kata sandi Anda untuk konfirmasi:')}
-          </p>
         </div>
       `,
-      input: 'password',
-      inputPlaceholder: getText('Enter your password', 'Masukkan kata sandi Anda'),
-      inputAttributes: {
-        autocapitalize: 'off',
-        autocorrect: 'off'
-      },
+      icon: 'warning',
       showCancelButton: true,
       confirmButtonText: getText('Yes, Redeem QR', 'Ya, Tukar QR'),
       cancelButtonText: getText('Cancel', 'Batal'),
       confirmButtonColor: '#DC2626',
       cancelButtonColor: '#6B7280',
-      showLoaderOnConfirm: true,
       customClass: {
         container: '!z-[100000]'
       },
@@ -115,23 +106,12 @@ export const RoomQRModal: React.FC<RoomQRModalProps> = ({
         if (container) {
           container.style.zIndex = '100000';
         }
-        const input = Swal.getInput();
-        if (input) {
-          input.focus();
-        }
-      },
-      preConfirm: (password) => {
-        if (!password || !password.trim()) {
-          Swal.showValidationMessage(getText('Password is required', 'Kata sandi wajib diisi'));
-          return false;
-        }
-        return password;
       }
     });
 
-    if (result.isConfirmed && result.value) {
+    if (result.isConfirmed) {
       try {
-        await redeemQR(room.id, user.id, result.value);
+        await redeemQR(room.id, user.id);
         setJustRedeemed(true);
         await Swal.fire({
           icon: 'success',

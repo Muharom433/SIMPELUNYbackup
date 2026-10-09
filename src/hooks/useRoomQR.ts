@@ -54,9 +54,9 @@ export function useRoomQR() {
     }
   }, []);
 
-  const redeemQR = useCallback(async (roomId: string, userId: string, password: string) => {
-    if (!roomId || !userId || !password) {
-      throw new Error('Room ID, User ID, and password are required');
+  const redeemQR = useCallback(async (roomId: string, userId: string) => {
+    if (!roomId || !userId) {
+      throw new Error('Room ID and User ID are required');
     }
 
     setIsRedeeming(true);
@@ -65,8 +65,7 @@ export function useRoomQR() {
     try {
       const { data, error: rpcError } = await supabase.rpc('redeem_room_qr', {
         p_room_id: roomId,
-        p_user_id: userId,
-        p_password: password
+        p_user_id: userId
       });
 
       if (rpcError) throw rpcError;

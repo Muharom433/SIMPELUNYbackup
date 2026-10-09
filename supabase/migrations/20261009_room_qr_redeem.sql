@@ -4,17 +4,20 @@
 --   1. Create room_qr_tokens table (secret tokens, RLS enabled, no public access)
 --   2. Create room_qr_redeem_log table (audit log for redeems, no old tokens stored)
 --   3. Helper function is_user_allowed_to_manage_room for centralized role & scoping checks
---   4. RPC redeem_room_qr: Re-authenticates caller password, generates new 32-byte secret token, invalidates old QR
+--   4. RPC redeem_room_qr: Generates new 32-byte secret token, invalidates old QR, enforces 10-min cooldown
 --   5. RPC get_room_qr_payload: Fetches QR string for modal (prefixed secured token or legacy UUID)
 --   6. RPC get_room_qr_statuses: Bulk status check (legacy/secured, version, rotated_at) for badges
 --   7. RPC resolve_room_qr: Validates scanned QR for attendance (supports gradual migration per room)
 --
--- Note on Custom Auth Architecture:
+-- Note on Custom Auth Architecture & Security Trade-offs:
 --   SIMPEL uses a custom public.users table rather than Supabase Auth JWTs. All frontend requests
 --   arrive under the Postgres 'anon' role, and auth.uid() is NULL. Consequently:
 --   - Functions resolve caller as COALESCE(auth.uid(), p_user_id).
---   - Sensitive action redeem_room_qr requires p_password and re-verifies it via verify_password().
---   - get_room_qr_payload and get_room_qr_statuses accept p_user_id; limitations documented below.
+--   - Redeem no longer requires a password prompt to allow quick renewal by room managers.
+--   - Risks / out of scope: redeem_room_qr relies on a client-supplied p_user_id (readable via public users RLS),
+--     so anyone who knows an admin's user id could invalidate a room's QR; mitigated only by the cooldown and the log.
+--   - Cooldown is enforced server-side (10 minutes) to prevent rapid invalidation and denial-of-service.
+--   - get_room_qr_payload and get_room_qr_statuses accept p_user_id.
 --   - Functions are explicitly GRANTed to anon, authenticated after REVOKE from PUBLIC.
 
 -- ==============================================================================
@@ -149,13 +152,14 @@ $$;
 
 -- ==============================================================================
 -- 4. RPC: redeem_room_qr
--- Re-authenticates caller password, generates new 32-byte secret token,
--- updates version, and logs rotation.
+-- Generates new 32-byte secret token, updates version, enforces 10-minute cooldown,
+-- and logs rotation in audit log. No password required for quick admin renewal.
 -- ==============================================================================
+DROP FUNCTION IF EXISTS public.redeem_room_qr(UUID, UUID, TEXT);
+
 CREATE OR REPLACE FUNCTION public.redeem_room_qr(
     p_room_id UUID,
-    p_user_id UUID,
-    p_password TEXT
+    p_user_id UUID
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -163,8 +167,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
+    -- Cooldown interval: easily adjustable constant
+    c_cooldown_interval CONSTANT INTERVAL := INTERVAL '10 minutes';
+
     v_caller_id UUID;
-    v_user RECORD;
+    v_last_rotated_at TIMESTAMPTZ;
     v_raw_token TEXT;
     v_full_payload TEXT;
     v_old_version INTEGER;
@@ -173,18 +180,11 @@ BEGIN
     -- Resolve caller
     v_caller_id := COALESCE(auth.uid(), p_user_id);
 
-    -- Authentication check: user must exist and password must verify
-    IF v_caller_id IS NULL OR p_password IS NULL OR length(trim(p_password)) = 0 THEN
-        RAISE EXCEPTION 'Authentication failed';
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication failed: caller identity required';
     END IF;
 
-    SELECT * INTO v_user FROM public.users WHERE id = v_caller_id;
-    IF NOT FOUND OR NOT public.verify_password(p_password, v_user.password) THEN
-        -- Generic error: never reveal whether user exists or password was incorrect
-        RAISE EXCEPTION 'Authentication failed';
-    END IF;
-
-    -- Authorization check
+    -- Authorization check (centralized role & department scoping)
     IF NOT public.is_user_allowed_to_manage_room(v_caller_id, p_room_id) THEN
         RAISE EXCEPTION 'Unauthorized: Insufficient permissions to manage this room';
     END IF;
@@ -195,12 +195,21 @@ BEGIN
         RAISE EXCEPTION 'Room not found';
     END IF;
 
+    -- Check cooldown: if room was redeemed less than 10 minutes ago, reject
+    SELECT rotated_at, version INTO v_last_rotated_at, v_old_version
+    FROM public.room_qr_tokens
+    WHERE room_id = p_room_id
+    FOR UPDATE;
+
+    IF FOUND AND v_last_rotated_at IS NOT NULL AND (now() - v_last_rotated_at) < c_cooldown_interval THEN
+        RAISE EXCEPTION 'QR was just renewed, try again later';
+    END IF;
+
     -- Generate cryptographically random token (32 bytes = 64 hex characters)
     v_raw_token := encode(gen_random_bytes(32), 'hex');
     v_full_payload := 'simpel:room:v1:' || v_raw_token;
 
     -- Upsert room_qr_tokens
-    SELECT version INTO v_old_version FROM public.room_qr_tokens WHERE room_id = p_room_id FOR UPDATE;
     IF FOUND THEN
         v_new_version := v_old_version + 1;
         UPDATE public.room_qr_tokens
@@ -216,7 +225,7 @@ BEGIN
         VALUES (p_room_id, v_raw_token, v_new_version, now(), v_caller_id);
     END IF;
 
-    -- Record in redeem audit log
+    -- Record in redeem audit log (never store tokens in the log)
     INSERT INTO public.room_qr_redeem_log (room_id, old_version, new_version, redeemed_by, redeemed_at)
     VALUES (p_room_id, v_old_version, v_new_version, v_caller_id, now());
 
@@ -420,8 +429,8 @@ $$;
 REVOKE ALL ON FUNCTION public.is_user_allowed_to_manage_room(UUID, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_user_allowed_to_manage_room(UUID, UUID) TO anon, authenticated;
 
-REVOKE ALL ON FUNCTION public.redeem_room_qr(UUID, UUID, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.redeem_room_qr(UUID, UUID, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.redeem_room_qr(UUID, UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.redeem_room_qr(UUID, UUID) TO anon, authenticated;
 
 REVOKE ALL ON FUNCTION public.get_room_qr_payload(UUID, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_room_qr_payload(UUID, UUID) TO anon, authenticated;
@@ -439,6 +448,7 @@ GRANT EXECUTE ON FUNCTION public.resolve_room_qr(TEXT) TO anon, authenticated;
 -- DROP FUNCTION IF EXISTS public.resolve_room_qr(TEXT);
 -- DROP FUNCTION IF EXISTS public.get_room_qr_statuses(UUID);
 -- DROP FUNCTION IF EXISTS public.get_room_qr_payload(UUID, UUID);
+-- DROP FUNCTION IF EXISTS public.redeem_room_qr(UUID, UUID);
 -- DROP FUNCTION IF EXISTS public.redeem_room_qr(UUID, UUID, TEXT);
 -- DROP FUNCTION IF EXISTS public.is_user_allowed_to_manage_room(UUID, UUID);
 -- DROP TABLE IF EXISTS public.room_qr_redeem_log CASCADE;
