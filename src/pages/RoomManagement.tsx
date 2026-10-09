@@ -11,6 +11,7 @@ import QRCode from 'react-qr-code';
 import html2canvas from 'html2canvas';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import RoomQRModal from '../components/rooms/RoomQRModal';
 import { Room, Department, Equipment, StudyProgram } from '../types';
 import { format, parse, addDays } from 'date-fns';
 import { id as localeID } from 'date-fns/locale';
@@ -163,7 +164,7 @@ const RoomManagement: React.FC = () => {
     // QR Code State
     const [showQRModal, setShowQRModal] = useState(false);
     const [selectedRoomForQR, setSelectedRoomForQR] = useState<EnhancedRoomStatus | null>(null);
-    const [isDownloadingQR, setIsDownloadingQR] = useState(false);
+
     const [isDownloadingUsers, setIsDownloadingUsers] = useState(false);
     const [isPrintingEquipment, setIsPrintingEquipment] = useState(false);
 
@@ -1021,38 +1022,6 @@ const RoomManagement: React.FC = () => {
     const handleShowQR = (room: EnhancedRoomStatus) => {
         setSelectedRoomForQR(room);
         setShowQRModal(true);
-    };
-
-    const downloadQR = async () => {
-        const element = document.getElementById('qr-card-element');
-        if (!element || !selectedRoomForQR) return;
-
-        // Set loading immediately
-        setIsDownloadingQR(true);
-
-        // Give a small delay (500ms) to ensure the UI repaints and the user 
-        // clearly sees the "Processing..." state and animation BEFORE
-        // the heavy html2canvas operation blocks the main thread.
-        setTimeout(async () => {
-            try {
-                const canvas = await html2canvas(element, {
-                    backgroundColor: '#ffffff',
-                    scale: 2 // Higher resolution
-                });
-
-                const link = document.createElement('a');
-                link.download = `QR-${selectedRoomForQR.name.replace(/\s+/g, '-')}.png`;
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-
-                alert.success(getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'));
-            } catch (error) {
-                alert.error(getText('Failed to download QR Code', 'Gagal mengunduh QR Code'));
-            } finally {
-                setIsDownloadingQR(false);
-            }
-        }, 500);
-
     };
 
     // Helper for Grouping Users by Study Program
@@ -2961,80 +2930,12 @@ const RoomManagement: React.FC = () => {
                 )
             }
             {/* QR Code Modal */}
-            {
-                showQRModal && selectedRoomForQR && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
-                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-                            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                                <h3 className="font-semibold text-lg">QR Code: {selectedRoomForQR.name}</h3>
-                                <button
-                                    onClick={() => setShowQRModal(false)}
-                                    className="text-gray-400 hover:text-gray-600"
-                                >
-                                    <X className="h-6 w-6" />
-                                </button>
-                            </div>
-                            <div className="p-6 flex flex-col items-center">
-                                {/* The Card to be captured */}
-                                <div
-                                    id="qr-card-element"
-                                    className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
-                                >
-                                    <div className="text-center">
-                                        <h2 className="font-bold text-xl uppercase text-gray-900">{selectedRoomForQR.name}</h2>
-                                        <p className="text-xs text-gray-500">{selectedRoomForQR.code}</p>
-                                    </div>
-                                    <div className="bg-white p-2 rounded">
-                                        <QRCode
-                                            value={selectedRoomForQR.id}
-                                            size={180}
-                                            viewBox={`0 0 256 256`}
-                                            style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                        />
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-[10px] text-gray-400 uppercase tracking-widest">Scan untuk Presensi</p>
-                                        <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
-                                    </div>
-                                </div>
-
-                                <p className="text-sm text-gray-500 mt-6 text-center">
-                                    Cetak dan tempel kode QR ini di ruangan agar dosen dapat melakukan presensi.
-                                </p>
-
-                                <div className="flex gap-3 w-full mt-6">
-                                    <button
-                                        onClick={() => setShowQRModal(false)}
-                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
-                                    >
-                                        Tutup
-                                    </button>
-                                    <button
-                                        onClick={downloadQR}
-                                        disabled={isDownloadingQR}
-                                        className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingQR
-                                            ? 'bg-blue-400 cursor-wait opacity-80'
-                                            : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
-                                            }`}
-                                    >
-                                        {isDownloadingQR ? (
-                                            <>
-                                                <RefreshCw className="w-4 h-4 animate-spin" />
-                                                <span>{getText('Processing...', 'Memproses...')}</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Download className="w-4 h-4" />
-                                                <span>Download</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+            <RoomQRModal
+                isOpen={showQRModal}
+                room={selectedRoomForQR}
+                onClose={() => setShowQRModal(false)}
+                currentUser={profile}
+            />
 
             {/* HIDDEN TEMPLATE FOR GENERATING IMAGE */}
             {/* Positioned absolute off-screen so user doesn't see it but html2canvas can capture it */}

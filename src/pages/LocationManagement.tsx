@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2, Plus, Edit2, Trash2, ChevronDown, ChevronRight, X, Save, DoorOpen,
   Layers, Loader2, Table2, MapPin, Search, Eye, Users, Calendar,
@@ -13,6 +13,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import Swal from 'sweetalert2';
 import { format } from 'date-fns';
 import RoomExcelUploadModal from '../components/ExcelUpload/RoomExcelUploadModal';
+import RoomQRModal from '../components/rooms/RoomQRModal';
 
 // Types
 interface Campus { id: string; name: string; location: string; description: string; latitude?: number | null; longitude?: number | null; radius_meters?: number | null; }
@@ -190,7 +191,6 @@ const LocationManagement: React.FC = () => {
   // QR Code State
   const [showQRModal, setShowQRModal] = useState(false);
   const [selectedRoomForQR, setSelectedRoomForQR] = useState<Room | null>(null);
-  const [isDownloadingQR, setIsDownloadingQR] = useState(false);
 
   useEffect(() => { fetchData(); fetchRoomSuggestions(); fetchDepartments(); }, []);
 
@@ -788,37 +788,6 @@ const LocationManagement: React.FC = () => {
   const handleShowQR = (room: Room) => {
     setSelectedRoomForQR(room);
     setShowQRModal(true);
-  };
-
-  const downloadQR = async () => {
-    const element = document.getElementById('qr-card-element');
-    if (!element || !selectedRoomForQR) return;
-
-    setIsDownloadingQR(true);
-    setTimeout(async () => {
-      try {
-        const canvas = await html2canvas(element, {
-          backgroundColor: '#ffffff',
-          scale: 2 // Higher resolution
-        });
-
-        const link = document.createElement('a');
-        link.download = `QR-${selectedRoomForQR.name.replace(/\s+/g, '-')}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-
-        Swal.fire({
-          icon: 'success',
-          title: getText('QR Code downloaded successfully', 'QR Code berhasil diunduh'),
-          timer: 1500,
-          showConfirmButton: false
-        });
-      } catch (error) {
-        Swal.fire('Error', getText('Failed to download QR Code', 'Gagal mengunduh QR Code'), 'error');
-      } finally {
-        setIsDownloadingQR(false);
-      }
-    }, 500);
   };
 
   // Schedule Logic from RoomManagement
@@ -3857,80 +3826,11 @@ px-6 py-4 flex items-center justify-between cursor-pointer transition-colors
       />
 
       {/* QR Code Modal */}
-      {
-        showQRModal && selectedRoomForQR && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-              <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="font-semibold text-lg">QR Code: {selectedRoomForQR.name}</h3>
-                <button
-                  onClick={() => setShowQRModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              <div className="p-6 flex flex-col items-center">
-                {/* The Card to be captured */}
-                <div
-                  id="qr-card-element"
-                  className="bg-white p-6 border-2 border-gray-900 rounded-xl flex flex-col items-center gap-4 w-64 shadow-sm"
-                >
-                  <div className="text-center">
-                    <h2 className="font-bold text-xl uppercase text-gray-900">{selectedRoomForQR.name}</h2>
-                    <p className="text-xs text-gray-500">{selectedRoomForQR.code}</p>
-                  </div>
-                  <div className="bg-white p-2 rounded">
-                    <QRCode
-                      value={selectedRoomForQR.id}
-                      size={180}
-                      viewBox={`0 0 256 256`}
-                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                    />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-widest">Scan untuk Presensi</p>
-                    <p className="text-[8px] text-gray-300 mt-1">Fakultas Vokasi UNY</p>
-                  </div>
-                </div>
-
-                <p className="text-sm text-gray-500 mt-6 text-center">
-                  {getText('Print and paste this QR code in the room for lecturers to check in.', 'Cetak dan tempel kode QR ini di ruangan agar dosen dapat melakukan presensi.')}
-                </p>
-
-                <div className="flex gap-3 w-full mt-6">
-                  <button
-                    onClick={() => setShowQRModal(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-medium"
-                  >
-                    {getText('Close', 'Tutup')}
-                  </button>
-                  <button
-                    onClick={downloadQR}
-                    disabled={isDownloadingQR}
-                    className={`flex-1 px-4 py-2 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ${isDownloadingQR
-                      ? 'bg-blue-400 cursor-wait opacity-80'
-                      : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md'
-                      }`}
-                  >
-                    {isDownloadingQR ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>{getText('Processing...', 'Memproses...')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        <span>{getText('Download', 'Unduh')}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      }
+      <RoomQRModal
+        isOpen={showQRModal}
+        room={selectedRoomForQR}
+        onClose={() => setShowQRModal(false)}
+      />
     </div >
   );
 };

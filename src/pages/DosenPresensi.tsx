@@ -677,22 +677,26 @@ const DosenPresensi: React.FC = () => {
                         const toastId = toast.loading('Memverifikasi QR Code...');
                         try {
                             const { data, error } = await supabase
-                                .from('rooms')
-                                .select('id, name')
-                                .eq('id', decodedText)
-                                .single();
+                                .rpc('resolve_room_qr', { p_scanned: decodedText });
 
-                            if (error || !data) {
+                            const resolved = data?.[0];
+
+                            if (error || !resolved || !resolved.room_id) {
                                 toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
+                                setTimeout(() => {
+                                    if (isMounted) setScanRetry(prev => prev + 1);
+                                }, 2000);
+                            } else if (resolved.status_code === 'OUTDATED') {
+                                toast.error('QR Code ini sudah usang. Silakan pindai QR Code terbaru di ruangan.', { id: toastId });
                                 setTimeout(() => {
                                     if (isMounted) setScanRetry(prev => prev + 1);
                                 }, 2000);
                             } else {
                                 if (isMounted) {
-                                    setScannedRoomId(data.id);
-                                    setScannedRoomName(data.name);
+                                    setScannedRoomId(resolved.room_id);
+                                    setScannedRoomName(resolved.name);
                                 }
-                                toast.success(`Terverifikasi: ${data.name}`, { id: toastId });
+                                toast.success(`Terverifikasi: ${resolved.name}`, { id: toastId });
                             }
                         } catch (err) {
                             toast.error('Terjadi kesalahan verifikasi.', { id: toastId });
