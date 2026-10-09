@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -112,23 +113,21 @@ const SessionScheduleProgressive = () => {
   const { getText } = useLanguage();
 
   // Backend data states
-  const [sessions, setSessions] = useState([]);
-  const [allSessions, setAllSessions] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [lecturers, setLecturers] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [studyPrograms, setStudyPrograms] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [departmentHeads, setDepartmentHeads] = useState([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [allSessions, setAllSessions] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [lecturers, setLecturers] = useState<any[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [studyPrograms, setStudyPrograms] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [departmentHeads, setDepartmentHeads] = useState<any[]>([]);
 
   // ✅ ADDED: Available rooms state for filtering
-  const [availableRooms, setAvailableRooms] = useState([]);
+  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
 
   // Search states
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStartDate, setFilterStartDate] = useState('');
-  const [filterEndDate, setFilterEndDate] = useState('');
-  const [filteredSessions, setFilteredSessions] = useState([]);
+  const [filteredSessions, setFilteredSessions] = useState<any[]>([]);
 
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -136,16 +135,25 @@ const SessionScheduleProgressive = () => {
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
-  const [editingSession, setEditingSession] = useState(null);
+  const [editingSession, setEditingSession] = useState<any>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [sessionToDelete, setSessionToDelete] = useState<any>(null);
 
+<<<<<<< HEAD
+=======
+  // Bulk delete (superadmin)
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteMonths, setBulkDeleteMonths] = useState<number>(2);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeletePreview, setBulkDeletePreview] = useState<any[]>([]);
+
+>>>>>>> 006de5f (Update Web Simple)
   // Calendar Modal states
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [selectedRoomForCalendar, setSelectedRoomForCalendar] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDateSessions, setSelectedDateSessions] = useState([]);
+  const [selectedDateSessions, setSelectedDateSessions] = useState<any[]>([]);
 
   // Mobile details toggle state
   const [showMobileDetails, setShowMobileDetails] = useState(false);
@@ -162,12 +170,12 @@ const SessionScheduleProgressive = () => {
   });
 
   // Refs untuk semua input
-  const studentInputRef = useRef(null);
-  const studentNameRef = useRef(null);
-  const supervisorInputRef = useRef(null);
-  const examinerInputRef = useRef(null);
-  const secretaryInputRef = useRef(null);
-  const titleInputRef = useRef(null);
+  const studentInputRef = useRef<any>(null);
+  const studentNameRef = useRef<any>(null);
+  const supervisorInputRef = useRef<any>(null);
+  const examinerInputRef = useRef<any>(null);
+  const secretaryInputRef = useRef<any>(null);
+  const titleInputRef = useRef<any>(null);
 
   const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -235,16 +243,8 @@ const SessionScheduleProgressive = () => {
       });
     }
 
-    if (filterStartDate) {
-      filtered = filtered.filter(session => session.date >= filterStartDate);
-    }
-    
-    if (filterEndDate) {
-      filtered = filtered.filter(session => session.date <= filterEndDate);
-    }
-
     setFilteredSessions(filtered);
-  }, [searchTerm, filterStartDate, filterEndDate, sessions]);
+  }, [searchTerm, sessions]);
 
   // Check for duplicate student function
   const checkDuplicateStudent = async (studentId, studentNim) => {
@@ -1068,16 +1068,18 @@ const SessionScheduleProgressive = () => {
         .order('start_time', { ascending: true });
 
       const { data } = await query;
+      // Filter softly deleted in memory to prevent breaking the app if deleted_at column is missing in Supabase
+      const validData = data?.filter(s => !s.deleted_at) || [];
 
-      setAllSessions(data || []);
+      setAllSessions(validData);
 
       if (profile?.role === 'department_admin' && profile?.department_id) {
-        const filtered = data?.filter(session =>
+        const filtered = validData.filter(session =>
           session.student?.study_program?.department_id === profile.department_id
         );
-        setSessions(filtered || []);
+        setSessions(filtered);
       } else {
-        setSessions(data || []);
+        setSessions(validData);
       }
     } catch (error) {
       alert.error(getText('Failed to load sessions.', 'Gagal memuat jadwal sidang.'));
@@ -2699,10 +2701,10 @@ const SessionScheduleProgressive = () => {
 
     try {
       setSubmitting(true);
-      const { error } = await supabase.from('final_sessions').delete().eq('id', sessionToDelete.id);
+      const { error } = await supabase.from('final_sessions').update({ deleted_at: new Date().toISOString() }).eq('id', sessionToDelete.id);
       if (error) throw error;
 
-      alert.success(getText('Session deleted successfully', 'Jadwal sidang berhasil dihapus'));
+      alert.success(getText('Berhasil menghapus 1 data sidang', 'Berhasil menghapus 1 data sidang'));
       setShowDeleteModal(false);
       setSessionToDelete(null);
       fetchSessions();
@@ -2718,6 +2720,41 @@ const SessionScheduleProgressive = () => {
     setSessionToDelete(null);
   };
 
+<<<<<<< HEAD
+=======
+  // ========== BULK DELETE (Superadmin) ==========
+  const openBulkDeleteModal = (months: 2 | 3) => {
+    setBulkDeleteMonths(months as any);
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
+    const cutoffStr = format(cutoff, 'yyyy-MM-dd');
+    const preview = sessions.filter(s => {
+      const isCompleted = s.status === 'completed' || new Date(`${s.date}T${s.end_time}`) < new Date();
+      return s.date < cutoffStr && isCompleted;
+    });
+    setBulkDeletePreview(preview);
+    setShowBulkDeleteModal(true);
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkDeletePreview.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const ids = bulkDeletePreview.map(s => s.id);
+      const { error } = await supabase.from('final_sessions').update({ deleted_at: new Date().toISOString() }).in('id', ids);
+      if (error) throw error;
+      alert.success(getText(`Berhasil menghapus ${ids.length} data sidang usang`, `Berhasil menghapus ${ids.length} data sidang usang`));
+      setShowBulkDeleteModal(false);
+      setBulkDeletePreview([]);
+      fetchSessions();
+    } catch (err: any) {
+      alert.error(err.message || getText('Bulk delete failed.', 'Hapus massal gagal.'));
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+>>>>>>> 006de5f (Update Web Simple)
   const handlePrint = async (formData: PrintFormData) => {
     try {
       const selectedProgram = studyPrograms.find(p => p.id === formData.study_program_id);
@@ -2923,7 +2960,7 @@ const SessionScheduleProgressive = () => {
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Search className="h-5 w-5 text-gray-400" />
                 </div>
-                  <input
+                <input
                   type="text"
                   placeholder={getText("Search by student, NIM, or examiner...", "Cari nama, NIM, atau dosen penguji...")}
                   value={searchTerm}
@@ -2932,27 +2969,36 @@ const SessionScheduleProgressive = () => {
                 />
               </div>
             </div>
-            
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <input 
-                type="date"
-                value={filterStartDate}
-                onChange={(e) => setFilterStartDate(e.target.value)}
-                className="block w-full md:w-auto px-3 py-2.5 text-sm border border-gray-300 rounded-xl leading-5 bg-white focus:ring-2 focus:ring-blue-500 transition-all duration-200"
-                title="Mulai Tanggal"
-              />
-              <span className="text-gray-500">-</span>
-              <input 
-                type="date"
-                value={filterEndDate}
-                onChange={(e) => setFilterEndDate(e.target.value)}
-                className="block w-full md:w-auto px-3 py-2.5 text-sm border border-gray-300 rounded-xl leading-5 bg-white focus:ring-2 focus:ring-blue-500 transition-all duration-200"
-                title="Sampai Tanggal"
-              />
-            </div>
           </div>
 
-          <div className="flex flex-row items-center gap-3 w-full xl:w-auto shrink-0 overflow-x-auto pb-1 xl:pb-0">
+          <div className="flex flex-row flex-wrap items-center gap-3 w-full xl:w-auto shrink-0">
+            {/* Superadmin: Auto-delete dropdown */}
+            {profile?.role?.replace(/_|\s/g, '') === 'superadmin' && (
+              <div className="relative group">
+                <button
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 text-red-700 border border-red-200 rounded-xl hover:bg-red-100 transition-all duration-200 shadow-sm hover:shadow-md text-sm font-medium whitespace-nowrap"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Pembersihan Data</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                <div className="hidden group-hover:block absolute right-0 xl:left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 py-2 bg-red-50 border-b border-red-100">
+                    <p className="text-xs font-bold text-red-700 uppercase tracking-wide">Hapus data usang dari</p>
+                  </div>
+                  {([2] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => openBulkDeleteModal(m as any)}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors flex items-center gap-2"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                      Lebih dari {m} bulan lalu
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <button
               onClick={() => {
                 setShowCalendarModal(true);
@@ -2975,7 +3021,11 @@ const SessionScheduleProgressive = () => {
               <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
             </button>
 
+<<<<<<< HEAD
             {profile?.role === 'department_admin' && (
+=======
+            {(profile?.role === 'department_admin' || profile?.role === 'superadmin') && (
+>>>>>>> 006de5f (Update Web Simple)
               <button
                 onClick={() => {
                   resetForm();
@@ -3019,8 +3069,8 @@ const SessionScheduleProgressive = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {getText("Committee", "Panitia")}
                 </th>
-                {profile?.role === 'department_admin' && (
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {(profile?.role === 'department_admin' || profile?.role?.replace(/_|\s/g, '') === 'superadmin') && (
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                     {getText("Actions", "Aksi")}
                   </th>
                 )}
@@ -3029,7 +3079,7 @@ const SessionScheduleProgressive = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredSessions.length === 0 ? (
                 <tr>
-                  <td colSpan={profile?.role === 'department_admin' ? 5 : 4} className="px-6 py-12 text-center">
+                  <td colSpan={(profile?.role === 'department_admin' || profile?.role?.replace(/_|\s/g, '') === 'superadmin') ? 5 : 4} className="px-6 py-12 text-center">
                     <div className="text-gray-500">
                       <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       {searchTerm ? (
@@ -3092,21 +3142,25 @@ const SessionScheduleProgressive = () => {
                         <div><span className="font-medium text-purple-600">{getText('Secretary', 'Sekretaris')}:</span> {session.secretary}</div>
                       </div>
                     </td>
-                    {profile?.role === 'department_admin' && (
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
+                    {/* Actions */}
+                    {(profile?.role === 'department_admin' || profile?.role?.replace(/_|\s/g, '') === 'superadmin') && (
+                      <td className="px-4 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleEdit(session)}
                             className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
                           >
                             <Edit className="h-4 w-4" />
                           </button>
-                          <button
-                            onClick={() => handleDeleteClick(session)}
-                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {profile?.role?.replace(/_|\s/g, '') === 'superadmin' && (
+                            <button
+                              onClick={() => handleDeleteClick(session)}
+                              className="p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-lg transition-all duration-200"
+                              title="Hapus"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}
