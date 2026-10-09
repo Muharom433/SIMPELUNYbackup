@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -126,6 +126,8 @@ const SessionScheduleProgressive = () => {
 
   // Search states
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [filteredSessions, setFilteredSessions] = useState([]);
 
   // Loading states
@@ -219,21 +221,30 @@ const SessionScheduleProgressive = () => {
     }
   ];
 
-  // Search functionality
+  // Search and Date Filter functionality
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredSessions(sessions);
-    } else {
-      const filtered = sessions.filter(session => {
+    let filtered = sessions;
+
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(session => {
         const studentName = session.student?.full_name?.toLowerCase() || '';
         const studentNim = session.student?.identity_number?.toLowerCase() || '';
-        const searchLower = searchTerm.toLowerCase();
-
-        return studentName.includes(searchLower) || studentNim.includes(searchLower);
+        const examiner = session.examiner?.toLowerCase() || '';
+        return studentName.includes(searchLower) || studentNim.includes(searchLower) || examiner.includes(searchLower);
       });
-      setFilteredSessions(filtered);
     }
-  }, [searchTerm, sessions]);
+
+    if (filterStartDate) {
+      filtered = filtered.filter(session => session.date >= filterStartDate);
+    }
+    
+    if (filterEndDate) {
+      filtered = filtered.filter(session => session.date <= filterEndDate);
+    }
+
+    setFilteredSessions(filtered);
+  }, [searchTerm, filterStartDate, filterEndDate, sessions]);
 
   // Check for duplicate student function
   const checkDuplicateStudent = async (studentId, studentNim) => {
@@ -2905,31 +2916,51 @@ const SessionScheduleProgressive = () => {
 
       {/* Search Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 sm:space-x-4">
-          <div className="w-full sm:w-96">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full xl:w-auto flex-1">
+            <div className="w-full md:w-96">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                  <input
+                  type="text"
+                  placeholder={getText("Search by student, NIM, or examiner...", "Cari nama, NIM, atau dosen penguji...")}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2.5 text-sm border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                />
               </div>
-              <input
-                type="text"
-                placeholder={getText("Search by student name or NIM...", "Cari berdasarkan nama atau NIM mahasiswa...")}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+            </div>
+            
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <input 
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="block w-full md:w-auto px-3 py-2.5 text-sm border border-gray-300 rounded-xl leading-5 bg-white focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+                title="Mulai Tanggal"
+              />
+              <span className="text-gray-500">-</span>
+              <input 
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="block w-full md:w-auto px-3 py-2.5 text-sm border border-gray-300 rounded-xl leading-5 bg-white focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+                title="Sampai Tanggal"
               />
             </div>
           </div>
 
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
+          <div className="flex flex-row items-center gap-3 w-full xl:w-auto shrink-0 overflow-x-auto pb-1 xl:pb-0">
             <button
               onClick={() => {
                 setShowCalendarModal(true);
                 setShowMobileDetails(false);
               }}
-              className="flex items-center space-x-2 px-4 md:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+              className="flex items-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium whitespace-nowrap"
             >
-              <Calendar className="h-5 w-5" />
+              <Calendar className="h-4 w-4" />
               <span className="hidden sm:inline">{getText("View Calendar", "Lihat Kalender")}</span>
             </button>
 
@@ -2938,9 +2969,9 @@ const SessionScheduleProgressive = () => {
                 setShowPrintModal(true);
                 printForm.reset();
               }}
-              className="flex items-center space-x-2 px-4 md:px-6 py-3 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
+              className="flex items-center space-x-2 px-4 py-2.5 text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md text-sm font-medium whitespace-nowrap"
             >
-              <Printer className="h-5 w-5" />
+              <Printer className="h-4 w-4" />
               <span className="hidden sm:inline">{getText("Print", "Cetak")}</span>
             </button>
 

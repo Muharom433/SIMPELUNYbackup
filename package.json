@@ -24,7 +24,7 @@
   "dependencies": {
     "@google-cloud/translate": "^9.1.0",
     "@hookform/resolvers": "^3.3.2",
-    "@supabase/supabase-js": "^2.39.0",
+    "@supabase/supabase-js": "^2.117.3",
     "@types/papaparse": "^5.3.14",
     "@types/qrcode": "^1.5.6",
     "date-fns": "^3.0.6",
