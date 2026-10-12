@@ -663,31 +663,38 @@ const DosenPresensi: React.FC = () => {
                 const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
                 // Callback saat QR berhasil dibaca
+                // Query langsung ke tabel rooms (tidak pakai RPC agar tidak bergantung DB function)
                 const onScanSuccess = (decodedText: string) => {
                     html5QrCode.stop().then(async () => {
                         const toastId = toast.loading('Memverifikasi QR Code...');
                         try {
+                            // Trim whitespace/newline yang kadang ikut terbaca scanner
+                            const cleanedText = decodedText.trim();
+
                             const { data, error } = await supabase
-                                .rpc('resolve_room_qr', { p_scanned: decodedText });
+                                .from('rooms')
+                                .select('id, name')
+                                .eq('id', cleanedText)
+                                .maybeSingle(); // maybeSingle: return null jika tidak ada, tidak throw error
 
-                            const resolved = data?.[0];
-
-                            if (error || !resolved || !resolved.room_id) {
-                                toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
+                            if (error) {
+                                // Error DB/network/RLS
+                                toast.error('Gagal memverifikasi QR. Cek koneksi internet.', { id: toastId });
                                 setTimeout(() => {
                                     if (isMounted) setScanRetry(prev => prev + 1);
                                 }, 2000);
-                            } else if (resolved.status_code === 'OUTDATED') {
-                                toast.error('QR Code ini sudah usang. Silakan pindai QR Code terbaru di ruangan.', { id: toastId });
+                            } else if (!data) {
+                                // QR terbaca tapi bukan UUID ruangan yang valid
+                                toast.error('QR Code TIDAK VALID! Ini bukan QR Ruangan.', { id: toastId });
                                 setTimeout(() => {
                                     if (isMounted) setScanRetry(prev => prev + 1);
                                 }, 2000);
                             } else {
                                 if (isMounted) {
-                                    setScannedRoomId(resolved.room_id);
-                                    setScannedRoomName(resolved.name);
+                                    setScannedRoomId(data.id);
+                                    setScannedRoomName(data.name);
                                 }
-                                toast.success(`Terverifikasi: ${resolved.name}`, { id: toastId });
+                                toast.success(`Terverifikasi: ${data.name}`, { id: toastId });
                             }
                         } catch (err) {
                             toast.error('Terjadi kesalahan verifikasi.', { id: toastId });
