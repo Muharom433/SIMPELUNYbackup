@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    Building, Search, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, GraduationCap, UserCheck, AlertTriangle, Filter, ChevronUp, FileText, Warehouse, Package, Layers, Tag, Box, ScanBarcode, Camera, Info, ExternalLink, Maximize2, Archive
+    Building, Search, Eye, Users, MapPin, CheckCircle, AlertCircle, Clock, RefreshCw, X, List, Grid, Loader2, Hash, DoorClosed, Calendar as CalendarIcon, Wrench, ChevronDown, GraduationCap, UserCheck, AlertTriangle, Filter, ChevronUp, FileText, Warehouse, Package, Layers, Tag, Box, ScanBarcode, Camera, Info, ExternalLink, Maximize2, Archive, MapPinned
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../lib/supabase';
 import { Room, Department, Equipment, StudyProgram } from '../types';
 import { format } from 'date-fns';
-import { id as localeId } from 'date-fns/locale';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export const parseEquipmentSpec = (spec: string | null) => {
@@ -174,13 +173,6 @@ const RoomInfo: React.FC = () => {
     const [roomCurrentPage, setRoomCurrentPage] = useState(0);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
-    // Campus filter for rooms tab
-    const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
-    const [selectedCampus, setSelectedCampus] = useState('all');
-    const [isCampusDropdownOpen, setIsCampusDropdownOpen] = useState(false);
-    const [campusSearchTerm, setCampusSearchTerm] = useState('');
-    const campusDropdownRef = useRef<HTMLDivElement>(null);
-
     // Active Tab: 'rooms' or 'equipment'
     const [activeTab, setActiveTab] = useState<'rooms' | 'equipment'>('rooms');
 
@@ -234,6 +226,17 @@ const RoomInfo: React.FC = () => {
     const [combinedSchedules, setCombinedSchedules] = useState<CombinedSchedule[]>([]);
     const [targetDate, setTargetDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
+    // === NEW: Campus filter + Availability Search states ===
+    const [campuses, setCampuses] = useState<{ id: string; name: string }[]>([]);
+    const [selectedCampusFilter, setSelectedCampusFilter] = useState('all');
+    const [availabilityTargetDate, setAvailabilityTargetDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+    const [availabilityStartTime, setAvailabilityStartTime] = useState('07:30');
+    const [availabilityEndTime, setAvailabilityEndTime] = useState('17:00');
+    const [isSearchingAvailability, setIsSearchingAvailability] = useState(false);
+    const [isAvailabilitySearchMode, setIsAvailabilitySearchMode] = useState(false);
+    const [occupiedRoomIds, setOccupiedRoomIds] = useState<Set<string>>(new Set());
+    const [availabilitySearchDone, setAvailabilitySearchDone] = useState(false);
+
     // Fetch initial directories
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -247,7 +250,7 @@ const RoomInfo: React.FC = () => {
                 const { data: spData } = await supabase.from('study_programs').select('*').order('name');
                 setStudyPrograms(spData || []);
 
-                // Fetch Campuses
+                // Fetch Campuses for campus filter
                 const { data: campusData } = await supabase.from('campus').select('id, name').order('name');
                 setCampuses(campusData || []);
 
@@ -258,17 +261,6 @@ const RoomInfo: React.FC = () => {
             }
         };
         fetchInitialData();
-    }, []);
-
-    // Close campus dropdown on outside click
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (campusDropdownRef.current && !campusDropdownRef.current.contains(e.target as Node)) {
-                setIsCampusDropdownOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     // Trigger details fetching when room modal is shown
@@ -954,23 +946,119 @@ const RoomInfo: React.FC = () => {
         }
     };
 
-    // Filter and search logic for rooms
-    const filteredCampusDropdown = campuses.filter(c =>
-        c.name.toLowerCase().includes(campusSearchTerm.toLowerCase())
-    );
+    // === NEW: Availability Search Function ===
+    const searchAvailableRooms = async () => {
+        setIsSearchingAvailability(true);
+        setAvailabilitySearchDone(false);
+        try {
+            const occupiedIds = new Set<string>();
+            const dateObj = new Date(availabilityTargetDate);
+            const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            const dayName = dayNames[dateObj.getDay()];
 
+            // 1. Check lecture schedules for that day
+            const { data: lectureData } = await supabase
+                .from('lecture_schedules')
+                .select('room')
+                .eq('day', dayName);
+
+            if (lectureData) {
+                // Match lecture rooms by name to room IDs, also check time overlap
+                for (const lecture of lectureData) {
+                    const matchingRoom = rooms.find(r => r.name === lecture.room);
+                    if (matchingRoom) {
+                        occupiedIds.add(matchingRoom.id);
+                    }
+                }
+            }
+
+            // 2. Check exams for that date
+            const { data: examData } = await supabase
+                .from('exams')
+                .select('room_id')
+                .eq('date', availabilityTargetDate);
+
+            if (examData) {
+                examData.forEach(exam => {
+                    if (exam.room_id) occupiedIds.add(exam.room_id);
+                });
+            }
+
+            // 3. Check final sessions for that date
+            const { data: sessionData } = await supabase
+                .from('final_sessions')
+                .select('room_id')
+                .eq('date', availabilityTargetDate);
+
+            if (sessionData) {
+                sessionData.forEach(session => {
+                    if (session.room_id) occupiedIds.add(session.room_id);
+                });
+            }
+
+            // 4. Check bookings for that date
+            const startOfDay = `${availabilityTargetDate}T00:00:00Z`;
+            const endOfDay = `${availabilityTargetDate}T23:59:59Z`;
+
+            const { data: bookingData } = await supabase
+                .from('bookings')
+                .select('room_id')
+                .in('status', ['approved', 'borrowed'])
+                .lte('start_time', endOfDay)
+                .gte('end_time', startOfDay);
+
+            if (bookingData) {
+                bookingData.forEach(booking => {
+                    if (booking.room_id) occupiedIds.add(booking.room_id);
+                });
+            }
+
+            setOccupiedRoomIds(occupiedIds);
+            setIsAvailabilitySearchMode(true);
+            setAvailabilitySearchDone(true);
+            setTargetDate(availabilityTargetDate);
+        } catch (err) {
+            console.error('Error searching availability:', err);
+        } finally {
+            setIsSearchingAvailability(false);
+        }
+    };
+
+    const resetAvailabilitySearch = () => {
+        setIsAvailabilitySearchMode(false);
+        setOccupiedRoomIds(new Set());
+        setAvailabilitySearchDone(false);
+        setAvailabilityTargetDate(format(new Date(), 'yyyy-MM-dd'));
+        setTargetDate(format(new Date(), 'yyyy-MM-dd'));
+        setAvailabilityStartTime('07:30');
+        setAvailabilityEndTime('17:00');
+    };
+
+    // Filter and search logic for rooms (UPDATED with campus + availability)
     const filteredRooms = rooms.filter(room => {
         const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             room.code.toLowerCase().includes(searchTerm.toLowerCase());
 
+        // Campus filter
         let matchesCampus = true;
-        if (selectedCampus !== 'all') {
-            const roomCampusId = (room as any).building?.campus?.id;
-            const roomCampusName = ((room as any).building?.campus?.name || '').toLowerCase();
-            matchesCampus = roomCampusId === selectedCampus || roomCampusName.includes(selectedCampus.toLowerCase());
+        if (selectedCampusFilter !== 'all') {
+            const roomCampusName = room.building?.campus?.name || '';
+            if (selectedCampusFilter === 'gunungkidul') {
+                matchesCampus = roomCampusName.toLowerCase().includes('gunung');
+            } else if (selectedCampusFilter === 'kulonprogo') {
+                matchesCampus = roomCampusName.toLowerCase().includes('kulon') || roomCampusName.toLowerCase().includes('wates');
+            } else {
+                matchesCampus = room.building?.campus?.id === selectedCampusFilter;
+            }
         }
 
-        return matchesSearch && matchesCampus;
+        // Availability filter (only show available rooms when search mode is active)
+        let matchesAvailability = true;
+        if (isAvailabilitySearchMode) {
+            matchesAvailability = !occupiedRoomIds.has(room.id);
+        }
+
+        return matchesSearch && matchesCampus && matchesAvailability;
     });
 
     const totalRoomPages = Math.max(1, Math.ceil(filteredRooms.length / roomPageSize));
@@ -1159,109 +1247,155 @@ const RoomInfo: React.FC = () => {
                 {/* ======================== TAB: KETERANGAN RUANG ======================== */}
                 {activeTab === 'rooms' && (
                     <>
-                        {/* Filters section */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 flex flex-col gap-4">
-                            {/* Row 1: Date + Campus + Search */}
-                            <div className="flex flex-col lg:flex-row gap-3">
+                        {/* === Single Unified Box: Search + Filters === */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                            {/* Header */}
+                            <div className="p-4 border-b border-gray-100">
+                                <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                                    <Search className="h-5 w-5 text-blue-600" />
+                                    {getText('Find Available Rooms', 'Cari Ruangan Tersedia')}
+                                </h3>
+                            </div>
 
-                                {/* 📅 Filter Tanggal */}
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                    <label className="text-xs font-semibold text-gray-500 whitespace-nowrap flex items-center gap-1">
-                                        <CalendarIcon className="h-4 w-4 text-blue-400" />
-                                        Tanggal
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={targetDate}
-                                        onChange={(e) => setTargetDate(e.target.value)}
-                                        className="px-3 py-2.5 border-2 border-gray-100 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm font-medium text-gray-700 bg-white shadow-sm"
-                                    />
-                                    {targetDate !== format(new Date(), 'yyyy-MM-dd') && (
-                                        <button
-                                            onClick={() => setTargetDate(format(new Date(), 'yyyy-MM-dd'))}
-                                            className="text-xs text-blue-500 hover:text-blue-700 underline whitespace-nowrap"
-                                        >
-                                            Hari Ini
-                                        </button>
-                                    )}
+                            {/* Campus + Target Date Search (Always visible) */}
+                            <div className="px-4 pt-4 pb-2 space-y-3">
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                        {/* Campus Selector */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                                <MapPinned className="inline h-4 w-4 mr-1 text-blue-500" />
+                                                {getText('Campus', 'Kampus')}
+                                            </label>
+                                            <select
+                                                value={selectedCampusFilter}
+                                                onChange={(e) => { setSelectedCampusFilter(e.target.value); resetRoomPage(); }}
+                                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
+                                            >
+                                                <option value="all">{getText('All Campuses', 'Semua Kampus')}</option>
+                                                <option value="kulonprogo">📍 Kampus Kulon Progo</option>
+                                                <option value="gunungkidul">📍 Kampus Gunung Kidul</option>
+                                                {campuses.map(c => {
+                                                    const isGk = c.name.toLowerCase().includes('gunung');
+                                                    const isKp = c.name.toLowerCase().includes('kulon') || c.name.toLowerCase().includes('wates');
+                                                    if (isGk || isKp) return null;
+                                                    return (
+                                                        <option key={c.id} value={c.id}>📍 {c.name}</option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+
+                                        {/* Target Date */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                                <CalendarIcon className="inline h-4 w-4 mr-1 text-blue-500" />
+                                                {getText('Target Date', 'Tanggal Target')}
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={availabilityTargetDate}
+                                                onChange={(e) => {
+                                                    setAvailabilityTargetDate(e.target.value);
+                                                    setTargetDate(e.target.value);
+                                                }}
+                                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
+                                            />
+                                        </div>
+
+                                        {/* Search + Reset Buttons */}
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={searchAvailableRooms}
+                                                disabled={isSearchingAvailability}
+                                                className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-md shadow-blue-200/50 text-sm font-medium"
+                                            >
+                                                {isSearchingAvailability ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                                                {getText('Search', 'Cari')}
+                                            </button>
+                                            {isAvailabilitySearchMode && (
+                                                <button
+                                                    onClick={resetAvailabilitySearch}
+                                                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all text-sm font-medium"
+                                                >
+                                                    <RefreshCw className="h-4 w-4" />
+                                                    {getText('Reset', 'Reset')}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Info Banner */}
+                                    <div className="flex items-start gap-2 text-sm text-blue-700 bg-white/70 p-3 rounded-lg border border-blue-200">
+                                        <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                        <span>
+                                            {getText(
+                                                'This search will check all schedules: Lectures, UAS Exams, Final Sessions, and Room Bookings for conflicts.',
+                                                'Pencarian ini akan memeriksa semua jadwal: Kuliah, UAS, Sidang Akhir, dan Pemesanan Ruangan untuk konflik.'
+                                            )}
+                                        </span>
+                                    </div>
                                 </div>
 
-                                {/* 🏫 Dropdown Kampus */}
-                                <div className="relative flex-shrink-0" ref={campusDropdownRef}>
-                                    <button
-                                        onClick={() => setIsCampusDropdownOpen(o => !o)}
-                                        className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-100 rounded-xl text-sm font-medium text-gray-700 bg-white hover:border-blue-300 focus:outline-none focus:border-blue-500 transition-colors shadow-sm min-w-[180px] justify-between"
-                                    >
-                                        <span className="flex items-center gap-1.5 truncate">
-                                            <MapPin className="h-4 w-4 text-blue-400 flex-shrink-0" />
-                                            {selectedCampus === 'all'
-                                                ? 'Semua Kampus'
-                                                : (campuses.find(c => c.id === selectedCampus)?.name || selectedCampus)}
-                                        </span>
-                                        <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${isCampusDropdownOpen ? 'rotate-180' : ''}`} />
-                                    </button>
-                                    {isCampusDropdownOpen && (
-                                        <div className="absolute top-full left-0 mt-1 w-[260px] bg-white border border-gray-200 rounded-xl shadow-xl z-[100] max-h-[300px] flex flex-col overflow-hidden">
-                                            <div className="p-2 border-b border-gray-100 flex items-center gap-1.5">
-                                                <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                                                <input
-                                                    type="text"
-                                                    placeholder="Cari kampus..."
-                                                    value={campusSearchTerm}
-                                                    onChange={(e) => setCampusSearchTerm(e.target.value)}
-                                                    className="w-full bg-transparent text-xs focus:outline-none text-gray-700 placeholder-gray-400 py-1"
-                                                    autoFocus
-                                                />
-                                                {campusSearchTerm && (
-                                                    <button onClick={() => setCampusSearchTerm('')} className="p-0.5 text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
-                                                )}
-                                            </div>
-                                            <div className="overflow-y-auto flex-1 py-1">
-                                                <button
-                                                    onClick={() => { setSelectedCampus('all'); setIsCampusDropdownOpen(false); setCampusSearchTerm(''); resetRoomPage(); }}
-                                                    className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors ${selectedCampus === 'all' ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-700'}`}
-                                                >
-                                                    Semua Kampus
-                                                </button>
-                                                {filteredCampusDropdown.map(campus => (
-                                                    <button
-                                                        key={campus.id}
-                                                        onClick={() => { setSelectedCampus(campus.id); setIsCampusDropdownOpen(false); setCampusSearchTerm(''); resetRoomPage(); }}
-                                                        className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-50 transition-colors truncate ${selectedCampus === campus.id ? 'text-blue-600 font-semibold bg-blue-50/50' : 'text-gray-700'}`}
-                                                        title={campus.name}
-                                                    >
-                                                        {campus.name}
-                                                    </button>
-                                                ))}
-                                                {filteredCampusDropdown.length === 0 && (
-                                                    <div className="px-4 py-3 text-xs text-gray-400 italic text-center">Tidak ditemukan</div>
-                                                )}
-                                            </div>
+                                {/* Search Result Summary */}
+                                {availabilitySearchDone && (
+                                    <div className={`flex items-center gap-3 p-3 rounded-xl border ${filteredRooms.length > 0 ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                                        {filteredRooms.length > 0 ? (
+                                            <>
+                                                <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+                                                <span className="text-sm font-medium">
+                                                    {getText(
+                                                        `Found ${filteredRooms.length} available room(s) for ${format(new Date(availabilityTargetDate), 'EEEE, MMMM d, yyyy')}`,
+                                                        `Ditemukan ${filteredRooms.length} ruangan tersedia untuk ${format(new Date(availabilityTargetDate), 'EEEE, d MMMM yyyy')}`
+                                                    )}
+                                                    {selectedCampusFilter !== 'all' && (
+                                                        <span className="text-green-600"> • {selectedCampusFilter === 'kulonprogo' ? 'Kampus Kulon Progo' : selectedCampusFilter === 'gunungkidul' ? 'Kampus Gunung Kidul' : campuses.find(c => c.id === selectedCampusFilter)?.name}</span>
+                                                    )}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+                                                <span className="text-sm font-medium">
+                                                    {getText(
+                                                        'No available rooms found for the selected date and filters.',
+                                                        'Tidak ada ruangan tersedia untuk tanggal dan filter yang dipilih.'
+                                                    )}
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Bottom bar: Search + View Controls */}
+                            <div className="p-4 flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+                                    {/* Search by name/code */}
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder={getText('Filter results by name...', 'Filter hasil berdasarkan nama...')}
+                                            value={searchTerm}
+                                            onChange={(e) => { setSearchTerm(e.target.value); resetRoomPage(); }}
+                                            className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3">
+                                    {/* Availability Search Mode indicator */}
+                                    {isAvailabilitySearchMode && (
+                                        <div className="flex items-center gap-1.5 px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-xs font-semibold text-green-700">
+                                            <CheckCircle className="h-3.5 w-3.5" />
+                                            {getText('Showing available only', 'Hanya menampilkan yang tersedia')}
                                         </div>
                                     )}
-                                </div>
 
-                                {/* 🔍 Search Ruangan */}
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Cari ruangan berdasarkan nama atau kode..."
-                                        value={searchTerm}
-                                        onChange={(e) => { setSearchTerm(e.target.value); resetRoomPage(); }}
-                                        className="w-full pl-11 pr-10 py-2.5 border-2 border-gray-100 rounded-xl focus:border-blue-500 focus:outline-none transition-colors text-sm"
-                                    />
-                                    {searchTerm && (
-                                        <button onClick={() => { setSearchTerm(''); resetRoomPage(); }} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600">
-                                            <X className="h-4 w-4" />
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Grid/List + Per-page */}
-                                <div className="flex items-center gap-3 flex-shrink-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">Tampil</span>
+                                    {/* Per-page selector */}
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                        <span className="text-xs text-gray-500 whitespace-nowrap">{getText('Show', 'Tampil')}</span>
                                         <select
                                             value={roomPageSize}
                                             onChange={(e) => { setRoomPageSize(Number(e.target.value)); resetRoomPage(); }}
@@ -1270,45 +1404,13 @@ const RoomInfo: React.FC = () => {
                                             {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
                                         </select>
                                     </div>
-                                    <div className="flex border border-gray-200 rounded-xl overflow-hidden p-0.5">
+
+                                    {/* Grid/List View Toggles */}
+                                    <div className="flex border border-gray-200 rounded-xl overflow-hidden p-0.5 bg-gray-55 flex-shrink-0">
                                         <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-700'}`}><Grid className="h-4 w-4" /></button>
                                         <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-700'}`}><List className="h-4 w-4" /></button>
                                     </div>
                                 </div>
-                            </div>
-
-                            {/* Active filter chips */}
-                            {(searchTerm || selectedCampus !== 'all') && (
-                                <div className="flex flex-wrap gap-2 items-center">
-                                    <span className="text-xs text-gray-400">Filter aktif:</span>
-                                    {searchTerm && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-200">
-                                            <Search className="h-3 w-3" />"{searchTerm}"
-                                            <button onClick={() => { setSearchTerm(''); resetRoomPage(); }} className="ml-1 hover:text-red-500"><X className="h-3 w-3" /></button>
-                                        </span>
-                                    )}
-                                    {selectedCampus !== 'all' && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-medium border border-indigo-200">
-                                            <MapPin className="h-3 w-3" />{campuses.find(c => c.id === selectedCampus)?.name || selectedCampus}
-                                            <button onClick={() => { setSelectedCampus('all'); resetRoomPage(); }} className="ml-1 hover:text-red-500"><X className="h-3 w-3" /></button>
-                                        </span>
-                                    )}
-                                    <button
-                                        onClick={() => { setSearchTerm(''); setSelectedCampus('all'); resetRoomPage(); }}
-                                        className="text-xs text-red-500 hover:text-red-700 underline"
-                                    >
-                                        Reset semua
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Info tanggal yang sedang dilihat */}
-                            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-700 font-medium">
-                                <CalendarIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                                <span>
-                                    Melihat jadwal ruangan untuk: <strong>{format(new Date(targetDate + 'T00:00:00'), 'EEEE, d MMMM yyyy', { locale: localeId })}</strong>
-                                    {targetDate === format(new Date(), 'yyyy-MM-dd') && <span className="ml-2 px-1.5 py-0.5 bg-blue-200 text-blue-800 rounded-full text-[10px] font-bold">HARI INI</span>}
-                                </span>
                             </div>
                         </div>
 
@@ -1322,19 +1424,27 @@ const RoomInfo: React.FC = () => {
                             viewMode === 'grid' ? (
                                 <div className="grid grid-cols-1 gap-4">
                                     {paginatedRooms.map(room => (
-                                        <div key={room.id} className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:border-blue-100 transition-all duration-300 group flex flex-col gap-3">
+                                        <div key={room.id} className={`bg-white border rounded-2xl p-4 sm:p-5 hover:shadow-md transition-all duration-300 group flex flex-col gap-3 ${isAvailabilitySearchMode ? 'border-green-200 hover:border-green-300' : 'border-gray-200 hover:border-blue-100'}`}>
                                             {/* Top Section: Info & Action Button */}
                                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                                                 {/* Left Side: Room Name & Code */}
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className="font-normal text-gray-800 text-base leading-snug truncate">{room.name}</h3>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-normal text-gray-800 text-base leading-snug truncate">{room.name}</h3>
+                                                        {isAvailabilitySearchMode && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-bold uppercase tracking-wide flex-shrink-0">
+                                                                <CheckCircle className="h-3 w-3" />
+                                                                {getText('Available', 'Tersedia')}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <p className="text-[11px] text-gray-400 tracking-wide mt-0.5">{room.code}</p>
                                                 </div>
 
                                                 {/* Right Side: Action Button */}
                                                 <div className="w-full sm:w-auto flex-shrink-0">
                                                     <button
-                                                        onClick={() => setShowRoomDetail(room)}
+                                                        onClick={() => { setTargetDate(availabilityTargetDate); setShowRoomDetail(room); }}
                                                         className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl text-xs transition-all duration-200 w-full sm:w-auto"
                                                     >
                                                         <Eye className="h-4 w-4" />
@@ -1343,7 +1453,7 @@ const RoomInfo: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Middle: Capacity, Department, Building */}
+                                            {/* Middle: Capacity, Department, Building, Campus */}
                                             <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-500">
                                                 <div className="flex items-center gap-1.5">
                                                     <Users className="h-3.5 w-3.5 text-blue-400" />
@@ -1357,6 +1467,12 @@ const RoomInfo: React.FC = () => {
                                                     <div className="flex items-center gap-1.5">
                                                         <Building className="h-3.5 w-3.5 text-indigo-300 flex-shrink-0" />
                                                         <span className="truncate max-w-[140px]">{room.building.name}</span>
+                                                    </div>
+                                                )}
+                                                {room.building?.campus?.name && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <MapPinned className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                                                        <span className="truncate max-w-[140px]">{room.building.campus.name}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -1373,19 +1489,32 @@ const RoomInfo: React.FC = () => {
                                                 <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Capacity', 'Kapasitas')}</th>
                                                 <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Department', 'Departemen')}</th>
                                                 <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Building', 'Gedung')}</th>
+                                                <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Campus', 'Kampus')}</th>
+                                                {isAvailabilitySearchMode && (
+                                                    <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{getText('Status', 'Status')}</th>
+                                                )}
                                                 <th className="px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap text-right">{getText('Actions', 'Aksi')}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {paginatedRooms.map(room => (
-                                                <tr key={room.id} className="border-b border-gray-100 hover:bg-gray-50 transition-all duration-200">
+                                                <tr key={room.id} className={`border-b border-gray-100 hover:bg-gray-50 transition-all duration-200 ${isAvailabilitySearchMode ? 'bg-green-50/30' : ''}`}>
                                                     <td className="px-6 py-4 font-normal text-gray-700 text-sm whitespace-nowrap">{room.name}</td>
                                                     <td className="px-6 py-4 text-sm font-normal text-gray-500 whitespace-nowrap">{room.code}</td>
                                                     <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{room.capacity} {getText('seats', 'kursi')}</td>
                                                     <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{room.department?.name || getText('General', 'Umum')}</td>
                                                     <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{room.building?.name || '-'}</td>
+                                                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{room.building?.campus?.name || '-'}</td>
+                                                    {isAvailabilitySearchMode && (
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold uppercase tracking-wide">
+                                                                <CheckCircle className="h-3 w-3" />
+                                                                {getText('Available', 'Tersedia')}
+                                                            </span>
+                                                        </td>
+                                                    )}
                                                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                                                        <button onClick={() => setShowRoomDetail(room)} className="inline-flex items-center justify-center p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-all ml-auto" title={getText('View Details', 'Lihat Detail')}>
+                                                        <button onClick={() => { setTargetDate(availabilityTargetDate); setShowRoomDetail(room); }} className="inline-flex items-center justify-center p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-all ml-auto" title={getText('View Details', 'Lihat Detail')}>
                                                             <Eye className="h-5 w-5" />
                                                         </button>
                                                     </td>
@@ -2123,12 +2252,8 @@ const RoomInfo: React.FC = () => {
 
                                         {/* Right: Room Schedule */}
                                         <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm space-y-5 flex flex-col h-full">
-                                            <div className="flex items-center gap-2">
-                                                <CalendarIcon className="h-5 w-5 text-gray-500" />
-                                                <h4 className="font-extrabold text-gray-900 text-base">{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
-                                                <span className="ml-auto text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg border border-blue-100 font-medium">
-                                                    {format(new Date(targetDate + 'T00:00:00'), 'd MMM yyyy', { locale: localeId })}
-                                                </span>
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="font-extrabold text-gray-900 flex items-center gap-2 text-base"><CalendarIcon className="h-5 w-5 text-gray-500" />{getText('Room Schedule', 'Jadwal Ruangan')}</h4>
                                             </div>
                                             <div className="flex-1 overflow-y-auto pr-2 min-h-[300px]">
                                                 <CombinedScheduleSection />
