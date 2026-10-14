@@ -139,6 +139,11 @@ export interface MatchingBooking {
     notes?: string | null;
     sks?: number | null;
     class_type?: string | null;
+    course_name?: string | null;
+    course_code?: string | null;
+    class_group?: string | null;
+    lecturer_name?: string | null;
+    lecture_schedule_id?: string | null;
     user_info?: {
         full_name?: string;
         identity_number?: string;
@@ -195,34 +200,52 @@ export const checkBookingMatch = (
     const bookingStartWIB = formatWIBTime(booking.start_time);
     const bookingEndWIB = formatWIBTime(booking.end_time);
 
-    // Toleransi waktu 30 menit (30 * 60 * 1000 ms)
+    // Toleransi overlap waktu 30 menit
     const toleranceMs = 30 * 60 * 1000;
-    const bookingStartWithTol = bookingStartDate.getTime() - toleranceMs;
-    const bookingEndWithTol = bookingEndDate.getTime() + toleranceMs;
 
-    // 1. Cek jam scan presensi dosen
+    // ─────────────────────────────────────────────────────────────────
+    // [INFO ONLY] Jam scan dosen — TIDAK dipakai untuk menentukan hijau
+    // karena dosen scan 1x per hari (pagi atau sebelum pulang),
+    // bukan tepat di setiap slot kuliah.
+    // ─────────────────────────────────────────────────────────────────
     let isScanTimeMatch = false;
     if (record.attendance_time && record.attendance_date) {
         const cleanTime = (record.attendance_time || '00:00').substring(0, 5);
         const scanISO = `${record.attendance_date}T${cleanTime}:00+07:00`;
         const scanTimeMs = new Date(scanISO).getTime();
-        if (!isNaN(scanTimeMs) && scanTimeMs >= bookingStartWithTol && scanTimeMs <= bookingEndWithTol) {
+        const startWithTol = bookingStartDate.getTime() - toleranceMs;
+        const endWithTol = bookingEndDate.getTime() + toleranceMs;
+        if (!isNaN(scanTimeMs) && scanTimeMs >= startWithTol && scanTimeMs <= endWithTol) {
             isScanTimeMatch = true;
         }
     }
 
-    // 2. Cek jadwal kegiatan (kuliah / sidang) jika ada
+    // ─────────────────────────────────────────────────────────────────
+    // Cek overlap slot jadwal (detail) dengan booking time window.
+    // Setiap detail entry memiliki start_time / end_time JADWAL yang
+    // spesifik — ini yang dicocokkan, bukan jam scan.
+    // Untuk matkul yg punya slot teori + praktik, hanya slot yang
+    // time-overlap-nya sesuai booking yang akan match.
+    // ─────────────────────────────────────────────────────────────────
     let isScheduleOverlap = false;
-    if (details.length > 0 && record.attendance_date) {
-        for (const det of details) {
-            if (det.start_time && det.end_time) {
-                const sClean = det.start_time.substring(0, 5);
-                const eClean = det.end_time.substring(0, 5);
-                const sMs = new Date(`${record.attendance_date}T${sClean}:00+07:00`).getTime();
-                const eMs = new Date(`${record.attendance_date}T${eClean}:00+07:00`).getTime();
+    const bookingCourseNormEarly = (booking.course_name || '').toLowerCase().trim();
 
+    if (details.length > 0 && record.attendance_date) {
+        // Batasi ke detail yang nama matkul-nya cocok (jika booking ada matkul)
+        const relevantDetails = bookingCourseNormEarly
+            ? details.filter(d => {
+                if (!d.course_name) return true;
+                const cName = d.course_name.toLowerCase().trim();
+                return bookingCourseNormEarly.includes(cName) || cName.includes(bookingCourseNormEarly);
+            })
+            : details;
+
+        for (const det of relevantDetails) {
+            if (det.start_time && det.end_time) {
+                const sMs = new Date(`${record.attendance_date}T${det.start_time.substring(0, 5)}:00+07:00`).getTime();
+                const eMs = new Date(`${record.attendance_date}T${det.end_time.substring(0, 5)}:00+07:00`).getTime();
                 if (!isNaN(sMs) && !isNaN(eMs)) {
-                    if (sMs < (bookingEndDate.getTime() + toleranceMs) && eMs > (bookingStartDate.getTime() - toleranceMs)) {
+                    if (sMs < bookingEndDate.getTime() + toleranceMs && eMs > bookingStartDate.getTime() - toleranceMs) {
                         isScheduleOverlap = true;
                         break;
                     }
@@ -231,46 +254,91 @@ export const checkBookingMatch = (
         }
     }
 
-    const isTimeMatch = isScanTimeMatch || isScheduleOverlap;
+    // ─────────────────────────────────────────────────────────────────
+    // Cek kesesuaian Matkul / Dosen / Rombel
+    // ─────────────────────────────────────────────────────────────────
+    const cleanLecturerName = (name: string) =>
+        (name || '')
+            .toLowerCase()
+            .replace(/\b(dr|prof|ir|drs|dra|m\.pd|s\.pd|s\.e|m\.m|m\.kom|s\.kom|m\.sc|ph\.d|m\.t|s\.t|m\.hum|s\.sos)\b\.?/gi, '')
+            .replace(/[^a-z0-9]/g, ' ')
+            .trim();
 
-    // 3. Cek kesesuaian Matkul / Dosen
     const bookingPurposeNorm = (booking.purpose || '').toLowerCase();
-    const bookingNotesNorm = (booking.notes || '').toLowerCase();
-    const lecturerNameNorm = (record.lecturer_name || '').toLowerCase();
+    const bookingNotesNorm   = (booking.notes || '').toLowerCase();
+    const bookingCourseNorm  = bookingCourseNormEarly;
+    const cleanBookingLecturer = cleanLecturerName(booking.lecturer_name || '');
+    const cleanRecordLecturer  = cleanLecturerName(record.lecturer_name  || '');
 
-    let isCourseMatch = false;
+    let isCourseMatch    = false;
     let isContinuingClass = false;
 
     if (details.length > 0) {
         const matchedCourses = details.filter(d => {
             if (!d.course_name) return false;
-            const cName = d.course_name.toLowerCase();
-            return bookingPurposeNorm.includes(cName) || bookingNotesNorm.includes(cName);
+            const cName = d.course_name.toLowerCase().trim();
+
+            // Nama matkul cocok (booking.course_name, purpose, atau notes mengandung nama matkul detail)
+            const courseMatched =
+                (bookingCourseNorm && (bookingCourseNorm.includes(cName) || cName.includes(bookingCourseNorm))) ||
+                bookingPurposeNorm.includes(cName) ||
+                bookingNotesNorm.includes(cName);
+
+            // Rombel / kelas cocok
+            const classMatched =
+                !booking.class_group || !d.class_group ||
+                booking.class_group.toLowerCase().includes(d.class_group.toLowerCase()) ||
+                d.class_group.toLowerCase().includes(booking.class_group.toLowerCase());
+
+            // Jika matkul sama ada slot teori & praktik:
+            // gunakan overlap waktu SLOT DETAIL dengan booking sebagai pembeda.
+            // (Ini valid karena detail.start_time adalah jadwal, bukan jam scan.)
+            let slotTimeMatched = true;
+            if (courseMatched && classMatched && d.start_time && d.end_time && record.attendance_date) {
+                const sMs = new Date(`${record.attendance_date}T${d.start_time.substring(0, 5)}:00+07:00`).getTime();
+                const eMs = new Date(`${record.attendance_date}T${d.end_time.substring(0, 5)}:00+07:00`).getTime();
+                slotTimeMatched =
+                    sMs < bookingEndDate.getTime() + toleranceMs &&
+                    eMs > bookingStartDate.getTime() - toleranceMs;
+            }
+
+            return courseMatched && classMatched && slotTimeMatched;
         });
 
         if (matchedCourses.length > 0) {
             isCourseMatch = true;
-            if (details.length > 1) {
-                isContinuingClass = true;
-            }
+            if (details.length > 1) isContinuingClass = true;
         }
     }
 
-    if (lecturerNameNorm && (bookingPurposeNorm.includes(lecturerNameNorm) || bookingNotesNorm.includes(lecturerNameNorm))) {
-        isCourseMatch = true;
+    // Nama dosen cocok (strip gelar, word-match)
+    if (cleanRecordLecturer && cleanBookingLecturer) {
+        const words = cleanRecordLecturer.split(' ').filter(w => w.length > 2);
+        if (
+            words.some(w => cleanBookingLecturer.includes(w)) ||
+            cleanBookingLecturer.includes(cleanRecordLecturer) ||
+            cleanRecordLecturer.includes(cleanBookingLecturer)
+        ) {
+            isCourseMatch = true;
+        }
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // isMatched (hijau) = matkul/dosen cocok ATAU slot jadwal overlap.
+    // Scan time (isScanTimeMatch) hanya dipakai untuk quality label,
+    // tidak menentukan warna hijau.
+    // ─────────────────────────────────────────────────────────────────
     let matchQuality: 'perfect' | 'time_only' | 'course_only' | 'unrelated' = 'unrelated';
-    if (isTimeMatch && isCourseMatch) {
+    if ((isScheduleOverlap || isScanTimeMatch) && isCourseMatch) {
         matchQuality = 'perfect';
-    } else if (isTimeMatch) {
-        matchQuality = 'time_only';
     } else if (isCourseMatch) {
         matchQuality = 'course_only';
+    } else if (isScheduleOverlap) {
+        matchQuality = 'time_only';
     }
 
     return {
-        isTimeMatch,
+        isTimeMatch: isScheduleOverlap, // hanya slot jadwal, bukan jam scan
         isCourseMatch,
         isContinuingClass,
         bookingStartWIB,
@@ -1275,6 +1343,11 @@ const FinanceAttendance: React.FC = () => {
                     notes,
                     sks,
                     class_type,
+                    course_name,
+                    course_code,
+                    class_group,
+                    lecturer_name,
+                    lecture_schedule_id,
                     user_info,
                     user:users!bookings_user_id_fkey(
                         id,
@@ -3531,53 +3604,19 @@ const FinanceAttendance: React.FC = () => {
                                 </div>
 
                                 {/* Body - Scrollable */}
-                                <div className="p-4 md:p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
+                                <div className="p-4 md:p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/50">
 
-                                    {/* 1. BANNER INDIKATOR OTOMATIS (Fase 3: Hijau / Kuning / Biru / Oranye) */}
-                                    <div className={`rounded-xl p-4 border shadow-xs ${indicator.cardBg} ${indicator.cardBorder}`}>
-                                        <div className="flex items-start gap-3">
-                                            <div className={`p-2 rounded-lg bg-white/80 shadow-xs shrink-0 ${indicator.iconColor}`}>
-                                                {indicator.type === 'green' && <CheckCircle className="w-5 h-5" />}
-                                                {indicator.type === 'yellow' && <AlertTriangle className="w-5 h-5" />}
-                                                {indicator.type === 'blue' && <BookOpen className="w-5 h-5" />}
-                                                {indicator.type === 'orange' && <AlertCircle className="w-5 h-5" />}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${indicator.badgeBg} ${indicator.badgeText} ${indicator.badgeBorder}`}>
-                                                        {indicator.badgeLabel}
-                                                    </span>
-                                                    <h4 className="text-sm font-bold text-gray-900">{indicator.title}</h4>
-                                                </div>
-                                                <p className="text-xs text-gray-700 mt-1 leading-relaxed">
-                                                    {indicator.description}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* 2. DUA KARTU KOMPARASI DUA SISI */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-                                        {/* KARTU KIRI: Data & Klaim Presensi Dosen */}
-                                        <div className="bg-white rounded-xl p-4 md:p-5 border border-slate-200 shadow-xs space-y-4">
-                                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-                                                        <User className="w-4 h-4" />
-                                                    </div>
-                                                    <h4 className="text-sm font-bold text-gray-900">Klaim & Presensi Dosen</h4>
-                                                </div>
-                                                <span className="text-xs text-gray-500 font-medium">Sisi Dosen</span>
-                                            </div>
-
+                                    {/* KARTU RINGKAS PRESENSI DOSEN & JADWAL */}
+                                    <div className="bg-white rounded-xl p-4 md:p-5 border border-slate-200 shadow-xs space-y-4">
+                                        
+                                        {/* Header Ringkas: Foto Selfie + Identitas Dosen */}
+                                        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                                             {/* Foto Selfie Presensi */}
-                                            <div className="relative w-full h-44 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-inner group">
+                                            <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-xs shrink-0 group">
                                                 {loadingPhoto ? (
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 animate-pulse">
-                                                        <div className="w-10 h-10 bg-gray-300 rounded-full" />
-                                                        <div className="w-20 h-2 bg-gray-300 rounded" />
-                                                        <p className="text-xs text-gray-400">Memuat foto selfie...</p>
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-pulse">
+                                                        <div className="w-8 h-8 bg-gray-300 rounded-full" />
+                                                        <p className="text-[10px] text-gray-400">Memuat foto...</p>
                                                     </div>
                                                 ) : selectedRecord.photo_capture ? (
                                                     <>
@@ -3588,201 +3627,166 @@ const FinanceAttendance: React.FC = () => {
                                                             onClick={() => setShowImageModal(true)}
                                                             title="Klik untuk melihat foto ukuran penuh"
                                                         />
-                                                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 text-white text-[10px] rounded backdrop-blur-xs flex items-center gap-1 opacity-90 group-hover:opacity-100">
-                                                            <Eye className="w-3 h-3" /> Perbesar
+                                                        <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 text-white text-[9px] rounded backdrop-blur-xs flex items-center gap-0.5 opacity-90 group-hover:opacity-100">
+                                                            <Eye className="w-2.5 h-2.5" /> Perbesar
                                                         </div>
                                                     </>
                                                 ) : (
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
-                                                        <User className="w-8 h-8 opacity-40" />
-                                                        <span className="text-xs">Tidak ada foto selfie</span>
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-gray-400">
+                                                        <User className="w-7 h-7 opacity-40" />
+                                                        <span className="text-[10px]">Tanpa foto</span>
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {/* Profil Dosen & Waktu Scan */}
-                                            <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3 rounded-xl border border-slate-100">
+                                            {/* Profil Dosen, Jam, & Ruangan Scan */}
+                                            <div className="flex-1 min-w-0 space-y-2">
                                                 <div>
-                                                    <span className="text-gray-500 block">Nama Dosen</span>
-                                                    <span className="font-semibold text-gray-900 text-sm">{selectedRecord.lecturer_name}</span>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h4 className="text-base font-bold text-gray-900">{selectedRecord.lecturer_name}</h4>
+                                                        {selectedRecord.lecturer?.is_homebase === false && (
+                                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                                DLB
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 font-medium">
+                                                        {selectedRecord.study_program?.name || 'Program Studi -'}
+                                                    </p>
                                                 </div>
-                                                <div>
-                                                    <span className="text-gray-500 block">Program Studi</span>
-                                                    <span className="font-medium text-gray-900">{selectedRecord.study_program?.name || '-'}</span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-gray-500 block">Jam Scan Presensi</span>
-                                                    <span className="font-semibold text-blue-700 flex items-center gap-1 mt-0.5">
-                                                        <Clock className="w-3.5 h-3.5" />
-                                                        {selectedRecord.attendance_time?.substring(0, 5)} WIB
-                                                    </span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-gray-500 block">Ruangan Discan</span>
-                                                    <span className="font-semibold text-gray-900 flex items-center gap-1 mt-0.5">
-                                                        <Building className="w-3.5 h-3.5 text-blue-600" />
-                                                        {selectedRecord.scanned_room?.name || (selectedRecord.scanned_room_id ? `${selectedRecord.scanned_room_id.substring(0, 8)}...` : 'Tanpa data scan')}
-                                                    </span>
+
+                                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                                    <div>
+                                                        <span className="text-gray-500 text-[11px] block">Jam Scan Presensi</span>
+                                                        <span className="font-semibold text-blue-700 flex items-center gap-1 mt-0.5">
+                                                            <Clock className="w-3.5 h-3.5" />
+                                                            {selectedRecord.attendance_time?.substring(0, 5)} WIB
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-gray-500 text-[11px] block">Ruangan Discan</span>
+                                                        <span className="font-semibold text-gray-900 flex items-center gap-1 mt-0.5">
+                                                            <Building className="w-3.5 h-3.5 text-blue-600" />
+                                                            {selectedRecord.scanned_room?.name || (selectedRecord.scanned_room_id ? `${selectedRecord.scanned_room_id.substring(0, 8)}...` : 'Tanpa data scan')}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
+                                        </div>
 
-                                            {/* Kegiatan yang Diklaim (Matkul / Sidang) */}
+                                        {/* DAFTAR JADWAL YANG DIKLAIM & STATUS KESESUAIAN PEMINJAMAN */}
+                                        <div className="border-t border-slate-100 pt-3 space-y-2.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                                                    <BookOpen className="w-4 h-4 text-blue-600" />
+                                                    Jadwal yang Diklaim ({selectedRecordDetails.length})
+                                                </span>
+                                                {loadingBookings && (
+                                                    <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                                                        <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                                                        Mengecek peminjaman...
+                                                    </span>
+                                                )}
+                                            </div>
+
                                             {loadingDetails ? (
-                                                <div className="flex items-center justify-center py-3 text-xs text-gray-500">
-                                                    <Loader2 className="w-4 h-4 animate-spin mr-1.5 text-blue-600" />
-                                                    Memuat jadwal kegiatan...
+                                                <div className="flex items-center justify-center py-4 text-xs text-gray-500 gap-1.5">
+                                                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                                                    Memuat jadwal klaim...
                                                 </div>
                                             ) : selectedRecordDetails.length > 0 ? (
                                                 <div className="space-y-2">
-                                                    <div className="flex items-center justify-between text-xs">
-                                                        <span className="font-bold text-gray-800 flex items-center gap-1.5">
-                                                            <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-                                                            Jadwal Diklaim ({selectedRecordDetails.length})
-                                                        </span>
-                                                        <span className="text-[11px] text-gray-500 capitalize">{selectedRecord.purpose}</span>
-                                                    </div>
-                                                    <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                                                        {selectedRecordDetails.map((detail, idx) => (
-                                                            <div key={detail.id || idx} className="p-2.5 rounded-lg border border-blue-100 bg-blue-50/50 text-xs space-y-1">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="font-semibold text-gray-900">{detail.course_name || detail.session_type || 'Kegiatan'}</span>
-                                                                    {detail.start_time && detail.end_time && (
-                                                                        <span className="text-[11px] font-mono text-blue-700 bg-white px-1.5 py-0.5 rounded border border-blue-100">
-                                                                            {detail.start_time.substring(0, 5)} - {detail.end_time.substring(0, 5)}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex flex-wrap gap-1 text-[11px] text-gray-600">
-                                                                    {detail.class_group && <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">Rombel {detail.class_group}</span>}
-                                                                    {detail.semester && <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">{detail.semester}</span>}
-                                                                    {detail.student_name && <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">Mhs: {detail.student_name}</span>}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : null}
+                                                    {selectedRecordDetails.map((detail, idx) => {
+                                                        // Cari apakah jadwal ini cocok dengan salah satu peminjaman ruangan mahasiswa
+                                                        const matchedBooking = matchingBookings.find(b => {
+                                                            const match = checkBookingMatch(b, selectedRecord, [detail]);
+                                                            return match.isCourseMatch || match.matchQuality === 'perfect' || match.isTimeMatch;
+                                                        });
 
-                                            {/* Catatan Tambahan / Alasan Dosen */}
-                                            {selectedRecord.additional_notes && (
-                                                <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-xs">
-                                                    <span className="font-bold text-amber-900 block mb-1">
-                                                        📝 Catatan / Alasan Dosen:
-                                                    </span>
-                                                    <p className="text-amber-950 whitespace-pre-wrap leading-relaxed">
-                                                        {selectedRecord.additional_notes}
-                                                    </p>
-                                                </div>
-                                            )}
-
-                                            {selectedRecord.purpose_description && selectedRecord.purpose_description !== selectedRecord.additional_notes && (
-                                                <div className="p-2.5 bg-slate-100 rounded-lg text-xs text-gray-700">
-                                                    <span className="font-semibold block text-gray-800">Detail Tujuan:</span>
-                                                    {selectedRecord.purpose_description}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* KARTU KANAN: Data Peminjaman Ruangan Mahasiswa */}
-                                        <div className="bg-white rounded-xl p-4 md:p-5 border border-slate-200 shadow-xs space-y-4">
-                                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                                                        <Building className="w-4 h-4" />
-                                                    </div>
-                                                    <h4 className="text-sm font-bold text-gray-900">Peminjaman Ruangan Aktif</h4>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    {loadingBookings ? (
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                                                    ) : (
-                                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                                            {matchingBookings.length} Peminjaman
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Daftar Booking Mahasiswa */}
-                                            {loadingBookings ? (
-                                                <div className="py-12 flex flex-col items-center justify-center text-xs text-gray-500 gap-2">
-                                                    <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-                                                    <span>Memeriksa data peminjaman ruangan...</span>
-                                                </div>
-                                            ) : matchingBookings.length > 0 ? (
-                                                <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-                                                    {matchingBookings.map((b) => {
-                                                        const matchInfo = checkBookingMatch(b, selectedRecord, selectedRecordDetails);
-                                                        const borrowerName = b.user_info?.full_name || b.user?.full_name || 'Mahasiswa';
-                                                        const borrowerNim = b.user_info?.identity_number || b.user?.identity_number;
+                                                        const borrower = matchedBooking?.user_info?.full_name || matchedBooking?.user?.full_name;
+                                                        const borrowerNim = matchedBooking?.user_info?.identity_number || matchedBooking?.user?.identity_number;
+                                                        const isMatched = !!matchedBooking;
 
                                                         return (
                                                             <div 
-                                                                key={b.id} 
-                                                                className={`p-3.5 rounded-xl border text-xs space-y-2 transition-all ${
-                                                                    matchInfo.matchQuality === 'perfect'
-                                                                        ? 'bg-emerald-50/50 border-emerald-300 ring-1 ring-emerald-200'
-                                                                        : matchInfo.isTimeMatch
-                                                                            ? 'bg-blue-50/40 border-blue-200'
-                                                                            : 'bg-slate-50 border-slate-200 opacity-80'
+                                                                key={detail.id || idx} 
+                                                                className={`p-3 rounded-xl border text-xs transition-all ${
+                                                                    isMatched
+                                                                        ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200'
+                                                                        : 'bg-slate-50 border-slate-200'
                                                                 }`}
                                                             >
-                                                                {/* Waktu & Status Badge */}
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center gap-1.5 font-bold text-gray-900">
-                                                                        <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                                                                        <span>{matchInfo.bookingStartWIB} - {matchInfo.bookingEndWIB} WIB</span>
+                                                                <div className="flex items-start justify-between gap-2">
+                                                                    <div className="space-y-1 flex-1">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <span className="font-bold text-gray-900 text-sm">
+                                                                                {detail.course_name || detail.session_type || 'Kegiatan Perkuliahan'}
+                                                                            </span>
+                                                                            {detail.class_group && (
+                                                                                <span className="px-1.5 py-0.5 rounded bg-white text-gray-700 font-semibold border border-slate-200 text-[11px]">
+                                                                                    Rombel {detail.class_group}
+                                                                                </span>
+                                                                            )}
+                                                                            {detail.semester && (
+                                                                                <span className="px-1.5 py-0.5 rounded bg-white text-gray-600 border border-slate-200 text-[11px]">
+                                                                                    {detail.semester}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {detail.start_time && detail.end_time && (
+                                                                            <div className="flex items-center gap-1.5 text-gray-600 text-[11px]">
+                                                                                <Clock className="w-3 h-3 text-gray-400" />
+                                                                                <span>Jadwal: {detail.start_time.substring(0, 5)} - {detail.end_time.substring(0, 5)} WIB</span>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase ${
-                                                                            b.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
-                                                                            b.status === 'borrowed' ? 'bg-blue-100 text-blue-800' :
-                                                                            b.status === 'completed' ? 'bg-gray-100 text-gray-700' :
-                                                                            'bg-amber-100 text-amber-800'
-                                                                        }`}>
-                                                                            {b.status}
-                                                                        </span>
-                                                                        {matchInfo.isTimeMatch && (
-                                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 flex items-center gap-1">
-                                                                                <CheckCircle className="w-3 h-3" /> Waktu Pas
+
+                                                                    {/* BADGE STATUS: HIJAU & CENTANG JIKA SESUAI PEMINJAMAN */}
+                                                                    <div>
+                                                                        {isMatched ? (
+                                                                            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-xs">
+                                                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                                                Sesuai Peminjaman
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200/70 text-slate-600 border border-slate-200">
+                                                                                Jadwal Reguler
                                                                             </span>
                                                                         )}
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Peminjam Mahasiswa */}
-                                                                <div className="bg-white/80 p-2 rounded-lg border border-slate-100 space-y-1">
-                                                                    <div className="flex items-center gap-1.5 font-medium text-gray-900">
-                                                                        <User className="w-3.5 h-3.5 text-slate-500" />
-                                                                        <span>{borrowerName}</span>
-                                                                        {borrowerNim && <span className="text-gray-500">({borrowerNim})</span>}
-                                                                    </div>
-                                                                    <div className="text-gray-700">
-                                                                        <span className="font-semibold text-gray-900">Keperluan: </span>
-                                                                        {b.purpose || '-'}
-                                                                    </div>
-                                                                    {b.notes && (
-                                                                        <div className="text-gray-500 italic text-[11px]">
-                                                                            Catatan Peminjam: "{b.notes}"
+                                                                {/* INFO DETAIL PEMINJAM MAHASISWA JIKA ADA */}
+                                                                {isMatched && matchedBooking && (
+                                                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex items-center justify-between flex-wrap gap-1 text-[11px] text-emerald-900 bg-white/70 px-2.5 py-1.5 rounded-lg">
+                                                                        <div className="flex items-center gap-1.5 font-medium">
+                                                                            <User className="w-3 h-3 text-emerald-600" />
+                                                                            <span>Peminjam: <strong>{borrower || 'Mahasiswa'}</strong> {borrowerNim ? `(${borrowerNim})` : ''}</span>
                                                                         </div>
-                                                                    )}
-                                                                </div>
+                                                                        <span className="text-emerald-700 font-mono text-[10px]">
+                                                                            Booking: {formatWIBTime(matchedBooking.start_time)} - {formatWIBTime(matchedBooking.end_time)} WIB
+                                                                        </span>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
                                                 </div>
                                             ) : (
-                                                <div className="p-6 rounded-xl border border-dashed border-slate-300 text-center text-xs text-gray-500 space-y-2 bg-slate-50/60">
-                                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-gray-400">
-                                                        <Building className="w-5 h-5" />
-                                                    </div>
-                                                    <p className="font-semibold text-gray-700">
-                                                        Tidak Ada Peminjaman Ruangan Mahasiswa
-                                                    </p>
-                                                    <p className="text-gray-500 max-w-xs mx-auto text-[11px] leading-relaxed">
-                                                        {selectedRecord.schedule_type === 'lecture' || selectedRecord.schedule_id || selectedRecord.purpose === 'sidang'
-                                                            ? 'Ruangan digunakan untuk jadwal perkuliahan / sidang reguler kampus.'
-                                                            : 'Dosen mengajar di luar jadwal tanpa reservasi mahasiswa. Silakan konfirmasi via catatan dosen dan foto kegiatan.'}
+                                                <div className="p-3 bg-slate-50 rounded-lg text-xs text-gray-500 italic">
+                                                    Tidak ada rincian jadwal kegiatan spesifik yang dicatat.
+                                                </div>
+                                            )}
+
+                                            {/* Catatan / Alasan Dosen Jika Ada */}
+                                            {selectedRecord.additional_notes && (
+                                                <div className="p-2.5 bg-amber-50/80 rounded-lg border border-amber-200 text-xs">
+                                                    <span className="font-bold text-amber-900 block mb-0.5">
+                                                        📝 Catatan / Alasan Dosen:
+                                                    </span>
+                                                    <p className="text-amber-950 whitespace-pre-wrap leading-relaxed">
+                                                        {selectedRecord.additional_notes}
                                                     </p>
                                                 </div>
                                             )}

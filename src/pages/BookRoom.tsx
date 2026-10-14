@@ -122,6 +122,12 @@ type FormValues = {
   attachments?: string[];
   equipment_requested?: string[];
   equipment_quantities?: number[];
+  course_name?: string;
+  course_code?: string;
+  class_group?: string;
+  lecturer_name?: string;
+  lecture_schedule_id?: string;
+  notes?: string;
 };
 
 type LectureSchedule = {
@@ -869,6 +875,11 @@ const BookRoom: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'course' | 'normal'>('course');
   const [showSKSField, setShowSKSField] = useState(false);
   const [todaySchedules, setTodaySchedules] = useState<LectureSchedule[]>([]);
+  const [searchedLectureSchedules, setSearchedLectureSchedules] = useState<LectureSchedule[]>([]);
+  const [loadingSearchCourses, setLoadingSearchCourses] = useState(false);
+  const normalCourseSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [normalCourseSearch, setNormalCourseSearch] = useState("");
+  const [showNormalCourseDropdown, setShowNormalCourseDropdown] = useState(false);
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCourse, setSelectedCourse] = useState<LectureSchedule | null>(null);
   const [loadingCourses, setLoadingCourses] = useState(false);
@@ -1139,6 +1150,45 @@ const BookRoom: React.FC = () => {
       setLoadingCourses(false);
     }
   };
+
+  /**
+   * Server-side search untuk jadwal kuliah dengan debounce.
+   * Hanya query Supabase saat user sudah mengetik >= 2 karakter,
+   * dengan delay 400ms untuk menghindari terlalu banyak request.
+   */
+  const searchLectureSchedules = useCallback((query: string) => {
+    // Bersihkan debounce sebelumnya
+    if (normalCourseSearchDebounceRef.current) {
+      clearTimeout(normalCourseSearchDebounceRef.current);
+    }
+
+    if (!query || query.trim().length < 2) {
+      setSearchedLectureSchedules([]);
+      setLoadingSearchCourses(false);
+      return;
+    }
+
+    setLoadingSearchCourses(true);
+
+    normalCourseSearchDebounceRef.current = setTimeout(async () => {
+      try {
+        const q = query.trim();
+        const { data, error } = await supabase
+          .from('lecture_schedules')
+          .select('id, course_name, course_code, lecturer, class, subject_study, semester, room, start_time, end_time, day')
+          .or(`course_name.ilike.%${q}%,course_code.ilike.%${q}%,lecturer.ilike.%${q}%,class.ilike.%${q}%,subject_study.ilike.%${q}%`)
+          .order('course_name')
+          .limit(30);
+
+        if (error) throw error;
+        setSearchedLectureSchedules(data || []);
+      } catch {
+        setSearchedLectureSchedules([]);
+      } finally {
+        setLoadingSearchCourses(false);
+      }
+    }, 400);
+  }, []);
 
   const fetchPendingBookings = async () => {
     const identityNumber = getValues("identity_number");
@@ -1916,6 +1966,11 @@ const BookRoom: React.FC = () => {
     setValue("start_datetime", startTime);
     setValue("end_datetime", endTime);
     setValue("purpose", `${course.course_name} - ${course.class}`);
+    setValue("course_name", course.course_name);
+    setValue("course_code", course.course_code);
+    setValue("class_group", course.class);
+    setValue("lecturer_name", course.lecturer || '');
+    setValue("lecture_schedule_id", course.id);
 
     const matchedRoom = rooms.find(room => {
       const roomNameLower = room.name.toLowerCase();
@@ -2063,6 +2118,9 @@ const BookRoom: React.FC = () => {
       schedule.subject_study?.toLowerCase().includes(searchLower)
     );
   }, [todaySchedules, courseSearch]);
+
+  // Server-side search: hasil langsung dari state yang diisi oleh searchLectureSchedules()
+  const filteredAllCourses = searchedLectureSchedules;
 
   // =====================================================
   // EFFECTS
@@ -2266,10 +2324,10 @@ const BookRoom: React.FC = () => {
       return;
     }
 
-    // Validation for 'Other' purpose
-    if (data.purpose === 'Other' && (!data.attachments || data.attachments.length === 0)) {
+    // Validasi alasan untuk kegiatan lain
+    if (data.purpose === 'Other' && (!data.notes || data.notes.trim() === '')) {
       alert.error(
-        getText("Please attach supporting documents for 'Other' purpose", "Silakan lampirkan dokumen pendukung untuk tujuan 'Lainnya'"),
+        getText("Please provide a reason for the booking", "Alasan/keperluan peminjaman wajib diisi untuk kegiatan lainnya"),
         ""
       );
       return;
@@ -2361,6 +2419,13 @@ const BookRoom: React.FC = () => {
         attachments: data.attachments || [],
         equipment_requested: equipmentIds,
         equipment_quantities: equipmentQuantities,
+        // Kolom snapshot matakuliah & jadwal perkuliahan
+        course_name: data.course_name || (selectedCourse ? selectedCourse.course_name : null),
+        course_code: data.course_code || (selectedCourse ? selectedCourse.course_code : null),
+        class_group: data.class_group || (selectedCourse ? selectedCourse.class : null),
+        lecturer_name: data.lecturer_name || (selectedCourse ? selectedCourse.lecturer : null),
+        lecture_schedule_id: data.lecture_schedule_id || (selectedCourse ? selectedCourse.id : null),
+        notes: data.purpose === 'Other' ? (data.notes || null) : null,
         user_info: {
           identity_number: data.identity_number,
           full_name: data.full_name,
@@ -2747,67 +2812,145 @@ const BookRoom: React.FC = () => {
                           {/* Purpose */}
                           <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {getText('Purpose', 'Tujuan')} *
+                              {getText('Purpose', 'Tujuan Peminjaman')} *
                             </label>
                             <select
                               {...register("purpose" as any)}
                               className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                             >
-                              <option value="Class/Lecture">{getText('Lecture', 'Kuliah')}</option>
-                              <option value="Other">{getText('Other', 'Lainnya')}</option>
+                              <option value="Class/Lecture">{getText('Lecture / Make-up Class', 'Perkuliahan / Kuliah Pengganti')}</option>
+                              <option value="Other">{getText('Other Activity', 'Kegiatan Lainnya')}</option>
                             </select>
                           </div>
 
-                          {/* File Upload for "Other" purpose */}
-                          {watchPurpose === 'Other' && (
+                          {/* Detail Matakuliah Jika Tujuan Perkuliahan di Tab Non-Jadwal */}
+                          {watchPurpose === 'Class/Lecture' && (
                             <div className="md:col-span-2">
-                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-4">
-                                <div className="flex items-center space-x-2">
-                                  <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                                  <h3 className="font-medium text-yellow-900">
-                                    {getText('Supporting Documents Required', 'Dokumen Pendukung Diperlukan')}
-                                  </h3>
-                                </div>
+                              {/* Dropdown Pencarian Matakuliah */}
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <span className="flex items-center gap-1.5">
+                                  <BookOpen className="h-4 w-4 text-blue-500" />
+                                  {getText('Mata Kuliah & Dosen Pengampu', 'Mata Kuliah & Dosen Pengampu')} *
+                                  {loadingSearchCourses && <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />}
+                                </span>
+                              </label>
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                                <input
+                                  type="text"
+                                  value={normalCourseSearch}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setNormalCourseSearch(val);
+                                    setShowNormalCourseDropdown(true);
+                                    searchLectureSchedules(val);
+                                    if (val === '') {
+                                      setValue('course_name', '');
+                                      setValue('course_code', '');
+                                      setValue('lecturer_name', '');
+                                      setValue('class_group', '');
+                                      setValue('lecture_schedule_id', '');
+                                    }
+                                  }}
+                                  onFocus={() => setShowNormalCourseDropdown(true)}
+                                  onBlur={() => setTimeout(() => setShowNormalCourseDropdown(false), 150)}
+                                  placeholder="Ketik min. 2 karakter untuk mencari mata kuliah, kode, atau dosen..."
+                                  className="w-full pl-9 pr-8 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                />
+                                {normalCourseSearch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNormalCourseSearch('');
+                                      setValue('course_name', '');
+                                      setValue('course_code', '');
+                                      setValue('lecturer_name', '');
+                                      setValue('class_group', '');
+                                      setValue('lecture_schedule_id', '');
+                                    }}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                )}
 
-                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                                  <input
-                                    type="file"
-                                    multiple
-                                    accept="image/*,.pdf"
-                                    onChange={handleFileUpload}
-                                    className="hidden"
-                                    id="file-upload"
-                                  />
-                                  <label htmlFor="file-upload" className="cursor-pointer">
-                                    <span className="text-sm font-medium text-blue-600 hover:text-blue-700">
-                                      {getText('Upload Files', 'Unggah File')}
-                                    </span>
-                                  </label>
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    {getText('PDF, JPG, PNG up to 10MB', 'PDF, JPG, PNG hingga 10MB')}
-                                  </p>
-                                </div>
-
-                                {watchAttachments && watchAttachments.length > 0 && (
-                                  <div className="space-y-2">
-                                    {watchAttachments.map((attachment, index) => (
-                                      <div key={index} className="flex items-center justify-between p-2 bg-white rounded border">
-                                        <div className="flex items-center space-x-2">
-                                          {getFileTypeIcon(attachment)}
-                                          <span className="text-sm">{getFileName(attachment, index)}</span>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => removeAttachment(index)}
-                                          className="text-red-600 hover:text-red-800"
-                                        >
-                                          <X className="h-4 w-4" />
-                                        </button>
+                                {/* Dropdown hasil pencarian */}
+                                {showNormalCourseDropdown && normalCourseSearch.trim().length >= 2 && (
+                                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-xl shadow-xl border border-gray-200 max-h-60 overflow-y-auto divide-y divide-gray-100">
+                                    {loadingSearchCourses ? (
+                                      <div className="p-4 text-center text-xs text-gray-500 flex items-center justify-center gap-2">
+                                        <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                        Mencari jadwal...
                                       </div>
-                                    ))}
+                                    ) : filteredAllCourses.length === 0 ? (
+                                      <div className="p-4 text-center text-xs text-gray-500">
+                                        Tidak ditemukan jadwal yang cocok dengan kata kunci "{normalCourseSearch}".
+                                      </div>
+                                    ) : (
+                                      filteredAllCourses.map((c) => (
+                                        <div
+                                          key={c.id}
+                                          onMouseDown={(e) => e.preventDefault()}
+                                          onClick={() => {
+                                            setValue('course_name', c.course_name);
+                                            setValue('course_code', c.course_code || '');
+                                            setValue('class_group', c.class || '');
+                                            setValue('lecturer_name', c.lecturer || '');
+                                            setValue('lecture_schedule_id', c.id);
+                                            setNormalCourseSearch(`${c.course_name}${c.class ? ` · Kelas ${c.class}` : ''} — ${c.lecturer || 'Dosen TBA'}`);
+                                            setShowNormalCourseDropdown(false);
+                                          }}
+                                          className="p-3 hover:bg-blue-50 cursor-pointer transition-colors text-xs space-y-0.5"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-bold text-gray-900">{c.course_name}</span>
+                                            {c.class && (
+                                              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded text-[10px] shrink-0">
+                                                Kelas {c.class}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="text-gray-500 flex items-center gap-2 flex-wrap text-[11px]">
+                                            <span className="font-medium text-blue-800">👤 {c.lecturer || 'Dosen Belum Ditentukan'}</span>
+                                            {c.course_code && <span className="text-gray-400">• {c.course_code}</span>}
+                                            {c.subject_study && <span>• {c.subject_study}</span>}
+                                            {c.day && <span>• Hari {c.day}</span>}
+                                          </div>
+                                        </div>
+                                      ))
+                                    )}
                                   </div>
                                 )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Info Permit Letter jika Other */}
+                          {watchPurpose === 'Other' && (
+                            <div className="md:col-span-2">
+                              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3.5 flex items-start space-x-2 text-xs text-amber-900">
+                                <Info className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                                <div>
+                                  <span className="font-semibold block">
+                                    {getText('Permit Letter Notice', 'Pemberitahuan Surat Izin')}
+                                  </span>
+                                  <span>
+                                    {getText('Lampiran file kini terintegrasi melalui menu Surat Izin (Permit Letter). Anda dapat melanjutkan booking tanpa perlu mengunggah file di sini.', 'File pendukung tidak wajib diunggah di sini karena penerbitan surat izin peminjaman kini dikelola melalui menu Surat Izin.')}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Alasan / Keperluan — wajib diisi */}
+                              <div className="mt-3">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  {getText('Alasan / Keperluan', 'Alasan / Keperluan')} *
+                                </label>
+                                <textarea
+                                  {...register("notes" as any)}
+                                  rows={3}
+                                  placeholder={getText('Tuliskan alasan atau keperluan peminjaman ruangan...', 'Tuliskan alasan atau keperluan peminjaman ruangan...')}
+                                  className="w-full px-3 py-2 bg-white/50 border border-gray-200/50 rounded-lg shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
+                                />
                               </div>
                             </div>
                           )}
