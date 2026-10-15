@@ -158,7 +158,7 @@ interface CombinedSchedule {
   borderColor: string;
 }
 
-type RoomStatus = 'Available' | 'Scheduled' | 'Conflict' | 'In Use' | 'Unavailable';
+type RoomStatus = 'Available' | 'Conflict' | 'In Use' | 'Unavailable';
 
 interface RoomStatusResult {
   status: RoomStatus;
@@ -208,7 +208,11 @@ const ImageWithLoader = ({ src, alt, className, title, subtitle }: { src: string
 function parseTimeString(timeStr: string): { hours: number; minutes: number } | null {
   if (!timeStr) return null;
 
-  const cleaned = timeStr.trim();
+  let cleaned = timeStr.trim();
+  if (cleaned.includes('T')) {
+    cleaned = cleaned.split('T')[1];
+  }
+
   const parts = cleaned.split(':');
 
   if (parts.length >= 2) {
@@ -248,11 +252,51 @@ function checkTimeOverlap(
 }
 
 /**
- * Get day name in Indonesian from date string
+ * Normalize room name for robust matching across schedules (stripping dots, spaces, dashes)
+ */
+function normalizeRoomName(str?: string | null): string {
+  if (!str) return '';
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Match a room against schedule room string (handles 'GK 3.04' vs 'GK.3.04', codes, etc.)
+ */
+function isRoomMatch(
+  room: { name?: string | null; code?: string | null } | null | undefined,
+  scheduleRoomStr?: string | null
+): boolean {
+  if (!room || !scheduleRoomStr) return false;
+  const normSchedule = normalizeRoomName(scheduleRoomStr);
+  if (!normSchedule) return false;
+
+  const normName = normalizeRoomName(room.name);
+  const normCode = normalizeRoomName(room.code);
+
+  if (normName && (normName === normSchedule || normName.includes(normSchedule) || normSchedule.includes(normName))) {
+    return true;
+  }
+  if (normCode && (normCode === normSchedule || normCode.includes(normSchedule) || normSchedule.includes(normCode))) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Get day name in Indonesian from date string (timezone-safe)
  */
 function getDayNameIndonesian(dateStr: string): string {
-  const date = new Date(dateStr);
+  if (!dateStr) return '';
+  const parts = dateStr.split('T')[0].split('-');
   const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const date = new Date(year, month, day);
+    return dayNames[date.getDay()];
+  }
+  const date = new Date(dateStr);
   return dayNames[date.getDay()];
 }
 
@@ -868,6 +912,19 @@ const BookRoom: React.FC = () => {
       attachments: [],
       equipment_requested: [],
       equipment_quantities: [],
+      course_name: "",
+      course_code: "",
+      class_group: "",
+      lecturer_name: "",
+      lecture_schedule_id: "",
+      room_id: "",
+      start_datetime: "",
+      end_datetime: "",
+      identity_number: "",
+      full_name: "",
+      phone_number: "",
+      study_program_id: "",
+      notes: "",
     },
   });
 
@@ -880,6 +937,7 @@ const BookRoom: React.FC = () => {
   const normalCourseSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [normalCourseSearch, setNormalCourseSearch] = useState("");
   const [showNormalCourseDropdown, setShowNormalCourseDropdown] = useState(false);
+  const [selectedNormalCourse, setSelectedNormalCourse] = useState<LectureSchedule | null>(null);
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCourse, setSelectedCourse] = useState<LectureSchedule | null>(null);
   const [loadingCourses, setLoadingCourses] = useState(false);
@@ -1379,14 +1437,16 @@ const BookRoom: React.FC = () => {
               purpose,
               room_id,
               status,
-              users (
+              users!bookings_user_id_fkey (
                 full_name,
                 identity_number
               )
             `)
-            .gte('start_time', startOfDayUTC)
+            .gte('end_time', startOfDayUTC)
             .lte('start_time', endOfDayUTC)
-            .in('status', ['approved', 'borrowed', 'pending']);
+            // Hanya ambil booking yang sah (approved/borrowed/completed)
+            // Booking 'pending'/'cancelled' TIDAK dihitung
+            .in('status', ['approved', 'borrowed', 'completed']);
 
           if (error) {
             return [];
@@ -1441,18 +1501,14 @@ const BookRoom: React.FC = () => {
         // Match bookings by room_id
         const roomBookings = bookingsResult.filter(b => b.room_id === room.id);
 
-        // Match lectures by room name (case-insensitive partial match)
-        const roomLectures = lecturesResult.filter(l =>
-          l.room && room.name &&
-          (l.room.toLowerCase().includes(room.name.toLowerCase()) ||
-            room.name.toLowerCase().includes(l.room.toLowerCase()))
-        );
+        // Match lectures by room name, code, or normalized comparison (e.g. 'GK 3.04' vs 'GK.3.04')
+        const roomLectures = lecturesResult.filter(l => isRoomMatch(room, l.room));
 
-        // Match exams by room_id
-        const roomExams = examsResult.filter(e => e.room_id === room.id);
+        // Match exams by room_id or room name
+        const roomExams = examsResult.filter(e => e.room_id === room.id || isRoomMatch(room, (e as any).room));
 
-        // Match sessions by room_id
-        const roomSessions = sessionsResult.filter(s => s.room_id === room.id);
+        // Match sessions by room_id or room name
+        const roomSessions = sessionsResult.filter(s => s.room_id === room.id || isRoomMatch(room, (s as any).room));
 
         const hasAnySchedule = roomBookings.length > 0 || roomLectures.length > 0 ||
           roomExams.length > 0 || roomSessions.length > 0;
@@ -1511,24 +1567,25 @@ const BookRoom: React.FC = () => {
 
     const userStartMinutes = userStart.getHours() * 60 + userStart.getMinutes();
     const userEndMinutes = userEnd.getHours() * 60 + userEnd.getMinutes();
+    const uStartMs = userStart.getTime();
+    const uEndMs = userEnd.getTime();
 
     let hasConflict = false;
     let hasScheduleToday = false;
 
-    // Check bookings — hanya status 'approved' dan 'borrowed' yang dianggap konflik sah
-    // Booking 'pending'/'rejected' belum sah, tidak dihitung sebagai konflik maupun jadwal
+    // 1. Check bookings — status 'approved', 'borrowed', dan 'completed' dianggap konflik sah
     const confirmedBookings = (room.targetDateBookings || []).filter(
-      b => b.status === 'approved' || b.status === 'borrowed'
+      b => b.status === 'approved' || b.status === 'borrowed' || b.status === 'completed'
     );
 
     if (confirmedBookings.length > 0) {
       hasScheduleToday = true;
-    }
-
-    if (confirmedBookings.length > 0) {
       for (const booking of confirmedBookings) {
         const bookingStart = new Date(booking.start_time);
         const bookingEnd = new Date(booking.end_time);
+
+        const bStartMs = bookingStart.getTime();
+        const bEndMs = bookingEnd.getTime();
 
         const bookingStartLocal = new Date(bookingStart.getTime());
         const bookingEndLocal = new Date(bookingEnd.getTime());
@@ -1536,26 +1593,19 @@ const BookRoom: React.FC = () => {
         const bookingStartMinutes = bookingStartLocal.getHours() * 60 + bookingStartLocal.getMinutes();
         const bookingEndMinutes = bookingEndLocal.getHours() * 60 + bookingEndLocal.getMinutes();
 
-        if (checkTimeOverlap(userStartMinutes, userEndMinutes, bookingStartMinutes, bookingEndMinutes)) {
-          hasConflict = true;
-          conflictDetails.push(`Booking: ${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')}`);
+        // Cek overlap akurat (nabrak 1 menit saja terdeteksi)
+        const isOverlap = (!isNaN(bStartMs) && !isNaN(bEndMs))
+          ? (uEndMs > bStartMs && uStartMs < bEndMs)
+          : checkTimeOverlap(userStartMinutes, userEndMinutes, bookingStartMinutes, bookingEndMinutes);
 
-          return {
-            status: 'In Use',
-            reason: getText(
-              `Room is booked at ${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')}`,
-              `Ruangan sudah dibooking pukul ${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')}`
-            ),
-            color: "bg-red-100 text-red-800 border-red-200",
-            hasSchedule: true,
-            isAvailable: false,
-            conflictDetails
-          };
+        if (isOverlap) {
+          hasConflict = true;
+          conflictDetails.push(`Peminjaman: ${format(bookingStartLocal, 'HH:mm')}-${format(bookingEndLocal, 'HH:mm')} (${booking.purpose || 'Disetujui'})`);
         }
       }
     }
 
-    // Check exams
+    // 2. Check exams
     if (room.scheduleDetails?.exams && room.scheduleDetails.exams.length > 0) {
       hasScheduleToday = true;
 
@@ -1569,12 +1619,12 @@ const BookRoom: React.FC = () => {
 
         if (checkTimeOverlap(userStartMinutes, userEndMinutes, examStartMinutes, examEndMinutes)) {
           hasConflict = true;
-          conflictDetails.push(`Exam: ${exam.course_name || 'UAS'} (${exam.start_time?.substring(0, 5)}-${exam.end_time?.substring(0, 5)})`);
+          conflictDetails.push(`Ujian: ${exam.course_name || 'UAS'} (${exam.start_time?.substring(0, 5)}-${exam.end_time?.substring(0, 5)})`);
         }
       }
     }
 
-    // Check final sessions
+    // 3. Check final sessions (sidang akhir)
     if (room.scheduleDetails?.sessions && room.scheduleDetails.sessions.length > 0) {
       hasScheduleToday = true;
 
@@ -1586,12 +1636,12 @@ const BookRoom: React.FC = () => {
 
         if (checkTimeOverlap(userStartMinutes, userEndMinutes, sessionStartMinutes, sessionEndMinutes)) {
           hasConflict = true;
-          conflictDetails.push(`Sidang: ${session.start_time?.substring(0, 5)}-${session.end_time?.substring(0, 5)}`);
+          conflictDetails.push(`Sidang: ${session.title || 'Sidang Akhir'} (${session.start_time?.substring(0, 5)}-${session.end_time?.substring(0, 5)})`);
         }
       }
     }
 
-    // Check lectures
+    // 4. Check lectures (kuliah)
     if (room.scheduleDetails?.lectures && room.scheduleDetails.lectures.length > 0) {
       hasScheduleToday = true;
 
@@ -1643,13 +1693,13 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    const s = getValues("start_datetime");
-    const e = getValues("end_datetime");
+    const s = startDateTime || getValues("start_datetime");
+    const e = endDateTime || getValues("end_datetime");
 
     if (!s || !e) {
-      // Hanya booking approved/borrowed yang dianggap punya jadwal (untuk ikon mata)
+      // Hanya booking approved/borrowed/completed yang dianggap punya jadwal (untuk ikon mata)
       const confirmedBookings = (room.targetDateBookings || []).filter(
-        b => b.status === 'approved' || b.status === 'borrowed'
+        b => b.status === 'approved' || b.status === 'borrowed' || b.status === 'completed'
       );
       const hasScheduledContent =
         confirmedBookings.length > 0 ||
@@ -1680,16 +1730,16 @@ const BookRoom: React.FC = () => {
       const combined: CombinedSchedule[] = [];
       const dayNameIndonesian = getDayNameIndonesian(selectedDate);
 
-      // 1. Fetch lecture schedules
+      // 1. Fetch lecture schedules for the day and match using isRoomMatch
       const { data: lectureData } = await supabase
         .from('lecture_schedules')
         .select('*')
         .eq('day', dayNameIndonesian)
-        .ilike('room', `%${roomName}%`)
         .order('start_time');
 
       if (lectureData) {
-        lectureData.forEach(lecture => {
+        const roomLectures = lectureData.filter(lecture => isRoomMatch({ name: roomName }, lecture.room));
+        roomLectures.forEach(lecture => {
           combined.push({
             id: lecture.id,
             type: 'lecture',
@@ -1710,20 +1760,20 @@ const BookRoom: React.FC = () => {
       const { data: examData } = await supabase
         .from('exams')
         .select('*')
-        .eq('room_id', roomId)
         .eq('date', selectedDate)
         .order('start_time');
 
       if (examData) {
-        examData.forEach(exam => {
+        const roomExams = examData.filter(exam => exam.room_id === roomId || isRoomMatch({ name: roomName }, (exam as any).room));
+        roomExams.forEach(exam => {
           combined.push({
             id: exam.id,
             type: 'exam',
             start_time: exam.is_take_home ? getText('Take Home', 'Take Home') : exam.start_time?.substring(0, 5) || '',
             end_time: exam.is_take_home ? '' : exam.end_time?.substring(0, 5) || '',
             title: `${exam.course_name || getText('UAS Exam', 'Ujian UAS')}`,
-            subtitle: `${exam.student_amount} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester}`,
-            description: `${getText('Class', 'Kelas')} ${exam.class} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector}`,
+            subtitle: `${exam.student_amount || ''} ${getText('students', 'mahasiswa')} • ${getText('Semester', 'Semester')} ${exam.semester || ''}`,
+            description: `${getText('Class', 'Kelas')} ${exam.class || '-'} • ${getText('Inspector', 'Pengawas')}: ${exam.inspector || '-'}`,
             icon: GraduationCap,
             color: 'text-green-700',
             bgColor: 'bg-green-50',
@@ -1739,20 +1789,20 @@ const BookRoom: React.FC = () => {
           *,
           student:users!student_id(full_name, identity_number)
         `)
-        .eq('room_id', roomId)
         .eq('date', selectedDate)
         .order('start_time');
 
       if (sessionData) {
-        sessionData.forEach(session => {
+        const roomSessions = sessionData.filter(session => session.room_id === roomId || isRoomMatch({ name: roomName }, (session as any).room));
+        roomSessions.forEach(session => {
           combined.push({
             id: session.id,
             type: 'session',
             start_time: session.start_time?.substring(0, 5) || '',
             end_time: session.end_time?.substring(0, 5) || '',
             title: `${session.student?.full_name || getText('Final Session', 'Sidang Akhir')}`,
-            subtitle: `ID: ${session.student?.identity_number}`,
-            description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor} • ${getText('Examiner', 'Penguji')}: ${session.examiner}`,
+            subtitle: `ID: ${session.student?.identity_number || '-'}`,
+            description: `${getText('Supervisor', 'Pembimbing')}: ${session.supervisor || '-'} • ${getText('Examiner', 'Penguji')}: ${session.examiner || '-'}`,
             icon: UserCheck,
             color: 'text-purple-700',
             bgColor: 'bg-purple-50',
@@ -1772,8 +1822,8 @@ const BookRoom: React.FC = () => {
           user:users!user_id(full_name, identity_number)
         `)
         .eq('room_id', roomId)
-        .in('status', ['approved', 'borrowed'])
-        .gte('start_time', startOfDayUTC)
+        .in('status', ['approved', 'borrowed', 'completed'])
+        .gte('end_time', startOfDayUTC)
         .lte('start_time', endOfDayUTC)
         .order('start_time');
 
@@ -1959,9 +2009,14 @@ const BookRoom: React.FC = () => {
   function handleCourseSelect(course: LectureSchedule) {
     setSelectedCourse(course);
 
-    const today = getLocalDateString();
-    const startTime = `${today}T${course.start_time}`;
-    const endTime = `${today}T${course.end_time}`;
+    // Gunakan tanggal yang sudah dipilih user di form (bukan hari ini)
+    // agar fetchRooms dijalankan untuk tanggal yang tepat
+    const existingStart = getValues("start_datetime");
+    const selectedDate = existingStart
+      ? format(new Date(existingStart), 'yyyy-MM-dd')
+      : getLocalDateString();
+    const startTime = `${selectedDate}T${course.start_time}`;
+    const endTime = `${selectedDate}T${course.end_time}`;
 
     setValue("start_datetime", startTime);
     setValue("end_datetime", endTime);
@@ -1972,20 +2027,16 @@ const BookRoom: React.FC = () => {
     setValue("lecturer_name", course.lecturer || '');
     setValue("lecture_schedule_id", course.id);
 
-    const matchedRoom = rooms.find(room => {
-      const roomNameLower = room.name.toLowerCase();
-      const courseRoomLower = course.room.toLowerCase();
-
-      // Multiple matching strategies
-      return (
-        roomNameLower.includes(courseRoomLower) ||
-        courseRoomLower.includes(roomNameLower) ||
-        roomNameLower.replace(/[^a-z0-9]/g, '') === courseRoomLower.replace(/[^a-z0-9]/g, '') ||
-        (room.code && room.code.toLowerCase() === courseRoomLower)
-      );
-    });
+    const matchedRoom = rooms.find(room => isRoomMatch(room, course.room));
 
     if (matchedRoom) {
+      const availability = checkRoomAvailability(matchedRoom, startTime, endTime);
+      if (!availability.isAvailable) {
+        alert.warning(
+          getText("Room has a schedule conflict", "Perhatian: Ruangan bentrok dengan jadwal lain"),
+          availability.reason || getText("This room is already occupied during this time", "Ruangan ini sudah terisi jadwal lain pada jam tersebut")
+        );
+      }
 
       setSelectedRoom(matchedRoom);
       setValue("room_id", matchedRoom.id);
@@ -2071,25 +2122,14 @@ const BookRoom: React.FC = () => {
     }
 
     if (activeTab === 'normal' && startDateTime && endDateTime) {
-      // Sembunyikan ruangan yang jadwalnya konflik (approved/borrowed booking atau jadwal lain)
-      // Booking pending tidak dianggap konflik
+      // Sembunyikan ruangan yang ada konflik sekecil apapun (walaupun nabrak 1 menit saja tidak boleh muncul).
+      // Yang tampil HANYA ruangan yang benar-benar Available (tidak ada status Scheduled atau lainnya).
       filtered = filtered.filter(room => {
         const status = getOptimizedRoomStatus(room);
-        // Ruangan yang 'Conflict' atau 'In Use' disembunyikan sepenuhnya
-        return status.status !== 'Conflict' && status.status !== 'In Use';
+        return status.isAvailable && status.status === 'Available';
       });
 
       filtered.sort((a, b) => {
-        const statusA = getOptimizedRoomStatus(a);
-        const statusB = getOptimizedRoomStatus(b);
-
-        // Available (termasuk yang punya jadwal tapi tidak bentrok) tampil dulu
-        const statusPriority: Record<string, number> = { 'Available': 0, 'Unavailable': 2 };
-        const statusDiff = (statusPriority[statusA.status] ?? 1) -
-          (statusPriority[statusB.status] ?? 1);
-
-        if (statusDiff !== 0) return statusDiff;
-
         const aType = getRoomType(a.name);
         const bType = getRoomType(b.name);
         const typeDiff = getRoomTypePriority(aType) - getRoomTypePriority(bType);
@@ -2193,6 +2233,23 @@ const BookRoom: React.FC = () => {
       }
     }
   }, [startDateTime, activeTab]);
+
+  // Batalkan pilihan ruangan jika jam diubah dan ternyata bentrok dengan jadwal lain
+  useEffect(() => {
+    if (activeTab === 'normal' && selectedRoom && startDateTime && endDateTime) {
+      const status = checkRoomAvailability(selectedRoom, startDateTime, endDateTime);
+      if (!status.isAvailable) {
+        setSelectedRoom(null);
+        setValue("room_id", "");
+        setMandatoryEquipment([]);
+        setSelectedOptionalEquipment(new Map());
+        alert.warning(
+          getText("Selected room cancelled due to schedule conflict", "Pilihan ruangan dibatalkan karena bentrok jadwal"),
+          status.reason || ""
+        );
+      }
+    }
+  }, [endDateTime, startDateTime, activeTab, selectedRoom]);
 
   useEffect(() => {
     if (activeTab === 'normal' && !startDateTime) {
@@ -2352,9 +2409,21 @@ const BookRoom: React.FC = () => {
       return;
     }
 
-    if (activeTab === 'normal' && !selectedRoom) {
-      alert.error(getText("Please select a room first", "Pilih ruangan terlebih dahulu"), "");
-      return;
+    if (activeTab === 'normal') {
+      if (!selectedRoom) {
+        alert.error(getText("Please select a room first", "Pilih ruangan terlebih dahulu"), "");
+        return;
+      }
+      if (data.start_datetime && data.end_datetime) {
+        const availability = checkRoomAvailability(selectedRoom, data.start_datetime, data.end_datetime);
+        if (!availability.isAvailable) {
+          alert.error(
+            getText("Selected room is not available due to schedule conflict", "Ruangan yang dipilih bentrok dengan jadwal lain"),
+            availability.reason || ""
+          );
+          return;
+        }
+      }
     }
 
     setLoading(true);
@@ -2363,12 +2432,15 @@ const BookRoom: React.FC = () => {
       let roomId = data.room_id;
 
       if (activeTab === 'course' && selectedCourse) {
-        const matchedRoom = rooms.find(room =>
-          room.name.toLowerCase().includes(selectedCourse.room.toLowerCase()) ||
-          selectedCourse.room.toLowerCase().includes(room.name.toLowerCase())
-        );
+        const matchedRoom = rooms.find(room => isRoomMatch(room, selectedCourse.room));
         if (!matchedRoom) {
           throw new Error(getText("Room for the course not found", "Ruangan untuk mata kuliah tidak ditemukan"));
+        }
+        if (data.start_datetime && data.end_datetime) {
+          const availability = checkRoomAvailability(matchedRoom, data.start_datetime, data.end_datetime);
+          if (!availability.isAvailable) {
+            throw new Error(availability.reason || getText("Room has a schedule conflict", "Ruangan ini bentrok dengan jadwal lain"));
+          }
         }
         roomId = matchedRoom.id;
       }
@@ -2407,32 +2479,76 @@ const BookRoom: React.FC = () => {
         equipmentQuantities.push(qty);
       });
 
+      // Pastikan data matkul & dosen diambil secara lengkap dari berbagai sumber
+      const activeCourse = activeTab === 'course' ? selectedCourse : selectedNormalCourse;
+
+      const finalCourseName =
+        getValues("course_name") ||
+        data.course_name ||
+        activeCourse?.course_name ||
+        (normalCourseSearch.trim() && activeTab === 'normal' && data.purpose === 'Class/Lecture' ? normalCourseSearch.trim() : null) ||
+        null;
+
+      const finalCourseCode =
+        getValues("course_code") ||
+        data.course_code ||
+        activeCourse?.course_code ||
+        null;
+
+      const finalClassGroup =
+        getValues("class_group") ||
+        data.class_group ||
+        activeCourse?.class ||
+        null;
+
+      const finalLecturerName =
+        getValues("lecturer_name") ||
+        data.lecturer_name ||
+        activeCourse?.lecturer ||
+        null;
+
+      const finalLectureScheduleId =
+        getValues("lecture_schedule_id") ||
+        data.lecture_schedule_id ||
+        activeCourse?.id ||
+        null;
+
+      // Buat purpose yang informatif jika perkuliahan
+      let finalPurpose = data.purpose;
+      if (data.purpose === 'Class/Lecture' && finalCourseName) {
+        finalPurpose = `Perkuliahan: ${finalCourseName}${finalClassGroup ? ` (${finalClassGroup})` : ''}${finalLecturerName ? ` - ${finalLecturerName}` : ''}`;
+      } else if (activeTab === 'course' && selectedCourse) {
+        finalPurpose = `${selectedCourse.course_name} - ${selectedCourse.class}${selectedCourse.lecturer ? ` - ${selectedCourse.lecturer}` : ''}`;
+      }
+
       const bookingData = {
         room_id: roomId,
         user_id: userId,
         start_time: startTimeISO,
         end_time: endTimeISO,
-        purpose: data.purpose,
+        purpose: finalPurpose,
         sks: showSKSField ? data.sks : null,
         class_type: showSKSField ? data.class_type : null,
         status: 'pending',
         attachments: data.attachments || [],
         equipment_requested: equipmentIds,
         equipment_quantities: equipmentQuantities,
-        // Kolom snapshot matakuliah & jadwal perkuliahan
-        course_name: data.course_name || (selectedCourse ? selectedCourse.course_name : null),
-        course_code: data.course_code || (selectedCourse ? selectedCourse.course_code : null),
-        class_group: data.class_group || (selectedCourse ? selectedCourse.class : null),
-        lecturer_name: data.lecturer_name || (selectedCourse ? selectedCourse.lecturer : null),
-        lecture_schedule_id: data.lecture_schedule_id || (selectedCourse ? selectedCourse.id : null),
+        // Kolom snapshot matakuliah & jadwal perkuliahan (PASTIKAN TERSIMPAN KE DATABASE)
+        course_name: finalCourseName,
+        course_code: finalCourseCode,
+        class_group: finalClassGroup,
+        lecturer_name: finalLecturerName,
+        lecture_schedule_id: finalLectureScheduleId,
         notes: data.purpose === 'Other' ? (data.notes || null) : null,
         user_info: {
-          identity_number: data.identity_number,
-          full_name: data.full_name,
-          phone_number: data.phone_number,
-          study_program_id: data.study_program_id
+          identity_number: data.identity_number || getValues("identity_number"),
+          full_name: data.full_name || getValues("full_name"),
+          phone_number: data.phone_number || getValues("phone_number"),
+          study_program_id: data.study_program_id || getValues("study_program_id")
         }
       };
+
+      console.log('[onSubmit] Data booking yang dikirim:', bookingData);
 
 
 
@@ -2540,6 +2656,20 @@ const BookRoom: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit((data) => throttledSubmit(() => onSubmit(data)))}>
+            {/* Hidden registered inputs agar react-hook-form selalu menyimpan & menyertakan data ini saat submit */}
+            <input type="hidden" {...register("course_name")} />
+            <input type="hidden" {...register("course_code")} />
+            <input type="hidden" {...register("class_group")} />
+            <input type="hidden" {...register("lecturer_name")} />
+            <input type="hidden" {...register("lecture_schedule_id")} />
+            <input type="hidden" {...register("room_id")} />
+            <input type="hidden" {...register("start_datetime")} />
+            <input type="hidden" {...register("end_datetime")} />
+            <input type="hidden" {...register("identity_number")} />
+            <input type="hidden" {...register("full_name")} />
+            <input type="hidden" {...register("phone_number")} />
+            <input type="hidden" {...register("study_program_id")} />
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Left Column - Main Content */}
               <div className="lg:col-span-2 relative z-20">
@@ -2862,6 +2992,7 @@ const BookRoom: React.FC = () => {
                                     type="button"
                                     onClick={() => {
                                       setNormalCourseSearch('');
+                                      setSelectedNormalCourse(null);
                                       setValue('course_name', '');
                                       setValue('course_code', '');
                                       setValue('lecturer_name', '');
@@ -2892,6 +3023,7 @@ const BookRoom: React.FC = () => {
                                           key={c.id}
                                           onMouseDown={(e) => e.preventDefault()}
                                           onClick={() => {
+                                            setSelectedNormalCourse(c);
                                             setValue('course_name', c.course_name);
                                             setValue('course_code', c.course_code || '');
                                             setValue('class_group', c.class || '');
@@ -2922,6 +3054,42 @@ const BookRoom: React.FC = () => {
                                   </div>
                                 )}
                               </div>
+
+                              {/* Preview Informasi Matkul & Dosen Terpilih */}
+                              {selectedNormalCourse && (
+                                <div className="mt-2.5 p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-3 text-xs animate-in fade-in duration-200">
+                                  <div className="space-y-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-bold text-blue-950 text-sm">{selectedNormalCourse.course_name}</span>
+                                      {selectedNormalCourse.class && (
+                                        <span className="px-2 py-0.5 bg-blue-200/70 text-blue-800 font-semibold rounded text-[11px]">
+                                          Rombel {selectedNormalCourse.class}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-blue-800 text-xs flex items-center gap-1.5 font-medium">
+                                      <User className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                      <span>Dosen Pengampu: <strong>{selectedNormalCourse.lecturer || 'Belum Ditentukan'}</strong></span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedNormalCourse(null);
+                                      setNormalCourseSearch('');
+                                      setValue('course_name', '');
+                                      setValue('course_code', '');
+                                      setValue('lecturer_name', '');
+                                      setValue('class_group', '');
+                                      setValue('lecture_schedule_id', '');
+                                    }}
+                                    className="p-1.5 hover:bg-blue-100 rounded-lg text-blue-700 hover:text-blue-900 transition-colors shrink-0"
+                                    title="Ganti Mata Kuliah"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -3007,32 +3175,43 @@ const BookRoom: React.FC = () => {
                         </div>
 
                         {/* Selected Room Display */}
-                        {selectedRoom && (
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-sm text-blue-800 font-medium">
-                                  {getText('Selected Room:', 'Ruangan Dipilih:')} {selectedRoom.name} ({selectedRoom.code})
-                                </p>
-                                <p className="text-xs text-blue-600">
-                                  {getText('Capacity:', 'Kapasitas:')} {selectedRoom.capacity} {getText('seats', 'kursi')}
-                                </p>
+                        {selectedRoom && (() => {
+                          const currentStatus = (startDateTime && endDateTime) ? getOptimizedRoomStatus(selectedRoom) : null;
+                          const hasConflict = currentStatus && !currentStatus.isAvailable;
+
+                          return (
+                            <div className={`rounded-lg p-4 mb-4 border ${hasConflict ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'}`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className={`text-sm font-medium ${hasConflict ? 'text-red-800' : 'text-blue-800'}`}>
+                                    {getText('Selected Room:', 'Ruangan Dipilih:')} {selectedRoom.name} ({selectedRoom.code})
+                                  </p>
+                                  <p className={`text-xs ${hasConflict ? 'text-red-600' : 'text-blue-600'}`}>
+                                    {getText('Capacity:', 'Kapasitas:')} {selectedRoom.capacity} {getText('seats', 'kursi')}
+                                  </p>
+                                  {hasConflict && (
+                                    <p className="text-xs text-red-700 font-semibold mt-1 flex items-center">
+                                      <AlertTriangle className="h-3.5 w-3.5 inline mr-1 flex-shrink-0" />
+                                      {currentStatus.reason}
+                                    </p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedRoom(null);
+                                    setValue("room_id", "");
+                                    setMandatoryEquipment([]);
+                                    setSelectedOptionalEquipment(new Map());
+                                  }}
+                                  className={hasConflict ? 'text-red-600 hover:text-red-800' : 'text-blue-600 hover:text-blue-800'}
+                                >
+                                  <X className="h-5 w-5" />
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedRoom(null);
-                                  setValue("room_id", "");
-                                  setMandatoryEquipment([]);
-                                  setSelectedOptionalEquipment(new Map());
-                                }}
-                                className="text-blue-600 hover:text-blue-800"
-                              >
-                                <X className="h-5 w-5" />
-                              </button>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Warning if no room selected */}
                         {!selectedRoom && startDateTime && endDateTime && (
@@ -3123,8 +3302,12 @@ const BookRoom: React.FC = () => {
                                           </p>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium border ${status.color}`}>
-                                          {status.isAvailable
+                                          {status.status === 'Available'
                                             ? getText('Available', 'Tersedia')
+                                            : status.status === 'In Use'
+                                            ? getText('In Use', 'Dipakai')
+                                            : status.status === 'Conflict'
+                                            ? getText('Conflict', 'Bentrok')
                                             : getText('Unavailable', 'Tidak Tersedia')}
                                         </span>
                                       </div>
@@ -3774,7 +3957,7 @@ const BookRoom: React.FC = () => {
               if (building?.campus_id !== selectedCampusId) return false;
             }
             const status = getOptimizedRoomStatus(r);
-            return status.status === 'Available' || status.status === 'Scheduled';
+            return status.isAvailable && status.status === 'Available';
           });
 
           return (

@@ -144,6 +144,11 @@ export interface MatchingBooking {
     class_group?: string | null;
     lecturer_name?: string | null;
     lecture_schedule_id?: string | null;
+    room?: {
+        id: string;
+        name: string;
+        code?: string | null;
+    } | null;
     user_info?: {
         full_name?: string;
         identity_number?: string;
@@ -189,158 +194,304 @@ export function chunkArray<T>(arr: T[], size: number = 50): T[][] {
     return chunks;
 }
 
-// Logika pencocokan Time-window & Ruangan & Matkul
+// Normalisasi penulisan rombel / kelas (misal: "Rombel E", "Kelas E", "E" -> "e")
+export const normalizeRombel = (str?: string | null): string => {
+    if (!str) return '';
+    return str
+        .toLowerCase()
+        .replace(/rombel/gi, '')
+        .replace(/kelas/gi, '')
+        .replace(/class/gi, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+};
+
+// Normalisasi nama dosen (hapus gelar dan karakter spesial)
+export const cleanLecturerName = (name: string): string =>
+    (name || '')
+        .toLowerCase()
+        .replace(/\b(dr|prof|ir|drs|dra|m\.pd|s\.pd|s\.e|m\.m|m\.kom|s\.kom|m\.sc|ph\.d|m\.t|s\.t|m\.hum|s\.sos|m\.a|m\.si|s\.si|s\.h|m\.h|b\.a|m\.phil)\b\.?/gi, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .trim();
+
+// Pengecekan kesesuaian nama dosen
+export const isLecturerMatching = (lecturerA?: string | null, lecturerB?: string | null): boolean => {
+    const cleanA = cleanLecturerName(lecturerA || '');
+    const cleanB = cleanLecturerName(lecturerB || '');
+    if (!cleanA || !cleanB) return true;
+    if (cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA)) return true;
+    const wordsA = cleanA.split(' ').filter(w => w.length > 2);
+    return wordsA.some(w => cleanB.includes(w));
+};
+
+export interface DetailMatchEvaluation {
+    isMatched: boolean;
+    isCourseMatch: boolean;
+    isRombelMatch: boolean;
+    isTimeMatch: boolean;
+    isLecturerMatch: boolean;
+    matchScore: number;
+    bookingStartWIB: string;
+    bookingEndWIB: string;
+}
+
+// Evaluasi kecocokan antara satu sesi jadwal (detail) dengan satu data booking
+export const evaluateDetailWithBooking = (
+    detail: AttendanceDetail,
+    booking: MatchingBooking,
+    record: AttendanceRecord
+): DetailMatchEvaluation => {
+    const bookingStartWIB = formatWIBTime(booking.start_time);
+    const bookingEndWIB = formatWIBTime(booking.end_time);
+
+    // 1. Cek Dosen
+    const cleanRecordLecturer = cleanLecturerName(record.lecturer_name || '');
+    const cleanBookingLecturer = cleanLecturerName(booking.lecturer_name || '');
+    const isLecturerMatch = !cleanBookingLecturer || isLecturerMatching(cleanRecordLecturer, cleanBookingLecturer);
+
+    if (!isLecturerMatch) {
+        return {
+            isMatched: false,
+            isCourseMatch: false,
+            isRombelMatch: false,
+            isTimeMatch: false,
+            isLecturerMatch: false,
+            matchScore: 0,
+            bookingStartWIB,
+            bookingEndWIB
+        };
+    }
+
+    // 2. Cek Rombel
+    const normBookingRombel = normalizeRombel(booking.class_group);
+    const normDetailRombel = normalizeRombel(detail.class_group);
+
+    // Ekstrak rombel dari booking purpose/notes jika booking.class_group kosong
+    let extractedBookingRombel = normBookingRombel;
+    if (!extractedBookingRombel) {
+        const textToSearch = `${booking.purpose || ''} ${booking.notes || ''}`;
+        const match = textToSearch.match(/(?:rombel|kelas)\s*([a-z0-9]+)/i);
+        if (match) {
+            extractedBookingRombel = normalizeRombel(match[1]);
+        }
+    }
+
+    let isRombelMatch = false;
+    let isRombelConflict = false;
+    if (extractedBookingRombel && normDetailRombel) {
+        if (extractedBookingRombel === normDetailRombel) {
+            isRombelMatch = true;
+        } else {
+            isRombelConflict = true;
+        }
+    } else if (!extractedBookingRombel && !normDetailRombel) {
+        isRombelMatch = true;
+    }
+
+    // Jika kedua belah pihak punya data rombel dan bertentangan (misal: E vs I), maka DILARANG cocok!
+    if (isRombelConflict) {
+        return {
+            isMatched: false,
+            isCourseMatch: false,
+            isRombelMatch: false,
+            isTimeMatch: false,
+            isLecturerMatch: true,
+            matchScore: 0,
+            bookingStartWIB,
+            bookingEndWIB
+        };
+    }
+
+    // 3. Cek Matkul
+    const bookingCourse = (booking.course_name || '').toLowerCase().trim();
+    const bookingPurpose = (booking.purpose || '').toLowerCase().trim();
+    const bookingNotes = (booking.notes || '').toLowerCase().trim();
+    const detailCourse = (detail.course_name || '').toLowerCase().trim();
+
+    let isCourseMatch = false;
+    let isCourseConflict = false;
+    if (detailCourse) {
+        if (
+            (bookingCourse && (bookingCourse.includes(detailCourse) || detailCourse.includes(bookingCourse))) ||
+            bookingPurpose.includes(detailCourse) ||
+            bookingNotes.includes(detailCourse)
+        ) {
+            isCourseMatch = true;
+        } else if (bookingCourse && bookingCourse.length > 3) {
+            // Jika booking menentukan nama matkul spesifik dan beda dari detail
+            isCourseConflict = true;
+        }
+    }
+
+    // Jika booking punya nama matkul spesifik dan bertentangan dengan detail, DILARANG cocok!
+    if (isCourseConflict) {
+        return {
+            isMatched: false,
+            isCourseMatch: false,
+            isRombelMatch,
+            isTimeMatch: false,
+            isLecturerMatch: true,
+            matchScore: 0,
+            bookingStartWIB,
+            bookingEndWIB
+        };
+    }
+
+    // 4. Cek Waktu (Slot detail vs booking)
+    let isTimeMatch = false;
+    if (detail.start_time && detail.end_time && record.attendance_date) {
+        const sMs = new Date(`${record.attendance_date}T${detail.start_time.substring(0, 5)}:00+07:00`).getTime();
+        const eMs = new Date(`${record.attendance_date}T${detail.end_time.substring(0, 5)}:00+07:00`).getTime();
+        const bStartMs = new Date(booking.start_time).getTime();
+        const bEndMs = new Date(booking.end_time).getTime();
+
+        if (!isNaN(sMs) && !isNaN(eMs) && !isNaN(bStartMs) && !isNaN(bEndMs)) {
+            const overlapStart = Math.max(sMs, bStartMs);
+            const overlapEnd = Math.min(eMs, bEndMs);
+            const overlapMs = overlapEnd - overlapStart;
+
+            const startDiffMin = Math.abs(sMs - bStartMs) / 60000;
+            const endDiffMin = Math.abs(eMs - bEndMs) / 60000;
+
+            // Beririsan nyata minimal 15 menit ATAU waktu mulai & selesai selisih <= 30 menit
+            if (overlapMs >= 15 * 60 * 1000 || (startDiffMin <= 30 && endDiffMin <= 30)) {
+                isTimeMatch = true;
+            }
+        }
+    }
+
+    // 5. Hitung Skor & Kelayakan
+    // Untuk dianggap cocok:
+    // - Dosen cocok
+    // - Rombel tidak boleh konflik
+    // - Matkul tidak boleh konflik
+    // - Minimal salah satu dari: (Course Cocok) ATAU (Rombel Cocok + Waktu Cocok)
+    let score = 0;
+    if (isCourseMatch && isRombelMatch && isTimeMatch) score = 10;
+    else if (isCourseMatch && isRombelMatch) score = 8;
+    else if (isCourseMatch && isTimeMatch) score = 7;
+    else if (isRombelMatch && isTimeMatch) score = 6;
+    else if (isCourseMatch) score = 5;
+    else if (isTimeMatch && !bookingCourse && isRombelMatch) score = 4;
+
+    const isMatched = score >= 5;
+
+    return {
+        isMatched,
+        isCourseMatch,
+        isRombelMatch,
+        isTimeMatch,
+        isLecturerMatch,
+        matchScore: score,
+        bookingStartWIB,
+        bookingEndWIB
+    };
+};
+
+export interface PairedDetailBooking {
+    detail: AttendanceDetail;
+    booking: MatchingBooking;
+    evaluation: DetailMatchEvaluation;
+}
+
+// Algoritma greedy pairing 1-ke-1 (1 booking mahasiswa hanya bisa diklaim oleh 1 detail jadwal terbaik)
+export const pairDetailsWithBookings = (
+    details: AttendanceDetail[],
+    bookings: MatchingBooking[],
+    record: AttendanceRecord
+): Map<string, PairedDetailBooking> => {
+    const validBookings = bookings.filter(b => b.status === 'borrowed' || b.status === 'completed');
+    const result = new Map<string, PairedDetailBooking>();
+
+    if (details.length === 0 || validBookings.length === 0) {
+        return result;
+    }
+
+    const candidates: {
+        detail: AttendanceDetail;
+        booking: MatchingBooking;
+        evaluation: DetailMatchEvaluation;
+    }[] = [];
+
+    for (const det of details) {
+        for (const b of validBookings) {
+            const ev = evaluateDetailWithBooking(det, b, record);
+            if (ev.isMatched) {
+                candidates.push({ detail: det, booking: b, evaluation: ev });
+            }
+        }
+    }
+
+    // Urutkan kandidat dari skor tertinggi (prioritaskan yang perfect match)
+    candidates.sort((a, b) => b.evaluation.matchScore - a.evaluation.matchScore);
+
+    const assignedDetailKeys = new Set<string>();
+    const assignedBookingIds = new Set<string>();
+
+    for (const cand of candidates) {
+        const detailKey = cand.detail.id || `${cand.detail.course_name}_${cand.detail.start_time}`;
+        if (!assignedDetailKeys.has(detailKey) && !assignedBookingIds.has(cand.booking.id)) {
+            result.set(detailKey, {
+                detail: cand.detail,
+                booking: cand.booking,
+                evaluation: cand.evaluation
+            });
+            assignedDetailKeys.add(detailKey);
+            assignedBookingIds.add(cand.booking.id);
+        }
+    }
+
+    return result;
+};
+
+// Logika backward-compatible untuk checkBookingMatch
 export const checkBookingMatch = (
     booking: MatchingBooking,
     record: AttendanceRecord,
     details: AttendanceDetail[] = []
 ): BookingMatchResult => {
-    const bookingStartDate = new Date(booking.start_time);
-    const bookingEndDate = new Date(booking.end_time);
     const bookingStartWIB = formatWIBTime(booking.start_time);
     const bookingEndWIB = formatWIBTime(booking.end_time);
 
-    // Toleransi overlap waktu 30 menit
-    const toleranceMs = 30 * 60 * 1000;
+    if (details.length === 0) {
+        const cleanBookingLecturer = cleanLecturerName(booking.lecturer_name || '');
+        const cleanRecordLecturer = cleanLecturerName(record.lecturer_name || '');
+        const isLecturerMatch = cleanBookingLecturer && cleanRecordLecturer && isLecturerMatching(cleanRecordLecturer, cleanBookingLecturer);
+        return {
+            isTimeMatch: false,
+            isCourseMatch: !!isLecturerMatch,
+            isContinuingClass: false,
+            bookingStartWIB,
+            bookingEndWIB,
+            matchQuality: isLecturerMatch ? 'course_only' : 'unrelated'
+        };
+    }
 
-    // ─────────────────────────────────────────────────────────────────
-    // [INFO ONLY] Jam scan dosen — TIDAK dipakai untuk menentukan hijau
-    // karena dosen scan 1x per hari (pagi atau sebelum pulang),
-    // bukan tepat di setiap slot kuliah.
-    // ─────────────────────────────────────────────────────────────────
-    let isScanTimeMatch = false;
-    if (record.attendance_time && record.attendance_date) {
-        const cleanTime = (record.attendance_time || '00:00').substring(0, 5);
-        const scanISO = `${record.attendance_date}T${cleanTime}:00+07:00`;
-        const scanTimeMs = new Date(scanISO).getTime();
-        const startWithTol = bookingStartDate.getTime() - toleranceMs;
-        const endWithTol = bookingEndDate.getTime() + toleranceMs;
-        if (!isNaN(scanTimeMs) && scanTimeMs >= startWithTol && scanTimeMs <= endWithTol) {
-            isScanTimeMatch = true;
+    // Evaluasi terhadap detail yang diberikan
+    let bestEval: DetailMatchEvaluation | null = null;
+    for (const d of details) {
+        const ev = evaluateDetailWithBooking(d, booking, record);
+        if (!bestEval || ev.matchScore > bestEval.matchScore) {
+            bestEval = ev;
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Cek overlap slot jadwal (detail) dengan booking time window.
-    // Setiap detail entry memiliki start_time / end_time JADWAL yang
-    // spesifik — ini yang dicocokkan, bukan jam scan.
-    // Untuk matkul yg punya slot teori + praktik, hanya slot yang
-    // time-overlap-nya sesuai booking yang akan match.
-    // ─────────────────────────────────────────────────────────────────
-    let isScheduleOverlap = false;
-    const bookingCourseNormEarly = (booking.course_name || '').toLowerCase().trim();
-
-    if (details.length > 0 && record.attendance_date) {
-        // Batasi ke detail yang nama matkul-nya cocok (jika booking ada matkul)
-        const relevantDetails = bookingCourseNormEarly
-            ? details.filter(d => {
-                if (!d.course_name) return true;
-                const cName = d.course_name.toLowerCase().trim();
-                return bookingCourseNormEarly.includes(cName) || cName.includes(bookingCourseNormEarly);
-            })
-            : details;
-
-        for (const det of relevantDetails) {
-            if (det.start_time && det.end_time) {
-                const sMs = new Date(`${record.attendance_date}T${det.start_time.substring(0, 5)}:00+07:00`).getTime();
-                const eMs = new Date(`${record.attendance_date}T${det.end_time.substring(0, 5)}:00+07:00`).getTime();
-                if (!isNaN(sMs) && !isNaN(eMs)) {
-                    if (sMs < bookingEndDate.getTime() + toleranceMs && eMs > bookingStartDate.getTime() - toleranceMs) {
-                        isScheduleOverlap = true;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Cek kesesuaian Matkul / Dosen / Rombel
-    // ─────────────────────────────────────────────────────────────────
-    const cleanLecturerName = (name: string) =>
-        (name || '')
-            .toLowerCase()
-            .replace(/\b(dr|prof|ir|drs|dra|m\.pd|s\.pd|s\.e|m\.m|m\.kom|s\.kom|m\.sc|ph\.d|m\.t|s\.t|m\.hum|s\.sos)\b\.?/gi, '')
-            .replace(/[^a-z0-9]/g, ' ')
-            .trim();
-
-    const bookingPurposeNorm = (booking.purpose || '').toLowerCase();
-    const bookingNotesNorm   = (booking.notes || '').toLowerCase();
-    const bookingCourseNorm  = bookingCourseNormEarly;
-    const cleanBookingLecturer = cleanLecturerName(booking.lecturer_name || '');
-    const cleanRecordLecturer  = cleanLecturerName(record.lecturer_name  || '');
-
-    let isCourseMatch    = false;
-    let isContinuingClass = false;
-
-    if (details.length > 0) {
-        const matchedCourses = details.filter(d => {
-            if (!d.course_name) return false;
-            const cName = d.course_name.toLowerCase().trim();
-
-            // Nama matkul cocok (booking.course_name, purpose, atau notes mengandung nama matkul detail)
-            const courseMatched =
-                (bookingCourseNorm && (bookingCourseNorm.includes(cName) || cName.includes(bookingCourseNorm))) ||
-                bookingPurposeNorm.includes(cName) ||
-                bookingNotesNorm.includes(cName);
-
-            // Rombel / kelas cocok
-            const classMatched =
-                !booking.class_group || !d.class_group ||
-                booking.class_group.toLowerCase().includes(d.class_group.toLowerCase()) ||
-                d.class_group.toLowerCase().includes(booking.class_group.toLowerCase());
-
-            // Jika matkul sama ada slot teori & praktik:
-            // gunakan overlap waktu SLOT DETAIL dengan booking sebagai pembeda.
-            // (Ini valid karena detail.start_time adalah jadwal, bukan jam scan.)
-            let slotTimeMatched = true;
-            if (courseMatched && classMatched && d.start_time && d.end_time && record.attendance_date) {
-                const sMs = new Date(`${record.attendance_date}T${d.start_time.substring(0, 5)}:00+07:00`).getTime();
-                const eMs = new Date(`${record.attendance_date}T${d.end_time.substring(0, 5)}:00+07:00`).getTime();
-                slotTimeMatched =
-                    sMs < bookingEndDate.getTime() + toleranceMs &&
-                    eMs > bookingStartDate.getTime() - toleranceMs;
-            }
-
-            return courseMatched && classMatched && slotTimeMatched;
-        });
-
-        if (matchedCourses.length > 0) {
-            isCourseMatch = true;
-            if (details.length > 1) isContinuingClass = true;
-        }
-    }
-
-    // Nama dosen cocok (strip gelar, word-match)
-    if (cleanRecordLecturer && cleanBookingLecturer) {
-        const words = cleanRecordLecturer.split(' ').filter(w => w.length > 2);
-        if (
-            words.some(w => cleanBookingLecturer.includes(w)) ||
-            cleanBookingLecturer.includes(cleanRecordLecturer) ||
-            cleanRecordLecturer.includes(cleanBookingLecturer)
-        ) {
-            isCourseMatch = true;
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // isMatched (hijau) = matkul/dosen cocok ATAU slot jadwal overlap.
-    // Scan time (isScanTimeMatch) hanya dipakai untuk quality label,
-    // tidak menentukan warna hijau.
-    // ─────────────────────────────────────────────────────────────────
+    const isCourseMatch = bestEval?.isCourseMatch || false;
+    const isTimeMatch = bestEval?.isTimeMatch || false;
     let matchQuality: 'perfect' | 'time_only' | 'course_only' | 'unrelated' = 'unrelated';
-    if ((isScheduleOverlap || isScanTimeMatch) && isCourseMatch) {
+
+    if (bestEval?.matchScore && bestEval.matchScore >= 8) {
         matchQuality = 'perfect';
     } else if (isCourseMatch) {
         matchQuality = 'course_only';
-    } else if (isScheduleOverlap) {
+    } else if (isTimeMatch) {
         matchQuality = 'time_only';
     }
 
     return {
-        isTimeMatch: isScheduleOverlap, // hanya slot jadwal, bukan jam scan
+        isTimeMatch,
         isCourseMatch,
-        isContinuingClass,
+        isContinuingClass: details.length > 1,
         bookingStartWIB,
         bookingEndWIB,
         matchQuality
@@ -362,50 +513,30 @@ export interface VerificationIndicator {
 }
 
 // Logika indikator otomatis presensi (Fase 3: Hijau, Kuning, Biru, Oranye)
+// CATATAN: Indikator HIJAU HANYA dihasilkan jika status peminjaman adalah 'borrowed' atau 'completed'.
 export const computeVerificationIndicator = (
     record: AttendanceRecord,
     details: AttendanceDetail[] = [],
     matchingBookings: MatchingBooking[] = []
 ): VerificationIndicator => {
-    // 1. Analisis kecocokan dengan seluruh booking aktif yang ditemukan
-    const matchResults = matchingBookings.map(b => ({
-        booking: b,
-        match: checkBookingMatch(b, record, details)
-    }));
+    // 1. HANYA booking dengan status 'borrowed' atau 'completed' yang sah untuk memicu warna HIJAU
+    const validBookings = matchingBookings.filter(
+        b => b.status === 'borrowed' || b.status === 'completed'
+    );
 
-    const perfectMatches = matchResults.filter(m => m.match.matchQuality === 'perfect');
-    const timeMatches = matchResults.filter(m => m.match.isTimeMatch);
+    const pairedMap = pairDetailsWithBookings(details, validBookings, record);
+    const matchedCount = pairedMap.size;
+    const totalCount = details.length;
 
-    // KUNING: Multi-kegiatan / kelas berkelanjutan (>1 detail) dan ada minimal 1 kecocokan waktu / booking
-    if (details.length > 1 && (perfectMatches.length > 0 || timeMatches.length > 0)) {
-        const topMatch = perfectMatches[0] || timeMatches[0];
-        const matchedCourse = details.find(d => {
-            if (!d.course_name) return false;
-            const cName = d.course_name.toLowerCase();
-            const bPurp = (topMatch.booking.purpose || '').toLowerCase();
-            const bNotes = (topMatch.booking.notes || '').toLowerCase();
-            return bPurp.includes(cName) || bNotes.includes(cName);
-        });
-        const courseNameDisplay = matchedCourse?.course_name || details[0]?.course_name || 'Matkul utama';
-
-        return {
-            type: 'yellow',
-            badgeLabel: 'Kelas Berkelanjutan',
-            badgeBg: 'bg-amber-100',
-            badgeText: 'text-amber-800',
-            badgeBorder: 'border-amber-300',
-            cardBg: 'bg-gradient-to-r from-amber-50/90 to-yellow-50/90',
-            cardBorder: 'border-amber-200',
-            iconColor: 'text-amber-600',
-            title: 'Terdeteksi Kelas Lanjutan / Multi-Kegiatan',
-            description: `Mata kuliah "${courseNameDisplay}" terdaftar di peminjaman ruangan. Dosen mengajar ${details.length} kegiatan berturut-turut. Periksa bukti foto selfie kegiatan & catatan dosen untuk verifikasi.`
-        };
-    }
-
-    // HIJAU: Cocok Penuh (Ruangan, jam, dan matkul/dosen terkonfirmasi)
-    if (perfectMatches.length > 0) {
-        const topMatch = perfectMatches[0];
-        const borrower = topMatch.booking.user_info?.full_name || topMatch.booking.user?.full_name || 'Mahasiswa';
+    // ─────────────────────────────────────────────────────────────────
+    // HIJAU: SEMUA SESI COCOK DENGAN PEMINJAMAN (Atau 1 sesi tunggal cocok)
+    // ─────────────────────────────────────────────────────────────────
+    if (matchedCount > 0 && matchedCount === totalCount) {
+        const firstMatch = Array.from(pairedMap.values())[0];
+        const borrower = firstMatch.booking.user_info?.full_name || firstMatch.booking.user?.full_name || 'Mahasiswa';
+        const roomName = firstMatch.booking.room?.name || firstMatch.booking.room?.code;
+        const roomText = roomName ? ` di ruang ${roomName}` : '';
+        const multiLabel = totalCount > 1 ? ` (${totalCount} sesi)` : '';
         return {
             type: 'green',
             badgeLabel: 'Cocok Penuh',
@@ -415,15 +546,43 @@ export const computeVerificationIndicator = (
             cardBg: 'bg-gradient-to-r from-emerald-50/90 to-teal-50/90',
             cardBorder: 'border-emerald-200',
             iconColor: 'text-emerald-600',
-            title: 'Peminjaman Ruangan & Waktu Sesuai',
-            description: `Ruangan, rentang jam, dan kegiatan cocok dengan peminjaman oleh ${borrower} (${topMatch.match.bookingStartWIB} - ${topMatch.match.bookingEndWIB} WIB).`
+            title: `Peminjaman Ruangan & Waktu Sesuai${multiLabel}`,
+            description: totalCount > 1
+                ? `Semua ${totalCount} sesi perkuliahan dan dosen terkonfirmasi dengan peminjaman ruangan mahasiswa${roomText}.`
+                : `Matkul, jam, dan dosen cocok dengan peminjaman ruangan${roomText} oleh ${borrower} (${formatWIBTime(firstMatch.booking.start_time)} - ${formatWIBTime(firstMatch.booking.end_time)} WIB).`
         };
     }
 
-    // HIJAU (Alternatif): Waktu dan ruangan cocok dengan peminjaman mahasiswa aktif
-    if (timeMatches.length > 0) {
-        const topMatch = timeMatches[0];
-        const borrower = topMatch.booking.user_info?.full_name || topMatch.booking.user?.full_name || 'Mahasiswa';
+    // ─────────────────────────────────────────────────────────────────
+    // HIJAU: SEBAGIAN SESI COCOK (Misal: 1 dari 3 sesi cocok)
+    // ─────────────────────────────────────────────────────────────────
+    if (matchedCount > 0 && matchedCount < totalCount) {
+        const matchesArray = Array.from(pairedMap.values());
+        const firstMatch = matchesArray[0];
+        const borrower = firstMatch.booking.user_info?.full_name || firstMatch.booking.user?.full_name || 'Mahasiswa';
+        const matchedCourseName = firstMatch.detail.course_name || 'Jadwal Kuliah';
+        const roomName = firstMatch.booking.room?.name || firstMatch.booking.room?.code;
+        const roomText = roomName ? ` di ruang ${roomName}` : '';
+        const bookingTime = `${formatWIBTime(firstMatch.booking.start_time)} - ${formatWIBTime(firstMatch.booking.end_time)} WIB`;
+
+        return {
+            type: 'green',
+            badgeLabel: `${matchedCount} dari ${totalCount} Sesi Cocok`,
+            badgeBg: 'bg-emerald-100',
+            badgeText: 'text-emerald-800',
+            badgeBorder: 'border-emerald-300',
+            cardBg: 'bg-gradient-to-r from-emerald-50/90 to-teal-50/90',
+            cardBorder: 'border-emerald-200',
+            iconColor: 'text-emerald-600',
+            title: `Peminjaman Ruangan Sesuai (${matchedCount} dari ${totalCount} Sesi)`,
+            description: `Sesi "${matchedCourseName}" (${bookingTime})${roomText} cocok dengan peminjaman oleh ${borrower}. Sesi lainnya berstatus perkuliahan reguler.`
+        };
+    }
+
+    // Fallback jika tidak ada detail tapi ada booking dosen di ruangan/jam yang sama
+    if (totalCount === 0 && validBookings.length > 0) {
+        const firstBooking = validBookings[0];
+        const borrower = firstBooking.user_info?.full_name || firstBooking.user?.full_name || 'Mahasiswa';
         return {
             type: 'green',
             badgeLabel: 'Peminjaman Cocok',
@@ -434,12 +593,14 @@ export const computeVerificationIndicator = (
             cardBorder: 'border-emerald-200',
             iconColor: 'text-emerald-600',
             title: 'Peminjaman Ruangan Terdeteksi',
-            description: `Ruangan dan jam scan dosen masuk dalam rentang peminjaman oleh ${borrower} (${topMatch.match.bookingStartWIB} - ${topMatch.match.bookingEndWIB} WIB).`
+            description: `Ditemukan peminjaman ruangan oleh ${borrower} (${formatWIBTime(firstBooking.start_time)} - ${formatWIBTime(firstBooking.end_time)} WIB).`
         };
     }
 
-    // BIRU: Jadwal Reguler (Tercatat di lecture_schedules / session_schedules atau schedule_id ada)
-    const isRegular = record.schedule_type === 'lecture' || record.schedule_type === 'session' || Boolean(record.schedule_id) || record.purpose === 'sidang';
+    // ─────────────────────────────────────────────────────────────────
+    // BIRU: Jadwal Reguler (ada schedule_id atau schedule_type atau details)
+    // ─────────────────────────────────────────────────────────────────
+    const isRegular = record.schedule_type === 'lecture' || record.schedule_type === 'session' || Boolean(record.schedule_id) || record.purpose === 'sidang' || totalCount > 0;
     if (isRegular) {
         return {
             type: 'blue',
@@ -451,7 +612,7 @@ export const computeVerificationIndicator = (
             cardBorder: 'border-blue-200',
             iconColor: 'text-blue-600',
             title: 'Jadwal Perkuliahan / Sidang Reguler',
-            description: 'Kegiatan ini terdaftar dalam jadwal perkuliahan atau sidang resmi kalender akademik kampus.'
+            description: 'Kegiatan ini terdaftar dalam jadwal perkuliahan atau sidang resmi kalender akademik kampus tanpa peminjaman ruangan khusus.'
         };
     }
 
@@ -1296,44 +1457,15 @@ const FinanceAttendance: React.FC = () => {
     };
 
     // Fetch matching bookings for scanned room & date (Fase 2)
+    // Jika tidak ada booking di ruangan yang di-scan, fallback ke pencarian
+    // berdasarkan nama dosen di seluruh ruangan pada hari yang sama.
     const fetchMatchingBookings = async (
         roomId?: string | null,
         attendanceDate?: string,
-        fallbackRoomName?: string
+        fallbackRoomName?: string,
+        lecturerName?: string
     ) => {
-        try {
-            setLoadingBookings(true);
-            if (!attendanceDate) {
-                setMatchingBookings([]);
-                return;
-            }
-
-            let effectiveRoomId = roomId;
-
-            // Fallback: jika scanned_room_id null tapi ada nama ruangan dari jadwal
-            if (!effectiveRoomId && fallbackRoomName) {
-                const { data: foundRoom } = await supabase
-                    .from('rooms')
-                    .select('id')
-                    .ilike('name', fallbackRoomName.trim())
-                    .maybeSingle();
-                if (foundRoom?.id) {
-                    effectiveRoomId = foundRoom.id;
-                }
-            }
-
-            if (!effectiveRoomId) {
-                setMatchingBookings([]);
-                return;
-            }
-
-            // Rentang waktu hari tersebut dalam timezone WIB (+07:00)
-            const startOfDay = `${attendanceDate}T00:00:00+07:00`;
-            const endOfDay = `${attendanceDate}T23:59:59+07:00`;
-
-            const { data, error } = await supabase
-                .from('bookings')
-                .select(`
+        const SELECT_FIELDS = `
                     id,
                     room_id,
                     start_time,
@@ -1356,20 +1488,148 @@ const FinanceAttendance: React.FC = () => {
                         phone_number,
                         email
                     )
-                `)
-                .eq('room_id', effectiveRoomId)
-                .gte('end_time', startOfDay)
-                .lte('start_time', endOfDay)
-                .not('status', 'in', '("cancelled")')
-                .order('start_time', { ascending: true });
-
-            if (error) {
-                console.error('Error fetching matching bookings:', error);
+                `;
+        try {
+            setLoadingBookings(true);
+            if (!attendanceDate) {
                 setMatchingBookings([]);
                 return;
             }
 
-            setMatchingBookings((data as unknown as MatchingBooking[]) || []);
+            let effectiveRoomId = roomId;
+
+            // Fallback: jika scanned_room_id null tapi ada nama ruangan dari jadwal
+            if (!effectiveRoomId && fallbackRoomName) {
+                const { data: foundRoom } = await supabase
+                    .from('rooms')
+                    .select('id')
+                    .ilike('name', fallbackRoomName.trim())
+                    .maybeSingle();
+                if (foundRoom?.id) {
+                    effectiveRoomId = foundRoom.id;
+                }
+            }
+
+            // Rentang waktu hari tersebut dalam timezone WIB (+07:00)
+            const startOfDay = `${attendanceDate}T00:00:00+07:00`;
+            const endOfDay = `${attendanceDate}T23:59:59+07:00`;
+
+            // ─── Query 1: Booking di ruangan yang di-scan dosen ───
+            let roomBookings: MatchingBooking[] = [];
+            if (effectiveRoomId) {
+                const { data, error } = await supabase
+                    .from('bookings')
+                    .select(SELECT_FIELDS)
+                    .eq('room_id', effectiveRoomId)
+                    .gte('end_time', startOfDay)
+                    .lte('start_time', endOfDay)
+                    .in('status', ['borrowed', 'completed'])
+                    .order('start_time', { ascending: true });
+
+                if (error) {
+                    console.error('Error fetching room bookings:', error);
+                } else {
+                    roomBookings = (data as unknown as MatchingBooking[]) || [];
+                }
+            }
+
+            // ─── Query 2 (Fallback): Cari booking berdasarkan nama dosen ───
+            // Diperlukan saat dosen scan di ruangan berbeda dari ruangan yang dipesan mahasiswa
+            // (misal: scan di "Ruang Pelayanan" tapi mahasiswa booking GK.2.03)
+            let lecturerBookings: MatchingBooking[] = [];
+            if (lecturerName) {
+                // Ekstrak nama inti dosen (hapus gelar) untuk pencarian yang fleksibel
+                const nameParts = lecturerName
+                    .replace(/\b(dr|prof|ir|drs|dra|m\.pd|s\.pd|s\.e|m\.m|m\.kom|s\.kom|m\.sc|ph\.d|m\.t|s\.t|m\.hum|s\.sos|m\.a|m\.si|s\.si|s\.h|m\.h|b\.a|m\.phil)\b\.?/gi, '')
+                    .trim()
+                    .split(/\s+/)
+                    .filter(w => w.length > 3);
+
+                if (nameParts.length > 0) {
+                    // Gunakan kata terpanjang sebagai kunci pencarian (paling unik)
+                    const searchWord = nameParts.sort((a, b) => b.length - a.length)[0];
+                    const { data, error } = await supabase
+                        .from('bookings')
+                        .select(SELECT_FIELDS)
+                        .ilike('lecturer_name', `%${searchWord}%`)
+                        .gte('end_time', startOfDay)
+                        .lte('start_time', endOfDay)
+                        .in('status', ['borrowed', 'completed'])
+                        .order('start_time', { ascending: true });
+
+                    if (error) {
+                        console.error('Error fetching lecturer bookings:', error);
+                    } else {
+                        lecturerBookings = (data as unknown as MatchingBooking[]) || [];
+                    }
+                }
+            }
+
+            // Gabungkan: room bookings + lecturer bookings (dedup by id)
+            const seenIds = new Set<string>();
+            const combined: MatchingBooking[] = [];
+            for (const b of [...roomBookings, ...lecturerBookings]) {
+                if (!seenIds.has(b.id)) {
+                    seenIds.add(b.id);
+                    combined.push(b);
+                }
+            }
+
+            // Hubungkan dengan tabel lecture_schedules jika booking memiliki lecture_schedule_id
+            const scheduleIds = combined
+                .map(b => b.lecture_schedule_id)
+                .filter((id): id is string => Boolean(id));
+
+            if (scheduleIds.length > 0) {
+                try {
+                    const { data: schedules } = await supabase
+                        .from('lecture_schedules')
+                        .select('id, course_name, course_code, class, lecturer')
+                        .in('id', scheduleIds);
+
+                    if (schedules && schedules.length > 0) {
+                        const schedMap = new Map(schedules.map(s => [s.id, s]));
+                        for (const b of combined) {
+                            if (b.lecture_schedule_id && schedMap.has(b.lecture_schedule_id)) {
+                                const s = schedMap.get(b.lecture_schedule_id)!;
+                                if (!b.course_name) b.course_name = s.course_name;
+                                if (!b.course_code) b.course_code = s.course_code;
+                                if (!b.class_group) b.class_group = s.class;
+                                if (!b.lecturer_name) b.lecturer_name = s.lecturer;
+                            }
+                        }
+                    }
+                } catch (schedErr) {
+                    console.warn('Could not enrich bookings with lecture schedules:', schedErr);
+                }
+            }
+
+            // Ambil data nama ruangan untuk setiap booking dari tabel rooms
+            const roomIds = combined
+                .map(b => b.room_id)
+                .filter((id): id is string => Boolean(id));
+
+            if (roomIds.length > 0) {
+                try {
+                    const { data: roomsData } = await supabase
+                        .from('rooms')
+                        .select('id, name, code')
+                        .in('id', roomIds);
+
+                    if (roomsData && roomsData.length > 0) {
+                        const roomMap = new Map(roomsData.map(r => [r.id, r]));
+                        for (const b of combined) {
+                            if (b.room_id && roomMap.has(b.room_id)) {
+                                b.room = roomMap.get(b.room_id)!;
+                            }
+                        }
+                    }
+                } catch (roomErr) {
+                    console.warn('Could not fetch room details for bookings:', roomErr);
+                }
+            }
+
+            setMatchingBookings(combined);
         } catch (err) {
             console.error('Failed to fetch matching bookings:', err);
             setMatchingBookings([]);
@@ -1389,7 +1649,7 @@ const FinanceAttendance: React.FC = () => {
         // Fetch details, matching bookings, dan photo secara parallel — ketiganya lazy
         await Promise.all([
             fetchAttendanceDetails(record.id),
-            fetchMatchingBookings(record.scanned_room_id, record.attendance_date, record.scanned_room?.name),
+            fetchMatchingBookings(record.scanned_room_id, record.attendance_date, record.scanned_room?.name, record.lecturer_name),
 
             // Lazy fetch photo_capture — hanya dipanggil saat modal dibuka
             supabase
@@ -1411,9 +1671,16 @@ const FinanceAttendance: React.FC = () => {
     const handleVerify = async (status: 'verified' | 'rejected') => {
         if (!selectedRecord) return;
 
+        const recordId = selectedRecord.id;
+
+        console.log('[handleVerify] Mulai verifikasi:', { recordId, status, profileId: profile?.id });
+
         try {
             setProcessing(true);
-            const { error } = await supabase
+
+            // Gunakan .select() agar Supabase mengembalikan baris yang ter-update.
+            // Jika data kosong ([]) meski error null → RLS memblokir UPDATE ini.
+            const { data: updatedRows, error } = await supabase
                 .from('lecturer_attendance')
                 .update({
                     verification_status: status,
@@ -1422,18 +1689,49 @@ const FinanceAttendance: React.FC = () => {
                     verified_notes: verificationNotes,
                     is_included_in_recap: status === 'verified'
                 })
-                .eq('id', selectedRecord.id);
+                .eq('id', recordId)
+                .select('id, verification_status');
+
+            console.log('[handleVerify] Hasil update:', { updatedRows, error });
 
             if (error) throw error;
+
+            // Deteksi RLS blocking: query berhasil (error null) tapi 0 baris ter-update
+            if (!updatedRows || updatedRows.length === 0) {
+                console.error('[handleVerify] RLS BLOCKING: 0 baris ter-update! Cek policy UPDATE di tabel lecturer_attendance.');
+                toast.error('Verifikasi gagal: Akses ditolak oleh database (RLS). Hubungi administrator.');
+                return;
+            }
+
+            console.log('[handleVerify] Berhasil update', updatedRows.length, 'baris:', updatedRows);
+
+            // Update state lokal agar UI langsung berubah
+            setAttendanceRecords(prev =>
+                prev.map(r =>
+                    r.id === recordId
+                        ? {
+                            ...r,
+                            verification_status: status,
+                            verified_by: profile?.id,
+                            verified_at: new Date().toISOString(),
+                            verified_notes: verificationNotes,
+                            is_included_in_recap: status === 'verified'
+                        }
+                        : r
+                )
+            );
 
             toast.success(status === 'verified' ? 'Presensi berhasil diverifikasi' : 'Presensi ditolak');
             setSelectedRecord(null);
             setVerificationNotes('');
             setMatchingBookings([]);
             setLoadingBookings(false);
+
+            // Fetch ulang di background untuk sinkronisasi penuh dengan server
             fetchAttendanceRecords();
         } catch (error: any) {
-            toast.error('Gagal memproses verifikasi');
+            console.error('[handleVerify] Error:', error);
+            toast.error('Gagal memproses verifikasi: ' + (error?.message || 'Kesalahan tidak diketahui'));
         } finally {
             setProcessing(false);
         }
@@ -3561,6 +3859,7 @@ const FinanceAttendance: React.FC = () => {
             {
                 selectedRecord && !showImageModal && (() => {
                     const indicator = computeVerificationIndicator(selectedRecord, selectedRecordDetails, matchingBookings);
+                    const pairedBookingsMap = pairDetailsWithBookings(selectedRecordDetails, matchingBookings, selectedRecord);
 
                     return (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 md:p-6 animate-in fade-in duration-200">
@@ -3605,6 +3904,27 @@ const FinanceAttendance: React.FC = () => {
 
                                 {/* Body - Scrollable */}
                                 <div className="p-4 md:p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/50">
+
+                                    {/* Banner Indikator Otomatis (Fase 3: Hijau hanya jika status borrowed/completed) */}
+                                    <div className={`p-4 rounded-xl border ${indicator.cardBg} ${indicator.cardBorder} flex items-start gap-3 shadow-xs`}>
+                                        <div className={`p-2 rounded-lg bg-white shadow-xs shrink-0 ${indicator.iconColor}`}>
+                                            {indicator.type === 'green' ? <CheckCircle className="w-5 h-5" /> :
+                                             indicator.type === 'yellow' ? <AlertTriangle className="w-5 h-5" /> :
+                                             indicator.type === 'blue' ? <BookOpen className="w-5 h-5" /> :
+                                             <AlertCircle className="w-5 h-5" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                <h4 className="font-bold text-sm text-gray-900">{indicator.title}</h4>
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${indicator.badgeBg} ${indicator.badgeText} ${indicator.badgeBorder}`}>
+                                                    {indicator.badgeLabel}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-gray-600 leading-relaxed">
+                                                {indicator.description}
+                                            </p>
+                                        </div>
+                                    </div>
 
                                     {/* KARTU RINGKAS PRESENSI DOSEN & JADWAL */}
                                     <div className="bg-white rounded-xl p-4 md:p-5 border border-slate-200 shadow-xs space-y-4">
@@ -3697,11 +4017,10 @@ const FinanceAttendance: React.FC = () => {
                                             ) : selectedRecordDetails.length > 0 ? (
                                                 <div className="space-y-2">
                                                     {selectedRecordDetails.map((detail, idx) => {
-                                                        // Cari apakah jadwal ini cocok dengan salah satu peminjaman ruangan mahasiswa
-                                                        const matchedBooking = matchingBookings.find(b => {
-                                                            const match = checkBookingMatch(b, selectedRecord, [detail]);
-                                                            return match.isCourseMatch || match.matchQuality === 'perfect' || match.isTimeMatch;
-                                                        });
+                                                        // Ambil hasil pencocokan 1-ke-1 dari pairedBookingsMap
+                                                        const detailKey = detail.id || `${detail.course_name}_${detail.start_time}`;
+                                                        const pair = pairedBookingsMap.get(detailKey);
+                                                        const matchedBooking = pair?.booking;
 
                                                         const borrower = matchedBooking?.user_info?.full_name || matchedBooking?.user?.full_name;
                                                         const borrowerNim = matchedBooking?.user_info?.identity_number || matchedBooking?.user?.identity_number;
@@ -3734,12 +4053,20 @@ const FinanceAttendance: React.FC = () => {
                                                                             )}
                                                                         </div>
 
-                                                                        {detail.start_time && detail.end_time && (
-                                                                            <div className="flex items-center gap-1.5 text-gray-600 text-[11px]">
-                                                                                <Clock className="w-3 h-3 text-gray-400" />
-                                                                                <span>Jadwal: {detail.start_time.substring(0, 5)} - {detail.end_time.substring(0, 5)} WIB</span>
-                                                                            </div>
-                                                                        )}
+                                                                        <div className="flex items-center gap-3 text-gray-600 text-[11px] flex-wrap">
+                                                                            {detail.start_time && detail.end_time && (
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <Clock className="w-3 h-3 text-gray-400" />
+                                                                                    <span>Jadwal: {detail.start_time.substring(0, 5)} - {detail.end_time.substring(0, 5)} WIB</span>
+                                                                                </div>
+                                                                            )}
+                                                                            {detail.room_name && (
+                                                                                <div className="flex items-center gap-1 text-gray-600">
+                                                                                    <Building className="w-3 h-3 text-gray-400" />
+                                                                                    <span>Ruang Jadwal: <strong className="text-gray-700">{detail.room_name}</strong></span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
 
                                                                     {/* BADGE STATUS: HIJAU & CENTANG JIKA SESUAI PEMINJAMAN */}
@@ -3757,14 +4084,22 @@ const FinanceAttendance: React.FC = () => {
                                                                     </div>
                                                                 </div>
 
-                                                                {/* INFO DETAIL PEMINJAM MAHASISWA JIKA ADA */}
+                                                                {/* INFO DETAIL PEMINJAM MAHASISWA & RUANGAN YANG DIPINJAM */}
                                                                 {isMatched && matchedBooking && (
-                                                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex items-center justify-between flex-wrap gap-1 text-[11px] text-emerald-900 bg-white/70 px-2.5 py-1.5 rounded-lg">
-                                                                        <div className="flex items-center gap-1.5 font-medium">
-                                                                            <User className="w-3 h-3 text-emerald-600" />
-                                                                            <span>Peminjam: <strong>{borrower || 'Mahasiswa'}</strong> {borrowerNim ? `(${borrowerNim})` : ''}</span>
+                                                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex items-center justify-between flex-wrap gap-2 text-[11px] text-emerald-900 bg-white/80 px-2.5 py-1.5 rounded-lg">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <div className="flex items-center gap-1.5 font-medium">
+                                                                                <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                                                <span>Peminjam: <strong>{borrower || 'Mahasiswa'}</strong> {borrowerNim ? `(${borrowerNim})` : ''}</span>
+                                                                            </div>
+                                                                            {(matchedBooking.room?.name || matchedBooking.room?.code) && (
+                                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-bold border border-emerald-300 text-[11px]">
+                                                                                    <Building className="w-3 h-3 text-emerald-600" />
+                                                                                    Ruang Dipinjam: {matchedBooking.room?.name || matchedBooking.room?.code}
+                                                                                </span>
+                                                                            )}
                                                                         </div>
-                                                                        <span className="text-emerald-700 font-mono text-[10px]">
+                                                                        <span className="text-emerald-700 font-mono text-[10px] font-medium">
                                                                             Booking: {formatWIBTime(matchedBooking.start_time)} - {formatWIBTime(matchedBooking.end_time)} WIB
                                                                         </span>
                                                                     </div>
