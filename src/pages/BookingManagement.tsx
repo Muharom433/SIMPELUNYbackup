@@ -1,9 +1,9 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Calendar, Clock, User, Building, XCircle, AlertTriangle,
     Eye, Edit, Trash2, RefreshCw, Search, ChevronDown, ChevronUp,
     Package, Plus, Minus, X, Check, ArrowRight, FileText, Info,
-    AlertCircle, Save, Download, Loader2, MapPin
+    AlertCircle, Save, Download, Loader2, MapPin, BookOpen
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -90,6 +90,11 @@ interface Booking {
     equipment_details?: any;
     equipment_back?: string[];
     quantities_back?: number[];
+    lecture_schedule_id?: string | null;
+    course_name?: string | null;
+    course_code?: string | null;
+    class_group?: string | null;
+    lecturer_name?: string | null;
     user?: {
         id: string;
         full_name: string;
@@ -424,6 +429,7 @@ const BookingManagement: React.FC = () => {
                     id, user_id, room_id, start_time, end_time, purpose, sks, class_type, 
                     status, equipment_requested, equipment_quantities, notes, 
                     created_at, updated_at, user_info, equipment_details, attachments,
+                    lecture_schedule_id, course_name, course_code, class_group, lecturer_name,
                     user:users!bookings_user_id_fkey(
                         id, full_name, identity_number, phone_number, email, study_program_id,
                         study_program:study_programs(id, name)
@@ -1710,6 +1716,24 @@ const BookingManagement: React.FC = () => {
         );
     };
 
+    // Badge: apakah booking sesuai jadwal kuliah atau tidak
+    const getScheduleBadge = (booking: Booking) => {
+        if (booking.lecture_schedule_id) {
+            return (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <BookOpen className="h-3 w-3 mr-1" />
+                    Sesuai Jadwal
+                </span>
+            );
+        }
+        return (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                <Calendar className="h-3 w-3 mr-1" />
+                Diluar Jadwal
+            </span>
+        );
+    };
+
     const getEquipmentById = (equipmentId: string) => {
         return equipmentMap[equipmentId] || allEquipment.find(eq => eq.id === equipmentId);
     };
@@ -2067,13 +2091,19 @@ const BookingManagement: React.FC = () => {
                                             <Building className="h-6 w-6 text-white" />
                                         </div>
                                         <div>
-                                            <div className="flex items-center space-x-3">
+                                            <div className="flex items-center flex-wrap gap-2">
                                                 <h3 className="text-lg font-semibold text-gray-900">
                                                     {booking.room?.name || 'Unknown Room'}
                                                 </h3>
                                                 {getStatusBadge(booking.status)}
+                                                {getScheduleBadge(booking)}
                                             </div>
-                                            <p className="text-sm text-gray-600">{booking.purpose}</p>
+                                            <p className="text-sm text-gray-600">
+                                                {booking.course_name
+                                                    ? <span className={`font-medium ${booking.lecture_schedule_id ? 'text-emerald-700' : 'text-orange-700'}`}>{booking.course_name}{booking.course_code ? ` (${booking.course_code})` : ''}{booking.class_group ? ` - ${booking.class_group}` : ''}</span>
+                                                    : booking.purpose
+                                                }
+                                            </p>
                                         </div>
                                     </div>
 
@@ -2192,15 +2222,89 @@ const BookingManagement: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="font-medium text-gray-700 mb-2">Tujuan</h4>
-                                    <p>{selectedBooking.purpose}</p>
-                                    {selectedBooking.notes && (
-                                        <p className="text-sm text-gray-600 mt-2">
-                                            <strong>Catatan:</strong> {selectedBooking.notes}
-                                        </p>
+                                {/* ===== TIPE BOOKING: SESUAI JADWAL / DILUAR JADWAL ===== */}
+                                <div className={`rounded-lg p-4 border ${
+                                    selectedBooking.lecture_schedule_id
+                                        ? 'bg-emerald-50 border-emerald-200'
+                                        : 'bg-orange-50 border-orange-200'
+                                }`}>
+                                    <div className="flex items-center space-x-2 mb-3">
+                                        {selectedBooking.lecture_schedule_id ? (
+                                            <>
+                                                <div className="h-8 w-8 bg-emerald-600 rounded-lg flex items-center justify-center">
+                                                    <BookOpen className="h-4 w-4 text-white" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-semibold text-emerald-900">Booking Sesuai Jadwal Kuliah</h4>
+                                                    <p className="text-xs text-emerald-700">Peminjaman berdasarkan jadwal perkuliahan resmi</p>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="h-8 w-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                                                    <Calendar className="h-4 w-4 text-white" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-semibold text-orange-900">Booking Diluar Jadwal</h4>
+                                                    <p className="text-xs text-orange-700">Peminjaman mandiri di luar jadwal perkuliahan</p>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    {/* Info matkul selalu ditampilkan jika ada, baik sesuai jadwal maupun tidak */}
+                                    {(selectedBooking.course_name || selectedBooking.course_code || selectedBooking.class_group || selectedBooking.lecturer_name) ? (
+                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                            {selectedBooking.course_name && (
+                                                <div>
+                                                    <p className={`text-xs font-medium ${selectedBooking.lecture_schedule_id ? 'text-emerald-600' : 'text-orange-600'}`}>Mata Kuliah</p>
+                                                    <p className={`font-semibold ${selectedBooking.lecture_schedule_id ? 'text-emerald-900' : 'text-orange-900'}`}>{selectedBooking.course_name}</p>
+                                                </div>
+                                            )}
+                                            {selectedBooking.course_code && (
+                                                <div>
+                                                    <p className={`text-xs font-medium ${selectedBooking.lecture_schedule_id ? 'text-emerald-600' : 'text-orange-600'}`}>Kode MK</p>
+                                                    <p className={`font-semibold ${selectedBooking.lecture_schedule_id ? 'text-emerald-900' : 'text-orange-900'}`}>{selectedBooking.course_code}</p>
+                                                </div>
+                                            )}
+                                            {selectedBooking.class_group && (
+                                                <div>
+                                                    <p className={`text-xs font-medium ${selectedBooking.lecture_schedule_id ? 'text-emerald-600' : 'text-orange-600'}`}>Kelas</p>
+                                                    <p className={`font-semibold ${selectedBooking.lecture_schedule_id ? 'text-emerald-900' : 'text-orange-900'}`}>{selectedBooking.class_group}</p>
+                                                </div>
+                                            )}
+                                            {selectedBooking.lecturer_name && (
+                                                <div>
+                                                    <p className={`text-xs font-medium ${selectedBooking.lecture_schedule_id ? 'text-emerald-600' : 'text-orange-600'}`}>Dosen</p>
+                                                    <p className={`font-semibold ${selectedBooking.lecture_schedule_id ? 'text-emerald-900' : 'text-orange-900'}`}>{selectedBooking.lecturer_name}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm">
+                                            <p className={`text-xs font-medium ${selectedBooking.lecture_schedule_id ? 'text-emerald-600' : 'text-orange-600'}`}>Tujuan</p>
+                                            <p className={`font-medium ${selectedBooking.lecture_schedule_id ? 'text-emerald-900' : 'text-orange-900'}`}>{selectedBooking.purpose}</p>
+                                        </div>
                                     )}
                                 </div>
+
+                                {/* Tujuan hanya tampil jika tidak ada info matkul (purpose jadi fallback),
+                                    atau kalau ada notes tambahan */}
+                                {!selectedBooking.course_name ? (
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-medium text-gray-700 mb-2">Tujuan / Keperluan</h4>
+                                        <p>{selectedBooking.purpose}</p>
+                                        {selectedBooking.notes && (
+                                            <p className="text-sm text-gray-600 mt-2">
+                                                <strong>Catatan:</strong> {selectedBooking.notes}
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : selectedBooking.notes ? (
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-medium text-gray-700 mb-2">Catatan Tambahan</h4>
+                                        <p className="text-sm text-gray-600">{selectedBooking.notes}</p>
+                                    </div>
+                                ) : null}
 
                                 {selectedBooking.equipment_requested && selectedBooking.equipment_requested.length > 0 && (
                                     <div className="bg-gray-50 rounded-lg p-4">

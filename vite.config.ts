@@ -4,6 +4,31 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/rest': {
+        target: 'https://simpel.vokasiuny.my.id',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/auth': {
+        target: 'https://simpel.vokasiuny.my.id',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/storage': {
+        target: 'https://simpel.vokasiuny.my.id',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/realtime': {
+        target: 'https://simpel.vokasiuny.my.id',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+    },
+  },
   optimizeDeps: {
     exclude: ['lucide-react'],
   },

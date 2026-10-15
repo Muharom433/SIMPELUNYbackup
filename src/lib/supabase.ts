@@ -4,7 +4,12 @@ import { Database } from '../types/database';
 const DEFAULT_SUPABASE_URL = 'https://nfoarhurrdelgkrxnwnn.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mb2FyaHVycmRlbGdrcnhud25uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAwMzg0NzMsImV4cCI6MjA2NTYxNDQ3M30.7qXZVJuRggQJ6FE5xiP48Kbe8qMYzOKVGqcXIgI1ZMU';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const rawSupabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+// Pada dev mode (localhost), arahkan ke dev server Vite (window.location.origin)
+// yang mem-proxy ke simpel.vokasiuny.my.id agar terbebas 100% dari CORS / preflight blocks
+const supabaseUrl = (import.meta.env.DEV && typeof window !== 'undefined' && rawSupabaseUrl.includes('simpel.vokasiuny.my.id'))
+  ? window.location.origin
+  : rawSupabaseUrl;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {

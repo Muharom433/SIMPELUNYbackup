@@ -1549,7 +1549,12 @@ const BookRoom: React.FC = () => {
   // ROOM AVAILABILITY VALIDATION
   // =====================================================
 
-  function checkRoomAvailability(room: Room, startTime: string, endTime: string): RoomStatusResult {
+  function checkRoomAvailability(
+    room: Room,
+    startTime: string,
+    endTime: string,
+    claimingScheduleId?: string | null
+  ): RoomStatusResult {
     const conflictDetails: string[] = [];
 
     const userStart = new Date(startTime);
@@ -1646,6 +1651,30 @@ const BookRoom: React.FC = () => {
       hasScheduleToday = true;
 
       for (const lecture of room.scheduleDetails.lectures) {
+        // Jika user sedang memesan/mengambil hak sesuai jadwal perkuliahan ini,
+        // maka ini BUKAN bentrok melainkan hak pengguna yang sedang diklaim!
+        const isClaimedCourse =
+          (claimingScheduleId && lecture.id === claimingScheduleId) ||
+          (activeTab === 'course' && selectedCourse && (
+            lecture.id === selectedCourse.id ||
+            (lecture.course_name?.toLowerCase() === selectedCourse.course_name?.toLowerCase() &&
+             (!selectedCourse.class || !lecture.class || lecture.class === selectedCourse.class))
+          )) ||
+          (activeTab === 'course' && !selectedCourse) || // saat pertama buka tab course
+          (selectedNormalCourse && (
+            lecture.id === selectedNormalCourse.id ||
+            (lecture.course_name?.toLowerCase() === selectedNormalCourse.course_name?.toLowerCase() &&
+             (!selectedNormalCourse.class || !lecture.class || lecture.class === selectedNormalCourse.class))
+          )) ||
+          (getValues("lecture_schedule_id") && lecture.id === getValues("lecture_schedule_id")) ||
+          (getValues("course_name") && lecture.course_name &&
+           getValues("course_name")?.toLowerCase() === lecture.course_name?.toLowerCase() &&
+           (!getValues("class_group") || !lecture.class || getValues("class_group") === lecture.class));
+
+        if (isClaimedCourse) {
+          continue; // Lewati! Ini adalah jadwal yang sedang diambil/diklaim oleh pengguna
+        }
+
         const lectureStartMinutes = timeToMinutes(lecture.start_time);
         const lectureEndMinutes = timeToMinutes(lecture.end_time);
 
@@ -1717,7 +1746,11 @@ const BookRoom: React.FC = () => {
       };
     }
 
-    return checkRoomAvailability(room, s, e);
+    const claimingId = activeTab === 'course'
+      ? (selectedCourse?.id || getValues("lecture_schedule_id"))
+      : (selectedNormalCourse?.id || getValues("lecture_schedule_id"));
+
+    return checkRoomAvailability(room, s, e, claimingId);
   }
 
   // =====================================================
@@ -2237,7 +2270,8 @@ const BookRoom: React.FC = () => {
   // Batalkan pilihan ruangan jika jam diubah dan ternyata bentrok dengan jadwal lain
   useEffect(() => {
     if (activeTab === 'normal' && selectedRoom && startDateTime && endDateTime) {
-      const status = checkRoomAvailability(selectedRoom, startDateTime, endDateTime);
+      const claimingId = selectedNormalCourse?.id || getValues("lecture_schedule_id");
+      const status = checkRoomAvailability(selectedRoom, startDateTime, endDateTime, claimingId);
       if (!status.isAvailable) {
         setSelectedRoom(null);
         setValue("room_id", "");
@@ -2249,7 +2283,7 @@ const BookRoom: React.FC = () => {
         );
       }
     }
-  }, [endDateTime, startDateTime, activeTab, selectedRoom]);
+  }, [endDateTime, startDateTime, activeTab, selectedRoom, selectedNormalCourse]);
 
   useEffect(() => {
     if (activeTab === 'normal' && !startDateTime) {
@@ -2415,7 +2449,8 @@ const BookRoom: React.FC = () => {
         return;
       }
       if (data.start_datetime && data.end_datetime) {
-        const availability = checkRoomAvailability(selectedRoom, data.start_datetime, data.end_datetime);
+        const claimingId = selectedNormalCourse?.id || data.lecture_schedule_id || getValues("lecture_schedule_id");
+        const availability = checkRoomAvailability(selectedRoom, data.start_datetime, data.end_datetime, claimingId);
         if (!availability.isAvailable) {
           alert.error(
             getText("Selected room is not available due to schedule conflict", "Ruangan yang dipilih bentrok dengan jadwal lain"),
@@ -2437,7 +2472,7 @@ const BookRoom: React.FC = () => {
           throw new Error(getText("Room for the course not found", "Ruangan untuk mata kuliah tidak ditemukan"));
         }
         if (data.start_datetime && data.end_datetime) {
-          const availability = checkRoomAvailability(matchedRoom, data.start_datetime, data.end_datetime);
+          const availability = checkRoomAvailability(matchedRoom, data.start_datetime, data.end_datetime, selectedCourse.id);
           if (!availability.isAvailable) {
             throw new Error(availability.reason || getText("Room has a schedule conflict", "Ruangan ini bentrok dengan jadwal lain"));
           }
