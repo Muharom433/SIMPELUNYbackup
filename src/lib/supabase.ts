@@ -6,8 +6,8 @@ const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3Mi
 
 const rawSupabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
 // Pada dev mode (localhost), arahkan ke dev server Vite (window.location.origin)
-// yang mem-proxy ke simpel.vokasiuny.my.id agar terbebas 100% dari CORS / preflight blocks
-const supabaseUrl = (import.meta.env.DEV && typeof window !== 'undefined' && rawSupabaseUrl.includes('simpel.vokasiuny.my.id'))
+// yang mem-proxy ke target agar terbebas 100% dari CORS / preflight blocks
+const supabaseUrl = (import.meta.env.DEV && typeof window !== 'undefined' && !rawSupabaseUrl.includes('localhost'))
   ? window.location.origin
   : rawSupabaseUrl;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
