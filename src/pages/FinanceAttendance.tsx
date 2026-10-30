@@ -2490,17 +2490,20 @@ const FinanceAttendance: React.FC = () => {
 
             toast.dismiss('export-fetch-toast');
 
-            // Enrich with full_name & is_homebase from users table (Optimasi Batching Fase 5)
+            // Enrich with full_name, is_homebase, & study_program_id terkini dari tabel users
+            // PENTING: study_program_id dibaca dari users (bukan dari attendance record) agar selalu
+            // mencerminkan homebase dosen saat ini, bukan saat presensi dibuat.
             const exportLecturerIds = [...new Set(allVerifiedRecordsRaw.map((r: any) => r.lecturer_user_id).filter(Boolean))];
             let exportHomebaseMap: Record<string, boolean> = {};
             let exportUserNameMap: Record<string, string> = {};
+            let exportUserStudyProgramIdMap: Record<string, string | null> = {}; // user_id -> study_program_id terkini
             if (exportLecturerIds.length > 0) {
                 const chunks = chunkArray(exportLecturerIds, 50);
                 const userResults = await Promise.all(
                     chunks.map(chunk =>
                         supabase
                             .from('users')
-                            .select('id, full_name, is_homebase')
+                            .select('id, full_name, is_homebase, study_program_id')
                             .in('id', chunk)
                     )
                 );
@@ -2510,6 +2513,7 @@ const FinanceAttendance: React.FC = () => {
                         exportUsersData.forEach((u: any) => {
                             exportHomebaseMap[u.id] = u.is_homebase ?? true;
                             if (u.full_name) exportUserNameMap[u.id] = u.full_name;
+                            exportUserStudyProgramIdMap[u.id] = u.study_program_id || null;
                         });
                     }
                 });
@@ -2575,7 +2579,16 @@ const FinanceAttendance: React.FC = () => {
                     ? `uid_${r.lecturer_user_id}`
                     : `name_${normalizedName}`;
 
-                const homebaseProdiName = r.study_program?.name || '-';
+                // ─── PERBAIKAN HOMEBASE: Baca prodi dari tabel users (data terkini), ───
+                // bukan dari study_program yang tersimpan di tabel presensi.
+                // Ini mencegah tampilnya prodi lama jika dosen sudah pindah homebase.
+                const currentStudyProgramId = r.lecturer_user_id
+                    ? exportUserStudyProgramIdMap[r.lecturer_user_id]
+                    : null;
+                const currentStudyProgram = currentStudyProgramId
+                    ? studyPrograms.find(sp => sp.id === currentStudyProgramId)
+                    : null;
+                const homebaseProdiName = currentStudyProgram?.name || r.study_program?.name || '-';
 
                 if (!lecturerMap.has(key)) {
                     lecturerMap.set(key, {
@@ -2588,7 +2601,12 @@ const FinanceAttendance: React.FC = () => {
                     });
                 } else {
                     const existing = lecturerMap.get(key)!;
-                    existing.prodiSet.add(homebaseProdiName);
+                    // Selalu gunakan prodi terkini (bukan akumulasi dari presensi lama)
+                    if (currentStudyProgram?.name) {
+                        existing.prodiSet = new Set([currentStudyProgram.name]);
+                    } else {
+                        existing.prodiSet.add(homebaseProdiName);
+                    }
                     // Jika sebelumnya key pakai nama (belum ada ID), update ID-nya
                     if (!existing.lecturer_user_id && r.lecturer_user_id) {
                         existing.lecturer_user_id = r.lecturer_user_id;
