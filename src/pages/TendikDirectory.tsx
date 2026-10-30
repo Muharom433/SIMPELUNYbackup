@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, User, Users, ChevronDown, X, Building2, SlidersHorizontal, Briefcase } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -367,7 +367,7 @@ const TendikDirectory: React.FC = () => {
         const { data, error } = await supabase
           .from('users')
           .select('id, full_name, identity_number, role, department_id, department:departments(id, name, code)')
-          .in('role', ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk', 'finance'])
+          .in('role', ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk', 'finance', 'department_admin'])
           .order('full_name');
 
         if (error) throw error;
@@ -399,7 +399,7 @@ const TendikDirectory: React.FC = () => {
   }, [staffList]);
 
   // Derived roles list
-  const TENDIK_ROLES = ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk', 'finance'];
+  const TENDIK_ROLES = ['staff', 'laboratory', 'technician', 'staffing', 'purchasing', 'frontdesk', 'finance', 'department_admin'];
   const roleOptions = useMemo<DropdownOption[]>(() => {
     const counts: Record<string, number> = {};
     const baselist = selectedDept === 'all' ? staffList : staffList.filter(s => {

@@ -1444,9 +1444,9 @@ const BookRoom: React.FC = () => {
             `)
             .gte('end_time', startOfDayUTC)
             .lte('start_time', endOfDayUTC)
-            // Hanya ambil booking yang sah (approved/borrowed/completed)
-            // Booking 'pending'/'cancelled' TIDAK dihitung
-            .in('status', ['approved', 'borrowed', 'completed']);
+            // Hanya ambil booking yang aktif (approved/borrowed)
+            // Booking 'completed'/'pending'/'cancelled' TIDAK dihitung
+            .in('status', ['approved', 'borrowed']);
 
           if (error) {
             return [];
@@ -1578,9 +1578,10 @@ const BookRoom: React.FC = () => {
     let hasConflict = false;
     let hasScheduleToday = false;
 
-    // 1. Check bookings — status 'approved', 'borrowed', dan 'completed' dianggap konflik sah
+    // 1. Check bookings — hanya status 'approved' dan 'borrowed' yang dianggap bentrok aktif.
+    // Status 'completed' berarti peminjaman sudah selesai / ruangan sudah dikembalikan, sehingga tidak memblokir pemesanan baru.
     const confirmedBookings = (room.targetDateBookings || []).filter(
-      b => b.status === 'approved' || b.status === 'borrowed' || b.status === 'completed'
+      b => b.status === 'approved' || b.status === 'borrowed'
     );
 
     if (confirmedBookings.length > 0) {
@@ -1726,9 +1727,9 @@ const BookRoom: React.FC = () => {
     const e = endDateTime || getValues("end_datetime");
 
     if (!s || !e) {
-      // Hanya booking approved/borrowed/completed yang dianggap punya jadwal (untuk ikon mata)
+      // Hanya booking approved/borrowed yang dianggap punya jadwal (untuk ikon mata)
       const confirmedBookings = (room.targetDateBookings || []).filter(
-        b => b.status === 'approved' || b.status === 'borrowed' || b.status === 'completed'
+        b => b.status === 'approved' || b.status === 'borrowed'
       );
       const hasScheduledContent =
         confirmedBookings.length > 0 ||
@@ -1855,7 +1856,7 @@ const BookRoom: React.FC = () => {
           user:users!user_id(full_name, identity_number)
         `)
         .eq('room_id', roomId)
-        .in('status', ['approved', 'borrowed', 'completed'])
+        .in('status', ['approved', 'borrowed'])
         .gte('end_time', startOfDayUTC)
         .lte('start_time', endOfDayUTC)
         .order('start_time');
@@ -3648,8 +3649,7 @@ const BookRoom: React.FC = () => {
                       disabled={
                         loading || isThrottling ||
                         (activeTab === 'course' && !selectedCourse) ||
-                        (activeTab === 'normal' && !selectedRoom) ||
-                        (watchPurpose === 'Other' && (!watchAttachments || watchAttachments.length === 0))
+                        (activeTab === 'normal' && !selectedRoom)
                       }
                       className={`w-full flex items-center justify-center space-x-2 py-3 px-4 font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 shadow-lg
                         ${loading || isThrottling

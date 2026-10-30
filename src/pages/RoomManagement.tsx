@@ -605,7 +605,7 @@ const RoomManagement: React.FC = () => {
                         end_time: displayEndTime,
                         title: `${booking.purpose || getText('Room Booking', 'Pemesanan Ruangan')}${isMultiDay ? ` (${durationDays} hari)` : ''}`,
                         subtitle: `${booking.user?.full_name} • ${booking.user?.identity_number}`,
-                        description: `${getText('Status', 'Status')}: ${getText('APPROVED', 'DISETUJUI')}`,
+                        description: `${getText('Status', 'Status')}: ${booking.status?.toUpperCase() === 'BORROWED' ? getText('BORROWED', 'DIPINJAM') : getText('APPROVED', 'DISETUJUI')}`,
                         icon: CalendarIcon,
                         color: 'text-orange-700',
                         bgColor: 'bg-orange-50',

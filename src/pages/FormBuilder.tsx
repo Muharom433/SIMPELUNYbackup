@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
     Save,
@@ -382,7 +382,7 @@ const FormBuilder: React.FC = () => {
             let savedFormId = formId;
 
             if (isEditing) {
-                // Update existing form
+                // Update existing form metadata
                 const { error } = await supabase
                     .from('forms')
                     .update({
@@ -393,8 +393,82 @@ const FormBuilder: React.FC = () => {
 
                 if (error) throw error;
 
-                // Delete existing fields and re-insert (simpler approach)
-                await supabase.from('form_fields').delete().eq('form_id', formId);
+                // --- PERBAIKAN BUG: Jangan hapus semua fields! ---
+                // Hapus hanya fields yang benar-benar dihapus user,
+                // agar field_id di form_response_values tetap valid.
+
+                // Ambil field ID yang sudah ada di DB
+                const { data: existingDbFields } = await supabase
+                    .from('form_fields')
+                    .select('id')
+                    .eq('form_id', formId);
+
+                const existingDbIds = new Set((existingDbFields || []).map(f => f.id));
+                const currentFieldIds = new Set(fields.filter(f => !f.isNew).map(f => f.id));
+
+                // Field yang ada di DB tapi sudah tidak ada di state → hapus
+                const idsToDelete = [...existingDbIds].filter(id => !currentFieldIds.has(id));
+                if (idsToDelete.length > 0) {
+                    await supabase.from('form_fields').delete().in('id', idsToDelete);
+                }
+
+                // Update field yang sudah ada (bukan new), dan insert field baru
+                const idMapping: Record<string, string> = {};
+
+                for (const [index, field] of fields.entries()) {
+                    const { id, isNew, ...fieldData } = field;
+                    const payload = {
+                        ...fieldData,
+                        form_id: savedFormId!,
+                        field_order: index,
+                        settings: fieldData.settings
+                            ? { ...fieldData.settings, conditions: undefined }
+                            : null,
+                    };
+
+                    if (isNew) {
+                        // Insert field baru
+                        const { data: inserted, error: insertErr } = await supabase
+                            .from('form_fields')
+                            .insert(payload)
+                            .select('id')
+                            .single();
+                        if (insertErr) throw insertErr;
+                        idMapping[id] = inserted.id;
+                    } else {
+                        // Update field yang sudah ada — ID tetap sama, responses aman
+                        const { error: updateErr } = await supabase
+                            .from('form_fields')
+                            .update(payload)
+                            .eq('id', id);
+                        if (updateErr) throw updateErr;
+                        idMapping[id] = id; // ID tidak berubah
+                    }
+                }
+
+                // Fix condition triggerFieldIds setelah semua field tersimpan
+                for (const field of fields) {
+                    const conditions = field.settings?.conditions;
+                    if (conditions && conditions.length > 0) {
+                        const updatedConditions = conditions.map(cond => ({
+                            ...cond,
+                            triggerFieldId: idMapping[cond.triggerFieldId] || cond.triggerFieldId,
+                        }));
+
+                        const resolvedId = idMapping[field.id];
+                        if (resolvedId) {
+                            await supabase
+                                .from('form_fields')
+                                .update({
+                                    settings: {
+                                        ...field.settings,
+                                        conditions: updatedConditions,
+                                    },
+                                })
+                                .eq('id', resolvedId);
+                        }
+                    }
+                }
             } else {
                 // Create new form
                 const { data: newForm, error } = await supabase
@@ -409,58 +483,53 @@ const FormBuilder: React.FC = () => {
 
                 if (error) throw error;
                 savedFormId = newForm.id;
-            }
 
-            // Insert fields with ID mapping for conditions
-            if (fields.length > 0 && savedFormId) {
-                // Create fields without IDs (let database generate them)
-                const fieldsToInsert = fields.map(({ id, isNew, ...field }, index) => ({
-                    ...field,
-                    form_id: savedFormId,
-                    field_order: index,
-                    // Temporarily clear settings.conditions as we need to fix IDs
-                    settings: field.settings ? { ...field.settings, conditions: undefined } : null,
-                }));
+                // Insert all fields for new form
+                if (fields.length > 0) {
+                    const fieldsToInsert = fields.map(({ id, isNew, ...field }, index) => ({
+                        ...field,
+                        form_id: savedFormId,
+                        field_order: index,
+                        settings: field.settings ? { ...field.settings, conditions: undefined } : null,
+                    }));
 
-                // Insert and get back the new IDs
-                const { data: insertedFields, error: fieldsError } = await supabase
-                    .from('form_fields')
-                    .insert(fieldsToInsert)
-                    .select('id, field_order');
+                    const { data: insertedFields, error: fieldsError } = await supabase
+                        .from('form_fields')
+                        .insert(fieldsToInsert)
+                        .select('id, field_order');
 
-                if (fieldsError) throw fieldsError;
+                    if (fieldsError) throw fieldsError;
 
-                // Create mapping from old (temp) IDs to new (database) IDs using field_order
-                const idMapping: Record<string, string> = {};
-                fields.forEach((oldField, index) => {
-                    const newField = insertedFields?.find(f => f.field_order === index);
-                    if (newField) {
-                        idMapping[oldField.id] = newField.id;
-                    }
-                });
+                    // Build ID mapping for conditions fix
+                    const idMapping: Record<string, string> = {};
+                    fields.forEach((oldField, index) => {
+                        const newField = insertedFields?.find(f => f.field_order === index);
+                        if (newField) {
+                            idMapping[oldField.id] = newField.id;
+                        }
+                    });
 
-                // Now update fields with corrected condition triggerFieldIds
-                for (const oldField of fields) {
-                    const conditions = oldField.settings?.conditions;
-                    if (conditions && conditions.length > 0) {
-                        // Map old triggerFieldIds to new ones
-                        const updatedConditions = conditions.map(cond => ({
-                            ...cond,
-                            triggerFieldId: idMapping[cond.triggerFieldId] || cond.triggerFieldId,
-                        }));
+                    // Fix condition triggerFieldIds
+                    for (const oldField of fields) {
+                        const conditions = oldField.settings?.conditions;
+                        if (conditions && conditions.length > 0) {
+                            const updatedConditions = conditions.map(cond => ({
+                                ...cond,
+                                triggerFieldId: idMapping[cond.triggerFieldId] || cond.triggerFieldId,
+                            }));
 
-                        // Update this field with corrected conditions
-                        const newFieldId = idMapping[oldField.id];
-                        if (newFieldId) {
-                            await supabase
-                                .from('form_fields')
-                                .update({
-                                    settings: {
-                                        ...oldField.settings,
-                                        conditions: updatedConditions
-                                    }
-                                })
-                                .eq('id', newFieldId);
+                            const newFieldId = idMapping[oldField.id];
+                            if (newFieldId) {
+                                await supabase
+                                    .from('form_fields')
+                                    .update({
+                                        settings: {
+                                            ...oldField.settings,
+                                            conditions: updatedConditions,
+                                        },
+                                    })
+                                    .eq('id', newFieldId);
+                            }
                         }
                     }
                 }

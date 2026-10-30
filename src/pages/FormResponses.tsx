@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     FileText,
@@ -18,6 +18,8 @@ import {
     ChevronUp,
     Printer,
     FileDown,
+    Wrench,
+    AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -56,6 +58,9 @@ const FormResponses: React.FC = () => {
     const [selectedResponse, setSelectedResponse] = useState<FormResponseWithValues | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [exporting, setExporting] = useState(false);
+    const [hasOrphanedData, setHasOrphanedData] = useState(false);
+    const [repairMapping, setRepairMapping] = useState<Record<string, string>>({});
+    const [repairing, setRepairing] = useState(false);
     const printRef = useRef<HTMLDivElement>(null);
 
     // Load data
@@ -103,7 +108,78 @@ const FormResponses: React.FC = () => {
                 .order('submitted_at', { ascending: false });
 
             if (responsesError) throw responsesError;
-            setResponses(responsesData || []);
+
+            // === DIAGNOSTIK: cek kondisi data ===
+            if (responsesData && responsesData.length > 0) {
+                const sample = responsesData.slice(0, 5);
+                console.log('[DIAG] Sample 5 responses pertama:');
+                sample.forEach((r: any, i: number) => {
+                    console.log(`  [${i}] id=${r.id}, submitted=${r.submitted_at}, values.length=${(r.values||[]).length}`, r.values?.slice(0,2));
+                });
+                const emptyCount = responsesData.filter((r: any) => (r.values||[]).length === 0).length;
+                const hasValues = responsesData.filter((r: any) => (r.values||[]).length > 0).length;
+                console.log(`[DIAG] Total: ${responsesData.length} responses | punya values: ${hasValues} | values kosong: ${emptyCount}`);
+            }
+            // === END DIAGNOSTIK ===
+
+            // === AUTO-RECOVERY: remap orphaned field_ids ke field saat ini ===
+            let fixedResponses = responsesData || [];
+            let detectedRemap: Record<string, string> = {};
+
+            if (fieldsData && fixedResponses.length > 0) {
+                const currentFieldIds = new Set(fieldsData.map((f: any) => f.id));
+
+                // Kumpulkan orphaned field_ids berurutan sesuai field_order dalam 1 response
+                // Gunakan response pertama (paling lama) sebagai acuan urutan
+                const sortedByOldest = [...fixedResponses].sort(
+                    (a: any, b: any) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+                );
+                const orphanedIdsOrdered: string[] = [];
+                const seenOrphan = new Set<string>();
+                for (const r of sortedByOldest) {
+                    const sortedValues = [...(r.values || [])].sort((a: any, b: any) =>
+                        a.id < b.id ? -1 : 1
+                    );
+                    for (const v of sortedValues) {
+                        if (!currentFieldIds.has(v.field_id) && !seenOrphan.has(v.field_id)) {
+                            orphanedIdsOrdered.push(v.field_id);
+                            seenOrphan.add(v.field_id);
+                        }
+                    }
+                    if (orphanedIdsOrdered.length > 0) break; // cukup dari 1 response saja
+                }
+
+                if (orphanedIdsOrdered.length > 0) {
+                    // Buat mapping: orphanedFieldId → currentFieldId (by field_order position)
+                    const sortedCurrentFields = [...fieldsData].sort(
+                        (a: any, b: any) => a.field_order - b.field_order
+                    );
+                    orphanedIdsOrdered.forEach((orphanId, idx) => {
+                        if (sortedCurrentFields[idx]) {
+                            detectedRemap[orphanId] = sortedCurrentFields[idx].id;
+                        }
+                    });
+
+                    // Terapkan remap untuk tampilan (sementara)
+                    fixedResponses = fixedResponses.map((r: any) => ({
+                        ...r,
+                        values: (r.values || []).map((v: any) => ({
+                            ...v,
+                            field_id: detectedRemap[v.field_id] ?? v.field_id,
+                        })),
+                    }));
+
+                    setHasOrphanedData(true);
+                    setRepairMapping(detectedRemap);
+                    console.warn('[FormResponses] Orphaned data ditemukan. Remap:', detectedRemap);
+                } else {
+                    setHasOrphanedData(false);
+                    setRepairMapping({});
+                }
+            }
+            // === END AUTO-RECOVERY ===
+
+            setResponses(fixedResponses);
 
             // Load departments & study programs for filters
             const { data: deptsData } = await supabase.from('departments').select('id, name');
@@ -157,6 +233,32 @@ const FormResponses: React.FC = () => {
     const getSignatureData = (response: FormResponseWithValues, fieldId: string): string | null => {
         const value = response.values?.find((v) => v.field_id === fieldId);
         return value?.signature_data || null;
+    };
+
+    // Repair orphaned field_ids permanently in DB
+    const handleRepairOrphanedData = async () => {
+        if (Object.keys(repairMapping).length === 0) return;
+        try {
+            setRepairing(true);
+            // Untuk setiap old field_id → new field_id, UPDATE di form_response_values
+            for (const [oldFieldId, newFieldId] of Object.entries(repairMapping)) {
+                const { error } = await supabase
+                    .from('form_response_values')
+                    .update({ field_id: newFieldId })
+                    .eq('field_id', oldFieldId);
+                if (error) throw error;
+            }
+            toast.success(getText('Data berhasil diperbaiki secara permanen!', 'Data berhasil diperbaiki secara permanen!'));
+            setHasOrphanedData(false);
+            setRepairMapping({});
+            // Reload data untuk konfirmasi
+            await loadData();
+        } catch (error: any) {
+            console.error('Repair error:', error);
+            toast.error(getText('Gagal memperbaiki data: ' + error.message, 'Gagal memperbaiki data: ' + error.message));
+        } finally {
+            setRepairing(false);
+        }
     };
 
     // Delete response
@@ -361,6 +463,34 @@ const FormResponses: React.FC = () => {
                         </button>
                     </div>
                 </div>
+
+                {/* Banner Perbaiki Data */}
+                {hasOrphanedData && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-amber-800">
+                                    Data jawaban terdeteksi rusak akibat pengeditan form sebelumnya
+                                </p>
+                                <p className="text-xs text-amber-600 mt-0.5">
+                                    Data masih ada di database dan berhasil ditampilkan sementara.
+                                    Klik <strong>Perbaiki Data</strong> untuk memperbaiki secara permanen.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleRepairOrphanedData}
+                            disabled={repairing}
+                            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium disabled:opacity-60 flex-shrink-0"
+                        >
+                            {repairing
+                                ? <RefreshCw className="h-4 w-4 animate-spin" />
+                                : <Wrench className="h-4 w-4" />}
+                            {repairing ? 'Memperbaiki...' : 'Perbaiki Data'}
+                        </button>
+                    </div>
+                )}
 
                 {/* Filters */}
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6">
