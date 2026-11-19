@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -59,6 +59,32 @@ const checkoutSchema = z.object({
 type CheckoutForm = z.infer<typeof checkoutSchema>;
 
 // ===== INTERFACES =====
+// Lightweight record — hanya untuk ditampilkan di dropdown
+interface LightRecord {
+  id: string;
+  record_type: 'booking' | 'lending_tool';
+  status: string;
+  created_at: string;
+  // Booking fields
+  user_id?: string;
+  room_id?: string;
+  start_time?: string;
+  end_time?: string;
+  purpose?: string;
+  equipment_requested?: string[];
+  equipment_quantities?: number[];
+  // Lending fields
+  id_user?: string;
+  id_equipment?: string[];
+  qty?: number[];
+  date?: string;
+  return_date?: string;
+  // Enriched display fields (nama saja)
+  display_name: string;      // "Budi - Lab Fisika" atau "Budi - 3 Peralatan"
+  display_sub: string;       // tanggal / info ringkas
+  user_name: string;
+  room_name?: string;
+}
 interface Equipment {
   id: string;
   name: string;
@@ -146,9 +172,9 @@ const formatDate = (dateString: string) => {
 // ===== MAIN COMPONENT =====
 const CheckOut: React.FC = () => {
   const { isSubmitting: isThrottling, throttledSubmit } = useThrottledSubmit(3000);
-  const [allRecords, setAllRecords] = useState<CombinedRecord[]>([]);
-  const [allEquipment, setAllEquipment] = useState<Equipment[]>([]);
-  const [allRooms, setAllRooms] = useState<RoomInfo[]>([]);
+  const [lightRecords, setLightRecords] = useState<LightRecord[]>([]);
+  // Fase 2: detail lengkap setelah dipilih
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -165,6 +191,10 @@ const CheckOut: React.FC = () => {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Debounced search — filter dijalankan 300ms setelah user berhenti mengetik
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const form = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
@@ -178,216 +208,202 @@ const CheckOut: React.FC = () => {
   const watchHasIssues = form.watch('has_issues');
   const watchRecordId = form.watch('record_id');
 
-  // ===== FETCH ALL EQUIPMENT =====
-  const fetchAllEquipment = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('id, name, code, category, quantity, unit, is_mandatory')
-        .order('name');
-
-      if (error) throw error;
-      setAllEquipment(data || []);
-
-    } catch (error) {
-    }
-  };
-
-  // ===== FETCH ALL ROOMS =====
-  const fetchAllRooms = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('id, name, code, capacity, building_id')
-        .order('name');
-
-      if (error) throw error;
-      setAllRooms(data || []);
-
-    } catch (error) {
-    }
-  };
-
-  // ===== FETCH RECORDS =====
-  const fetchAllRecords = useCallback(async () => {
+  // ===== FASE 1: FETCH LIGHT RECORDS (hanya untuk dropdown) =====
+  // Query minimal: hanya field yang dibutuhkan untuk tampil di list
+  const fetchLightRecords = useCallback(async () => {
     try {
       setLoadingRecords(true);
 
+      // Ambil checkouts, bookings, lending paralel — kolom MINIMAL saja
+      const [checkoutsResult, bookingsResult, lendingResult] = await Promise.all([
+        supabase.from('checkouts').select('booking_id, lendingTool_id').eq('status', 'returned'),
+        supabase
+          .from('bookings')
+          .select('id, user_id, room_id, start_time, end_time, status, purpose, equipment_requested, equipment_quantities, created_at, updated_at')
+          .eq('status', 'borrowed')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from('lending_tool')
+          .select('id, id_user, id_equipment, qty, date, return_date, status, purpose, created_at, updated_at')
+          .eq('status', 'borrow')
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]);
 
+      const checkedOutBookingIds = checkoutsResult.data?.filter(c => c.booking_id).map(c => c.booking_id) || [];
+      const checkedOutLendingIds = checkoutsResult.data?.filter(c => c.lendingTool_id).map(c => c.lendingTool_id) || [];
 
-      // ===== STEP 1: GET EXISTING CHECKOUTS =====
-      const { data: existingCheckouts } = await supabase
-        .from('checkouts')
-        .select('booking_id, lendingTool_id')
-        .eq('status', 'returned');
+      if (bookingsResult.error) throw bookingsResult.error;
+      if (lendingResult.error) throw lendingResult.error;
 
-      const checkedOutBookingIds = existingCheckouts?.filter(c => c.booking_id).map(c => c.booking_id) || [];
-      const checkedOutLendingIds = existingCheckouts?.filter(c => c.lendingTool_id).map(c => c.lendingTool_id) || [];
+      const bookingsData = (bookingsResult.data || []).filter(b => !checkedOutBookingIds.includes(b.id));
+      const lendingData = (lendingResult.data || []).filter(l => !checkedOutLendingIds.includes(l.id));
 
+      // Kumpulkan user & room IDs saja (BUKAN equipment — itu di fase 2)
+      const allUserIds = [...new Set([
+        ...bookingsData.filter(b => b.user_id).map(b => b.user_id),
+        ...lendingData.filter(l => l.id_user).map(l => l.id_user),
+      ])].filter(Boolean);
 
+      const allRoomIds = [...new Set(
+        bookingsData.filter(b => b.room_id).map(b => b.room_id)
+      )].filter(Boolean);
 
-      // ===== STEP 2: FETCH BOOKINGS (status = borrowed) =====
-      let bookingsQuery = supabase
-        .from('bookings')
-        .select('*')
-        .eq('status', 'borrowed')
-        .order('created_at', { ascending: false });
+      // Batch fetch user & room saja (2 query, bukan N query, tanpa equipment)
+      const [usersResult, roomsResult] = await Promise.all([
+        allUserIds.length > 0
+          ? supabase.from('users').select('id, full_name, identity_number').in('id', allUserIds)
+          : Promise.resolve({ data: [] }),
+        allRoomIds.length > 0
+          ? supabase.from('rooms').select('id, name, code').in('id', allRoomIds)
+          : Promise.resolve({ data: [] }),
+      ]);
 
-      if (checkedOutBookingIds.length > 0) {
-        bookingsQuery = bookingsQuery.not('id', 'in', `(${checkedOutBookingIds.join(',')})`);
-      }
+      const userMap = new Map((usersResult.data || []).map(u => [u.id, u]));
+      const roomMap = new Map((roomsResult.data || []).map(r => [r.id, r]));
 
-      const { data: bookingsData, error: bookingsError } = await bookingsQuery;
+      // Buat LightRecord — cukup untuk tampil di dropdown
+      const bookingLight: LightRecord[] = bookingsData.map(b => {
+        const user = b.user_id ? userMap.get(b.user_id) : null;
+        const room = b.room_id ? roomMap.get(b.room_id) : null;
+        const userName = (user as any)?.full_name || 'Pengguna Tidak Dikenal';
+        const roomName = (room as any)?.name || 'Ruangan Tidak Dikenal';
+        return {
+          id: b.id,
+          record_type: 'booking' as const,
+          status: b.status,
+          created_at: b.created_at,
+          user_id: b.user_id,
+          room_id: b.room_id,
+          start_time: b.start_time,
+          end_time: b.end_time,
+          purpose: b.purpose,
+          equipment_requested: b.equipment_requested,
+          equipment_quantities: b.equipment_quantities,
+          updated_at: b.updated_at,
+          display_name: `${userName} - ${roomName}`,
+          display_sub: b.start_time ? formatDate(b.start_time) : '',
+          user_name: userName,
+          room_name: roomName,
+        };
+      });
 
-      if (bookingsError) throw bookingsError;
+      const lendingLight: LightRecord[] = lendingData.map(l => {
+        const user = l.id_user ? userMap.get(l.id_user) : null;
+        const userName = (user as any)?.full_name || 'Pengguna Tidak Dikenal';
+        const eqCount = Array.isArray(l.id_equipment) ? l.id_equipment.length : 0;
+        return {
+          id: l.id,
+          record_type: 'lending_tool' as const,
+          status: l.status,
+          created_at: l.created_at,
+          id_user: l.id_user,
+          id_equipment: l.id_equipment,
+          qty: l.qty,
+          date: l.date,
+          return_date: l.return_date,
+          updated_at: l.updated_at,
+          display_name: `${userName} - ${eqCount} Peralatan`,
+          display_sub: l.date ? formatDate(l.date) : '',
+          user_name: userName,
+        };
+      });
 
-
-
-      // ===== STEP 3: ENRICH BOOKINGS WITH USER, ROOM, EQUIPMENT =====
-      const bookingsWithDetails: BookingWithDetails[] = await Promise.all(
-        (bookingsData || []).map(async (booking) => {
-
-
-          // Fetch user
-          let userData = null;
-          if (booking.user_id) {
-            const { data: user, error: userError } = await supabase
-              .from('users')
-              .select('id, full_name, identity_number, email, phone_number')
-              .eq('id', booking.user_id)
-              .single();
-
-            if (userError) {
-            } else {
-
-              userData = user;
-            }
-          }
-
-          // Fetch room
-          let roomData = null;
-          if (booking.room_id) {
-
-
-            const { data: room, error: roomError } = await supabase
-              .from('rooms')
-              .select('id, name, code, capacity, building_id')
-              .eq('id', booking.room_id)
-              .single();
-
-            if (roomError) {
-            } else {
-
-              roomData = room;
-            }
-          } else {
-
-          }
-
-          // Fetch equipment details
-          let equipment_details: Equipment[] = [];
-          if (booking.equipment_requested && Array.isArray(booking.equipment_requested) && booking.equipment_requested.length > 0) {
-
-
-            const { data: equipmentData, error: equipmentError } = await supabase
-              .from('equipment')
-              .select('id, name, code, category, quantity, unit, is_mandatory')
-              .in('id', booking.equipment_requested);
-
-            if (equipmentError) {
-            } else {
-
-              equipment_details = equipmentData || [];
-            }
-          }
-
-
-
-          return {
-            ...booking,
-            user: userData,
-            room: roomData,
-            equipment_details,
-            record_type: 'booking' as const
-          };
-        })
-      );
-
-      // ===== STEP 4: FETCH LENDING TOOLS (status = borrow) =====
-      let lendingQuery = supabase
-        .from('lending_tool')
-        .select('*')
-        .eq('status', 'borrow')
-        .order('created_at', { ascending: false });
-
-      if (checkedOutLendingIds.length > 0) {
-        lendingQuery = lendingQuery.not('id', 'in', `(${checkedOutLendingIds.join(',')})`);
-      }
-
-      const { data: lendingData, error: lendingError } = await lendingQuery;
-
-      if (lendingError) throw lendingError;
-
-
-
-      // ===== STEP 5: ENRICH LENDING WITH USER, EQUIPMENT =====
-      const lendingWithDetails: LendingToolWithDetails[] = await Promise.all(
-        (lendingData || []).map(async (lending) => {
-
-
-          // Fetch user
-          let userData = null;
-          if (lending.id_user) {
-            const { data: user } = await supabase
-              .from('users')
-              .select('id, full_name, identity_number, email, phone_number')
-              .eq('id', lending.id_user)
-              .single();
-            userData = user;
-
-          }
-
-          // Fetch equipment details
-          let equipment_details: Equipment[] = [];
-          if (lending.id_equipment && Array.isArray(lending.id_equipment) && lending.id_equipment.length > 0) {
-            const { data: equipmentData } = await supabase
-              .from('equipment')
-              .select('id, name, code, category, quantity, unit, is_mandatory')
-              .in('id', lending.id_equipment);
-
-            if (equipmentData) {
-              equipment_details = equipmentData;
-
-            }
-          }
-
-          return {
-            ...lending,
-            user: userData,
-            equipment_details,
-            record_type: 'lending_tool' as const
-          };
-        })
-      );
-
-      const combinedRecords = [...bookingsWithDetails, ...lendingWithDetails];
-      setAllRecords(combinedRecords);
-
-
+      setLightRecords([...bookingLight, ...lendingLight]);
 
     } catch (error: any) {
       toast.error('Gagal memuat data peminjaman');
-      setAllRecords([]);
+      setLightRecords([]);
     } finally {
       setLoadingRecords(false);
     }
   }, []);
 
+  // ===== FASE 2: FETCH DETAIL SATU RECORD (dipanggil setelah user klik) =====
+  const fetchRecordDetail = useCallback(async (light: LightRecord): Promise<CombinedRecord | null> => {
+    try {
+      setLoadingDetail(true);
+
+      if (light.record_type === 'booking') {
+        // Fetch user, room, equipment secara paralel — tapi HANYA untuk 1 booking ini
+        const [userRes, roomRes, eqRes] = await Promise.all([
+          light.user_id
+            ? supabase.from('users').select('id, full_name, identity_number, email, phone_number').eq('id', light.user_id).single()
+            : Promise.resolve({ data: null }),
+          light.room_id
+            ? supabase.from('rooms').select('id, name, code, capacity, building_id').eq('id', light.room_id).single()
+            : Promise.resolve({ data: null }),
+          Array.isArray(light.equipment_requested) && light.equipment_requested.length > 0
+            ? supabase.from('equipment').select('id, name, code, category, quantity, unit, is_mandatory').in('id', light.equipment_requested)
+            : Promise.resolve({ data: [] }),
+        ]);
+
+        return {
+          id: light.id,
+          user_id: light.user_id,
+          room_id: light.room_id!,
+          start_time: light.start_time!,
+          end_time: light.end_time!,
+          purpose: light.purpose!,
+          status: light.status,
+          equipment_requested: light.equipment_requested || [],
+          equipment_quantities: light.equipment_quantities || [],
+          created_at: light.created_at,
+          updated_at: (light as any).updated_at || '',
+          user: userRes.data as UserInfo,
+          room: roomRes.data as RoomInfo,
+          equipment_details: (eqRes.data || []) as Equipment[],
+          record_type: 'booking',
+        } as BookingWithDetails;
+
+      } else {
+        // Lending tool: fetch user + equipment saja
+        const [userRes, eqRes] = await Promise.all([
+          light.id_user
+            ? supabase.from('users').select('id, full_name, identity_number, email, phone_number').eq('id', light.id_user).single()
+            : Promise.resolve({ data: null }),
+          Array.isArray(light.id_equipment) && light.id_equipment.length > 0
+            ? supabase.from('equipment').select('id, name, code, category, quantity, unit, is_mandatory').in('id', light.id_equipment)
+            : Promise.resolve({ data: [] }),
+        ]);
+
+        return {
+          id: light.id,
+          id_user: light.id_user!,
+          date: light.date!,
+          return_date: light.return_date,
+          id_equipment: light.id_equipment || [],
+          qty: light.qty || [],
+          status: light.status,
+          created_at: light.created_at,
+          updated_at: (light as any).updated_at || '',
+          user: userRes.data as UserInfo,
+          equipment_details: (eqRes.data || []) as Equipment[],
+          record_type: 'lending_tool',
+        } as LendingToolWithDetails;
+      }
+
+    } catch {
+      return null;
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, []);
+
+
   // ===== EFFECTS =====
+  // Debounce: update debouncedSearch 300ms setelah searchTerm berubah
   useEffect(() => {
-    fetchAllEquipment();
-    fetchAllRooms();
-    fetchAllRecords();
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+  }, [searchTerm]);
+
+  useEffect(() => {
+    fetchLightRecords();
 
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -397,19 +413,12 @@ const CheckOut: React.FC = () => {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [fetchAllRecords]);
+  }, [fetchLightRecords]);
 
+  // watchRecordId: jika di-clear, reset selectedRecord
   useEffect(() => {
-    if (watchRecordId) {
-      const record = allRecords.find(r => r.id === watchRecordId);
-      setSelectedRecord(record || null);
-      if (record) {
-        form.setValue('record_type', record.record_type);
-      }
-    } else {
-      setSelectedRecord(null);
-    }
-  }, [watchRecordId, allRecords, form]);
+    if (!watchRecordId) setSelectedRecord(null);
+  }, [watchRecordId]);
 
   useEffect(() => {
     setShowReportForm(watchHasIssues);
@@ -435,31 +444,36 @@ const CheckOut: React.FC = () => {
     }
   }, []);
 
-  // ===== HANDLE RECORD SELECT =====
-  const handleRecordSelect = (record: CombinedRecord, event?: React.MouseEvent) => {
+  // ===== HANDLE RECORD SELECT (Fase 2: fetch detail setelah dipilih) =====
+  const handleRecordSelect = async (light: LightRecord, event?: React.MouseEvent) => {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
 
-
-
-    form.setValue('record_id', record.id);
-    form.setValue('record_type', record.record_type);
-    setSelectedRecord(record);
-    setSearchTerm(getDisplayName(record));
+    // Langsung set nama di searchbox agar UX responsif
+    setSearchTerm(light.display_name);
     setShowRecordDropdown(false);
     form.clearErrors('record_id');
-
-    // Reset equipment selection and fetch room equipment for bookings
     setSelectedEquipmentIds([]);
-    if (record.record_type === 'booking') {
-      const booking = record as BookingWithDetails;
-      if (booking.room_id) {
-        fetchRoomEquipment(booking.room_id);
+    setAllRoomEquipment([]);
+
+    // Set form values awal (cukup id & type)
+    form.setValue('record_id', light.id);
+    form.setValue('record_type', light.record_type);
+
+    // Fase 2: fetch detail lengkap untuk record ini saja
+    const detail = await fetchRecordDetail(light);
+    if (detail) {
+      setSelectedRecord(detail);
+      // Jika booking, fetch equipment di ruangan untuk laporan masalah
+      if (detail.record_type === 'booking') {
+        const booking = detail as BookingWithDetails;
+        if (booking.room_id) fetchRoomEquipment(booking.room_id);
       }
     } else {
-      setAllRoomEquipment([]);
+      toast.error('Gagal memuat detail data');
+      form.setValue('record_id', '');
     }
   };
 
@@ -782,7 +796,7 @@ const CheckOut: React.FC = () => {
       setSearchTerm('');
 
       // Refresh data
-      await fetchAllRecords();
+      await fetchLightRecords();
 
     } catch (error: any) {
 
@@ -820,35 +834,14 @@ const CheckOut: React.FC = () => {
   };
 
   const filteredRecords = useMemo(() => {
-    if (!searchTerm.trim()) return allRecords;
-
-    const searchLower = searchTerm.toLowerCase();
-
-    return allRecords.filter(record => {
-      const equipmentMatch = record.equipment_details?.some(eq => 
-        eq.name.toLowerCase().includes(searchLower) || 
-        (eq.code && eq.code.toLowerCase().includes(searchLower))
-      );
-
-      if (record.record_type === 'booking') {
-        const booking = record as BookingWithDetails;
-        return (
-          booking.user?.full_name?.toLowerCase().includes(searchLower) ||
-          booking.user?.identity_number?.toLowerCase().includes(searchLower) ||
-          booking.room?.name?.toLowerCase().includes(searchLower) ||
-          booking.room?.code?.toLowerCase().includes(searchLower) ||
-          equipmentMatch
-        );
-      } else {
-        const lending = record as LendingToolWithDetails;
-        return (
-          lending.user?.full_name?.toLowerCase().includes(searchLower) ||
-          lending.user?.identity_number?.toLowerCase().includes(searchLower) ||
-          equipmentMatch
-        );
-      }
-    });
-  }, [allRecords, searchTerm]);
+    if (!debouncedSearch.trim()) return lightRecords;
+    const q = debouncedSearch.toLowerCase();
+    return lightRecords.filter(r =>
+      r.display_name.toLowerCase().includes(q) ||
+      r.user_name.toLowerCase().includes(q) ||
+      (r.room_name && r.room_name.toLowerCase().includes(q))
+    );
+  }, [lightRecords, debouncedSearch]);
 
   const isSubmitEnabled = selectedRecord && watchRecordId && !submitting && !isThrottling;
 
@@ -874,7 +867,7 @@ const CheckOut: React.FC = () => {
             </div>
             <div className="hidden md:block">
               <div className="text-right">
-                <div className="text-2xl font-bold text-gray-800">{allRecords.length}</div>
+                <div className="text-2xl font-bold text-gray-800">{lightRecords.length}</div>
                 <div className="text-sm text-gray-500">Data Aktif</div>
               </div>
             </div>
@@ -893,7 +886,7 @@ const CheckOut: React.FC = () => {
                   <h2 className="text-xl font-bold text-gray-800">Cari Data Anda</h2>
                 </div>
                 <button
-                  onClick={fetchAllRecords}
+                  onClick={fetchLightRecords}
                   disabled={loadingRecords}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   title="Refresh data"
@@ -949,19 +942,19 @@ const CheckOut: React.FC = () => {
                       </div>
                     ) : (
                       <div className="p-2">
-                        {filteredRecords.map((record) => (
+                        {filteredRecords.map((light) => (
                           <button
-                            key={record.id}
+                            key={light.id}
                             type="button"
-                            onClick={(e) => handleRecordSelect(record, e)}
+                            onClick={(e) => handleRecordSelect(light, e)}
                             className="w-full text-left p-4 hover:bg-emerald-50 cursor-pointer rounded-xl border transition-all mb-2 last:mb-0"
                           >
                             <div className="flex items-start space-x-3">
-                              <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${record.record_type === 'booking'
+                              <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${light.record_type === 'booking'
                                 ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
                                 : 'bg-gradient-to-r from-purple-500 to-indigo-500'
                                 }`}>
-                                {record.record_type === 'booking' ? (
+                                {light.record_type === 'booking' ? (
                                   <Building className="h-5 w-5 text-white" />
                                 ) : (
                                   <Wrench className="h-5 w-5 text-white" />
@@ -969,57 +962,26 @@ const CheckOut: React.FC = () => {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-gray-900 truncate">
-                                  {record.user?.full_name || 'Pengguna Tidak Dikenal'}
+                                  {light.user_name}
                                 </div>
-                                <div className="text-sm text-gray-600 mb-2">
-                                  <CreditCard className="h-3 w-3 inline mr-1" />
-                                  {record.user?.identity_number || 'No ID'}
+                                <div className="text-sm text-gray-600 truncate">
+                                  {light.record_type === 'booking'
+                                    ? light.room_name || 'Ruangan Tidak Dikenal'
+                                    : `${light.id_equipment?.length || 0} Peralatan`}
                                 </div>
-
-                                <div className="space-y-1">
-                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${record.record_type === 'booking'
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${light.record_type === 'booking'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : 'bg-purple-100 text-purple-800'
                                     }`}>
-                                    {record.record_type === 'booking' ? 'Peminjaman Ruangan' : 'Peminjaman Peralatan'}
+                                    {light.record_type === 'booking' ? 'Peminjaman Ruangan' : 'Peminjaman Peralatan'}
                                   </span>
-
-                                  {record.record_type === 'booking' ? (
-                                    <>
-                                      <div className="flex items-center text-xs text-gray-500">
-                                        <Building className="h-3 w-3 mr-1" />
-                                        <span className="truncate">{(record as BookingWithDetails).room?.name || 'Ruangan Tidak Dikenal'}</span>
-                                      </div>
-                                      <div className="flex items-center text-xs text-gray-500">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        <span>{formatDate((record as BookingWithDetails).start_time)}</span>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="flex items-center text-xs text-gray-500">
-                                      <Wrench className="h-3 w-3 mr-1" />
-                                      <span>{(record as LendingToolWithDetails).equipment_details?.length || 0} jenis peralatan</span>
-                                    </div>
-                                  )}
-
-                                  {record.equipment_details && record.equipment_details.length > 0 && (
-                                    <div className="mt-2 text-xs text-gray-500">
-                                      <div className="font-medium mb-1">Peralatan:</div>
-                                      <div className="flex flex-wrap gap-1">
-                                        {record.equipment_details.map(eq => (
-                                          <span key={eq.id} className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 border border-gray-200 truncate max-w-[120px]">
-                                            {eq.name}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
+                                  <span className="text-xs text-gray-400">{light.display_sub}</span>
                                 </div>
                               </div>
                             </div>
                           </button>
-                        ))}
-                      </div>
+                        ))}</div>
                     )}
                   </div>
                 )}
@@ -1043,6 +1005,14 @@ const CheckOut: React.FC = () => {
               </div>
 
               <form onSubmit={form.handleSubmit((data) => throttledSubmit(() => handleSubmit(data)))} className="space-y-8">
+                {/* Loading Detail Spinner (Fase 2) */}
+                {loadingDetail && (
+                  <div className="flex items-center justify-center py-8 space-x-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                    <RefreshCw className="h-5 w-5 animate-spin text-emerald-600" />
+                    <span className="text-emerald-700 font-medium">Memuat detail data...</span>
+                  </div>
+                )}
+
                 {/* Selected Record Details */}
                 {selectedRecord && (
                   <div className={`border rounded-2xl p-6 ${selectedRecord.record_type === 'booking'

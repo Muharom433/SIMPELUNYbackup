@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -229,7 +229,6 @@ const PermitLetter: React.FC = () => {
 
   useEffect(() => {
     fetchAllRecords();
-    fetchAllUsers();
   }, []);
 
   useEffect(() => {
@@ -247,65 +246,40 @@ const PermitLetter: React.FC = () => {
       // Auto-fill applicant from first selected record
       const firstRecord = selectedRecords[0];
       if (firstRecord?.user) {
-        const userInfo = allUsers.find(u => u.id === firstRecord.user?.id);
         setApplicantUser({
           id: firstRecord.user.id,
           full_name: firstRecord.user.full_name,
-          role: userInfo?.role || 'student',
-          identity_number: userInfo?.identity_number,
-          study_program_name: userInfo?.study_program_name || '',
+          role: 'student',
+          identity_number: firstRecord.user.identity_number,
+          study_program_name: '',
         });
       }
     } else {
       setApplicantUser(null);
     }
-  }, [selectedRecords, form, allUsers]);
+  }, [selectedRecords, form]);
 
-  // Fetch all users for recipient dropdown
-  const fetchAllUsers = async () => {
+  // Recipient search: query server-side dengan debounce (tidak load semua user)
+  const recipientSearchDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recipientSearchLoading, setRecipientSearchLoading] = React.useState(false);
+
+  const searchRecipientUsers = React.useCallback(async (term: string, role: string) => {
+    if (!term || term.trim().length < 2) {
+      setAllUsers([]);
+      return;
+    }
     try {
-      // ✅ BATCHED FETCHING - Handle >1000 users
-      const BATCH_SIZE = 1000;
-      let allUsersData: any[] = [];
-      let from = 0;
-      let hasMore = true;
+      setRecipientSearchLoading(true);
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, full_name, role, identity_number, study_program_id, study_programs:study_program_id(name)')
+        .eq('role', role)
+        .ilike('full_name', `%${term.trim()}%`)
+        .order('full_name', { ascending: true })
+        .limit(20);
 
-      while (hasMore) {
-        const { data: usersBatch, error: usersError } = await supabase
-          .from('users')
-          .select(`
-            id,
-            full_name,
-            role,
-            identity_number,
-            study_program_id,
-            study_programs:study_program_id(name)
-          `)
-          .order('full_name', { ascending: true })
-          .range(from, from + BATCH_SIZE - 1);
-
-        if (usersError) {
-          if (from === 0) {
-            return; // Stop on first batch error
-          } else {
-            break; // Stop fetching on subsequent batches
-          }
-        }
-
-        if (usersBatch && usersBatch.length > 0) {
-          allUsersData = [...allUsersData, ...usersBatch];
-          if (usersBatch.length < BATCH_SIZE) {
-            hasMore = false; // Last batch
-          } else {
-            from += BATCH_SIZE; // Next batch
-          }
-        } else {
-          hasMore = false;
-        }
-      }
-
-
-      const formattedUsers = (allUsersData || []).map((user: any) => ({
+      if (error) return;
+      const formatted = (data || []).map((user: any) => ({
         id: user.id,
         full_name: user.full_name,
         role: user.role,
@@ -313,167 +287,136 @@ const PermitLetter: React.FC = () => {
         study_program_id: user.study_program_id,
         study_program_name: user.study_programs?.name || '',
       }));
-
-      setAllUsers(formattedUsers);
-    } catch (error) {
+      setAllUsers(formatted);
+    } catch {
+    } finally {
+      setRecipientSearchLoading(false);
     }
-  };
+  }, []);
 
-  // ✅ PERBAIKAN: fetchAllRecords untuk pending status saja
+  // Debounce recipient search input
+  const handleRecipientSearchChange = React.useCallback((value: string) => {
+    setRecipientSearchTerm(value);
+    setShowRecipientDropdown(true);
+    if (recipientSearchDebounceRef.current) clearTimeout(recipientSearchDebounceRef.current);
+    recipientSearchDebounceRef.current = setTimeout(() => {
+      searchRecipientUsers(value, selectedRecipientRole);
+    }, 350);
+  }, [searchRecipientUsers, selectedRecipientRole]);
+
+  // Reset user list when role changes
+  React.useEffect(() => {
+    setAllUsers([]);
+    setSelectedRecipient(null);
+    setRecipientSearchTerm('');
+  }, [selectedRecipientRole]);
+
+  // Record search debounce state
+  const [debouncedRecordSearch, setDebouncedRecordSearch] = React.useState('');
+  const recordSearchDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (recordSearchDebounceRef.current) clearTimeout(recordSearchDebounceRef.current);
+    recordSearchDebounceRef.current = setTimeout(() => {
+      setDebouncedRecordSearch(searchTerm);
+    }, 300);
+    return () => { if (recordSearchDebounceRef.current) clearTimeout(recordSearchDebounceRef.current); };
+  }, [searchTerm]);
+
+  // ===== FETCH RECORDS (Optimized: batch queries, no N+1) =====
   const fetchAllRecords = async () => {
     try {
       setLoading(true);
 
+      // Fetch bookings dan lending_tool secara paralel
+      const [bookingsResult, lendingResult] = await Promise.all([
+        supabase.from('bookings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
+        supabase.from('lending_tool').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
+      ]);
 
+      if (bookingsResult.error) throw bookingsResult.error;
+      if (lendingResult.error) throw lendingResult.error;
 
-      // ✅ PERBAIKAN: Fetch pending bookings (belum ada permit)
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('status', 'pending') // ✅ TAMBAH: belum ada attachment
-        .order('created_at', { ascending: false });
+      const bookingsData = bookingsResult.data || [];
+      const lendingData = lendingResult.data || [];
 
-      if (bookingsError) {
-        throw bookingsError;
-      }
+      // Kumpulkan semua unique user/room/equipment IDs untuk batch fetch
+      const allUserIds = [...new Set([
+        ...bookingsData.filter(b => b.user_id).map(b => b.user_id),
+        ...lendingData.filter(l => l.id_user).map(l => l.id_user),
+      ])].filter(Boolean);
 
-      // ✅ PERBAIKAN: Fetch lending tools dengan status 'pending' (belum disetujui)
-      const { data: lendingToolsData, error: lendingToolsError } = await supabase
-        .from('lending_tool')
-        .select('*')
-        .eq('status', 'pending')// ✅ TAMBAH: belum ada attachment
-        .order('created_at', { ascending: false });
+      const allRoomIds = [...new Set(bookingsData.filter(b => b.room_id).map(b => b.room_id))].filter(Boolean);
 
-      if (lendingToolsError) {
-        throw lendingToolsError;
-      }
+      const allEquipmentIds = [...new Set(
+        lendingData.flatMap(l => Array.isArray(l.id_equipment) ? l.id_equipment : [])
+      )].filter(Boolean);
 
+      // Batch fetch semua relasi sekaligus (paralel, 3 query total bukan N query)
+      const [usersResult, roomsResult, equipmentResult] = await Promise.all([
+        allUserIds.length > 0
+          ? supabase.from('users').select('id, full_name, identity_number, email').in('id', allUserIds)
+          : Promise.resolve({ data: [] }),
+        allRoomIds.length > 0
+          ? supabase.from('rooms').select('id, name, code, capacity, department:departments(name)').in('id', allRoomIds)
+          : Promise.resolve({ data: [] }),
+        allEquipmentIds.length > 0
+          ? supabase.from('equipment').select('id, name, code, category, quantity, rooms(name)').in('id', allEquipmentIds)
+          : Promise.resolve({ data: [] }),
+      ]);
 
+      // Buat lookup maps untuk O(1) access
+      const userMap = new Map((usersResult.data || []).map(u => [u.id, u]));
+      const roomMap = new Map((roomsResult.data || []).map(r => [r.id, r]));
+      const equipmentMap = new Map((equipmentResult.data || []).map(e => [e.id, e]));
 
-      // Process bookings
-      const bookingsWithDetails = await Promise.all(
-        (bookingsData || []).map(async (booking) => {
-          let user = null;
-          let room = null;
-
-          // Fetch user data if user_id exists
-          if (booking.user_id) {
-            try {
-              const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('id, full_name, identity_number, email')
-                .eq('id', booking.user_id)
-                .maybeSingle();
-
-              if (!userError && userData) {
-                user = userData;
-              }
-            } catch (error) {
-
-            }
-          }
-
-          // If no user found but user_info exists, use that
-          if (!user && booking.user_info) {
-            user = {
-              id: 'temp',
-              full_name: booking.user_info.full_name,
-              identity_number: booking.user_info.identity_number,
-              email: booking.user_info.email || `${booking.user_info.identity_number}@student.edu`,
-            };
-          }
-
-          // Fetch room data
-          if (booking.room_id) {
-            try {
-              const { data: roomData, error: roomError } = await supabase
-                .from('rooms')
-                .select(`
-                  id,
-                  name,
-                  code,
-                  capacity,
-                  department:departments(name)
-                `)
-                .eq('id', booking.room_id)
-                .maybeSingle();
-
-              if (!roomError && roomData) {
-                room = roomData;
-              }
-            } catch (error) {
-
-            }
-          }
-
-          return {
-            ...booking,
-            user,
-            room,
-            record_type: 'booking' as const
+      // Enrich bookings menggunakan maps
+      const bookingsWithDetails: BookingWithDetails[] = bookingsData.map(booking => {
+        let user = booking.user_id ? (userMap.get(booking.user_id) ?? null) : null;
+        if (!user && booking.user_info) {
+          user = {
+            id: 'temp',
+            full_name: booking.user_info.full_name,
+            identity_number: booking.user_info.identity_number,
+            email: booking.user_info.email || `${booking.user_info.identity_number}@student.edu`,
           };
-        })
-      );
+        }
+        return {
+          ...booking,
+          user,
+          room: booking.room_id ? (roomMap.get(booking.room_id) ?? null) : null,
+          record_type: 'booking' as const,
+        };
+      });
 
-      // Process lending tools
-      const lendingToolsWithDetails = await Promise.all(
-        (lendingToolsData || []).map(async (lendingTool) => {
-          let user = null;
-          let equipment_details = [];
-
-          // Fetch user data
-          if (lendingTool.id_user) {
-            try {
-              const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('id, full_name, identity_number, email')
-                .eq('id', lendingTool.id_user)
-                .maybeSingle();
-
-              if (!userError && userData) {
-                user = userData;
-              }
-            } catch (error) {
-
-            }
-          }
-
-          // Fetch equipment details with room info
-          if (lendingTool.id_equipment && Array.isArray(lendingTool.id_equipment)) {
-            try {
-              const { data: equipmentData, error: equipmentError } = await supabase
-                .from('equipment')
-                .select('id, name, code, category, quantity, rooms(name)')
-                .in('id', lendingTool.id_equipment);
-
-              if (!equipmentError && equipmentData) {
-                equipment_details = equipmentData.map((eq: any, index: number) => ({
+      // Enrich lending tools menggunakan maps
+      const lendingToolsWithDetails: LendingToolWithDetails[] = lendingData.map(lendingTool => {
+        const equipment_details = Array.isArray(lendingTool.id_equipment)
+          ? lendingTool.id_equipment
+              .map((id: string, index: number) => {
+                const eq = equipmentMap.get(id) as any;
+                if (!eq) return null;
+                return {
                   id: eq.id,
                   name: eq.name,
                   code: eq.code,
                   category: eq.category,
-                  borrowed_quantity: lendingTool.qty[index] || 1,
-                  room_name: eq.rooms?.name || '-'
-                }));
-              }
-            } catch (error) {
+                  borrowed_quantity: lendingTool.qty?.[index] || 1,
+                  room_name: eq.rooms?.name || '-',
+                };
+              })
+              .filter(Boolean)
+          : [];
 
-            }
-          }
+        return {
+          ...lendingTool,
+          user: lendingTool.id_user ? (userMap.get(lendingTool.id_user) ?? null) : null,
+          equipment_details,
+          record_type: 'lending_tool' as const,
+        };
+      });
 
-          return {
-            ...lendingTool,
-            user,
-            equipment_details,
-            record_type: 'lending_tool' as const
-          };
-        })
-      );
-
-      // Combine both types of records
-      const combinedRecords = [...bookingsWithDetails, ...lendingToolsWithDetails];
-
-      setAllRecords(combinedRecords);
+      setAllRecords([...bookingsWithDetails, ...lendingToolsWithDetails]);
 
     } catch (error) {
       alert.error(getText('Failed to load records', 'Gagal memuat data'));
@@ -647,8 +590,8 @@ const PermitLetter: React.FC = () => {
     }
   };
 
-  const filteredRecords = allRecords.filter(record => {
-    const searchLower = searchTerm.toLowerCase();
+  const filteredRecords = React.useMemo(() => allRecords.filter(record => {
+    const searchLower = debouncedRecordSearch.toLowerCase();
 
     // Filter by type
     if (filterType !== 'all' && record.record_type !== filterType) {
@@ -677,7 +620,7 @@ const PermitLetter: React.FC = () => {
         ))
       );
     }
-  });
+  }), [allRecords, debouncedRecordSearch, filterType]);
 
   const getDisplayName = (record: CombinedRecord) => {
     if (record.record_type === 'booking') {
@@ -1465,10 +1408,7 @@ const PermitLetter: React.FC = () => {
                             <input
                               type="text"
                               value={recipientSearchTerm}
-                              onChange={(e) => {
-                                setRecipientSearchTerm(e.target.value);
-                                setShowRecipientDropdown(true);
-                              }}
+                              onChange={(e) => handleRecipientSearchChange(e.target.value)}
                               onFocus={() => setShowRecipientDropdown(true)}
                               placeholder={getText('Search recipient name...', 'Cari nama penerima...')}
                               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent pr-10"
@@ -1479,13 +1419,13 @@ const PermitLetter: React.FC = () => {
                           {/* Dropdown List */}
                           {showRecipientDropdown && (
                             <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                              {allUsers
-                                .filter(user =>
-                                  user.role === selectedRecipientRole &&
-                                  user.full_name.toLowerCase().includes(recipientSearchTerm.toLowerCase())
-                                )
-                                .slice(0, 10)
-                                .map((user) => (
+                              {recipientSearchLoading ? (
+                                <div className="px-4 py-3 text-center text-gray-500 text-sm">
+                                  <RefreshCw className="h-4 w-4 inline animate-spin mr-2" />
+                                  {getText('Searching...', 'Mencari...')}
+                                </div>
+                              ) : allUsers.length > 0 ? (
+                                allUsers.map((user) => (
                                   <button
                                     key={user.id}
                                     type="button"
@@ -1513,15 +1453,15 @@ const PermitLetter: React.FC = () => {
                                     </div>
                                   </button>
                                 ))
-                              }
-                              {allUsers.filter(user =>
-                                user.role === selectedRecipientRole &&
-                                user.full_name.toLowerCase().includes(recipientSearchTerm.toLowerCase())
-                              ).length === 0 && (
-                                  <div className="px-4 py-3 text-gray-500 text-center">
-                                    {getText('No users found with this role', 'Tidak ada pengguna dengan role ini')}
-                                  </div>
-                                )}
+                              ) : recipientSearchTerm.length >= 2 ? (
+                                <div className="px-4 py-3 text-gray-500 text-center text-sm">
+                                  {getText('No users found with this role', 'Tidak ada pengguna dengan role ini')}
+                                </div>
+                              ) : (
+                                <div className="px-4 py-3 text-gray-400 text-center text-sm">
+                                  {getText('Type at least 2 characters to search', 'Ketik minimal 2 karakter untuk mencari')}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
